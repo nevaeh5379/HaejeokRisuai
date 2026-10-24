@@ -102,6 +102,8 @@ export interface SqlDialect {
   ): Promise<void>;
   /** Reads a whole table in spec order (snapshot). */
   selectOrdered(table: string): Promise<SqlRow[]>;
+  /** Reads the rows of one owner, in spec order. */
+  selectByKey(table: string, column: string, value: string): Promise<SqlRow[]>;
   /** Exact row count of a table. */
   countRows(table: string): Promise<number>;
 }

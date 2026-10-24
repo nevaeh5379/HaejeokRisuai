@@ -8,7 +8,6 @@ import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { loadPostgres } from "../../util/runtimeModules.ts";
-import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
 import type {
   SqlModuleUpsert,
   SqlPluginUpsert,
@@ -147,10 +146,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  createCharacterRelations,
-  createChatRelations,
-  createMessageRelations,
-  rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
@@ -165,6 +160,12 @@ import {
   type SqlStorageHelpers,
   type ScalarSettingColumns,
 } from "../sqlStorageCommon.ts";
+import {
+  migrateLegacyBranchStateWith,
+  rebuildLinearMessages,
+} from "../sqlBranchMigration.ts";
+import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { PostgresDialect } from "./postgresDialect.ts";
 import {
   buildChatBranchGraph,
   buildRestorePreview,
@@ -348,9 +349,6 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key: string) => `'${key}'`,
-).join(", ");
-const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
   (key: string) => `'${key}'`,
 ).join(", ");
 
@@ -2718,209 +2716,27 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const metaResult = await client.query<StorageMetaRow>(
-        "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
+      const snapshot = await exportDatabaseSnapshotWith(
+        new PostgresDialect(client),
+        {
+          readMeta: async () => {
+            const metaResult = await client.query<StorageMetaRow>(
+              "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
+            );
+            return {
+              revision: Number(metaResult.rows[0].revision),
+              initialized: Boolean(metaResult.rows[0].initialized),
+            };
+          },
+          readAuthorNotes: () =>
+            authorNoteSql.exportAuthorNotes(
+              authorNoteDatabase("postgres", client),
+            ),
+          decodeScript: decodePostgresScript,
+        },
       );
-      const revision = Number(metaResult.rows[0].revision);
-      const initialized = Boolean(metaResult.rows[0].initialized);
-      if (!initialized) {
-        await client.query("COMMIT");
-        return { revision, initialized, database: null };
-      }
-
-      const loadQueries = [
-        `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY key`,
-        `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-        "SELECT * FROM character.characters ORDER BY position, id",
-        "SELECT * FROM character.attributes ORDER BY character_id, key",
-        "SELECT * FROM character.tags ORDER BY character_id, position",
-        "SELECT * FROM character.greetings ORDER BY character_id, greeting_type, position",
-        "SELECT * FROM character.biases ORDER BY character_id, position",
-        "SELECT * FROM character.emotions ORDER BY character_id, position",
-        "SELECT * FROM character.modules ORDER BY character_id, position",
-        "SELECT * FROM character.group_members ORDER BY group_id, position",
-        "SELECT * FROM character.chat_folders ORDER BY character_id, position",
-        "SELECT * FROM character.scripts ORDER BY character_id, script_kind, position",
-        "SELECT * FROM character.sd_data ORDER BY character_id, position",
-        "SELECT * FROM character.assets ORDER BY character_id, position",
-        "SELECT * FROM character.lore_entries ORDER BY character_id, position",
-        "SELECT * FROM chat.chats ORDER BY character_id, position, id",
-        "SELECT * FROM chat.attributes ORDER BY chat_id, key",
-        "SELECT * FROM chat.suggestions ORDER BY chat_id, position",
-        "SELECT * FROM chat.modules ORDER BY chat_id, position",
-        "SELECT * FROM chat.script_state ORDER BY chat_id, key",
-        "SELECT * FROM chat.bookmarks ORDER BY chat_id, position",
-        "SELECT * FROM chat.memory ORDER BY chat_id, memory_type",
-        "SELECT * FROM chat.lore_entries ORDER BY chat_id, position",
-        "SELECT * FROM chat.messages ORDER BY chat_id, position, id",
-        "SELECT * FROM chat.message_attributes ORDER BY chat_id, message_id, key",
-        "SELECT * FROM chat.message_generation",
-        "SELECT * FROM chat.message_prompt_info",
-        "SELECT * FROM chat.message_prompt_toggles ORDER BY chat_id, message_id, position",
-        "SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position",
-        "SELECT module_id, position FROM system.module_records ORDER BY position",
-        "SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id",
-        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records ORDER BY position",
-        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values ORDER BY plugin_id, node_id",
-        "SELECT plugin_id, script FROM system.plugin_scripts ORDER BY plugin_id",
-        "SELECT preset_id, position, name, image, api_type, ai_model, data, content_hash FROM system.bot_presets ORDER BY position",
-      ];
-
-      const results = await queryStatementResults(
-        client,
-        loadQueries.join(";\n"),
-      );
-      const rows = results.map((result) => result.rows);
-      const [
-        settings,
-        settingValues,
-        characters,
-        characterAttributes,
-        tags,
-        greetings,
-        biases,
-        emotions,
-        characterModules,
-        groupMembers,
-        chatFolders,
-        scripts,
-        sdData,
-        assets,
-        characterLore,
-        chats,
-        chatAttributes,
-        suggestions,
-        chatModules,
-        scriptState,
-        bookmarks,
-        memory,
-        chatLore,
-        messages,
-        messageAttributes,
-        generations,
-        promptInfos,
-        promptToggles,
-        promptItems,
-        moduleRecords,
-        moduleValues,
-        pluginRecords,
-        pluginValues,
-        pluginScripts,
-        botPresetRows,
-      ] = rows;
-
-      const database = rebuildSettingRows(
-        asRows<SettingScalarRow>(settings),
-        asRows<SettingValueRow>(settingValues),
-      );
-      Object.assign(
-        database,
-        await authorNoteSql.exportAuthorNotes(
-          authorNoteDatabase("postgres", client),
-        ),
-      );
-      database.pluginCustomStorage = Object.fromEntries(
-        (
-          await client.query(
-            "SELECT key, value FROM system.plugin_custom_storage ORDER BY key",
-          )
-        ).rows.map((row) => [String(row.key), row.value]),
-      );
-
-      if (moduleRecords && moduleRecords.length > 0) {
-        const moduleList = asRows<ModuleRecordRow>(moduleRecords);
-        const rebuiltModules: Record<string, unknown> = rebuildSettings(
-          moduleList.map((row) => ({ key: row.module_id })),
-          asRows<SettingValueRow>(moduleValues),
-        );
-        database.modules = moduleList.map((row) => ({
-          ...decodePresetData(rebuiltModules[row.module_id]),
-          id: row.module_id,
-        }));
-      } else {
-        database.modules = database.modules || [];
-      }
-
-      const pluginScriptMap = new Map<string, unknown>(
-        asRows<PluginScriptRow>(pluginScripts || []).map((row) => [
-          row.plugin_id,
-          decodePostgresScript(row.script),
-        ]),
-      );
-      database.plugins = rebuildPluginRecords(
-        asRows<PluginRecordRow>(pluginRecords || []),
-        asRows<SettingValueRow>(pluginValues || []),
-      ).map((plugin) => {
-        const { id, position: _position, ...metadata } = plugin;
-        const script = pluginScriptMap.get(id);
-        if (script === undefined) {
-          throw new Error(`Plugin script is missing: ${id}`);
-        }
-        return { ...metadata, script };
-      });
-
-      if (botPresetRows && botPresetRows.length > 0) {
-        const presetList = asRows<BotPresetDataRow>(botPresetRows);
-        database.botPresets = presetList.map((row) => {
-          const data =
-            typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-          const { id: _id, ...rest } = data;
-          return rest;
-        });
-        const activeId = database.activeBotPresetId;
-        database.botPresetsId = Math.max(
-          0,
-          presetList.findIndex((row) => row.preset_id === activeId),
-        );
-      } else {
-        database.botPresets = database.botPresets || [];
-        database.botPresetsId = database.botPresetsId || 0;
-      }
-
-      const characterRelations = createCharacterRelations({
-        attributes: characterAttributes,
-        tags,
-        greetings,
-        biases,
-        emotions,
-        modules: characterModules,
-        groupMembers,
-        chatFolders,
-        scripts,
-        sdData,
-        assets,
-        lore: characterLore,
-      });
-      const chatRelations = createChatRelations({
-        attributes: chatAttributes,
-        suggestions,
-        modules: chatModules,
-        scriptState,
-        bookmarks,
-        memory,
-        lore: chatLore,
-      });
-      const messageRelations = createMessageRelations({
-        attributes: messageAttributes,
-        generations,
-        promptInfos,
-        promptToggles,
-        promptItems,
-      });
-      rebuildDatabaseGraph({
-        database,
-        characters,
-        chats,
-        messages,
-        characterRelations,
-        chatRelations,
-        messageRelations,
-        rebuildCharacter,
-        rebuildChat,
-        rebuildMessage,
-      });
       await client.query("COMMIT");
-      return { revision, initialized, database };
+      return snapshot;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -3096,275 +2912,58 @@ class PostgresStorage extends SqlStorageBase {
     client: PgClient,
     chatId: string,
   ) {
-    const messagesRes = await client.query<MessageCoreRow>(
-      "SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id",
-      [chatId],
-    );
-    const attributesRes = await client.query<MessageAttributeRow>(
-      "SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key",
-      [chatId],
-    );
-    const generationsRes = await client.query<MessageGenerationRow>(
-      "SELECT * FROM chat.message_generation WHERE chat_id = $1",
-      [chatId],
-    );
-    const promptInfosRes = await client.query<MessagePromptInfoRow>(
-      "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1",
-      [chatId],
-    );
-    const promptTogglesRes = await client.query<MessagePromptToggleRow>(
-      "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY message_id, position",
-      [chatId],
-    );
-    const promptItemsRes = await client.query<MessagePromptItemRow>(
-      "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY message_id, position",
-      [chatId],
-    );
-    const relations = {
-      attributes: groupMessageRows(attributesRes.rows),
-      generation: new Map<string, MessageGenerationRow>(
-        generationsRes.rows.map((row) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+    const dialect = new PostgresDialect(client);
+    return rebuildLinearMessages({
+      messages: await dialect.selectByKey("chat.messages", "chat_id", chatId),
+      attributes: await dialect.selectByKey(
+        "chat.message_attributes",
+        "chat_id",
+        chatId,
       ),
-      promptInfo: new Map<string, MessagePromptInfoRow>(
-        promptInfosRes.rows.map((row) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+      generations: await dialect.selectByKey(
+        "chat.message_generation",
+        "chat_id",
+        chatId,
       ),
-      promptToggles: groupMessageRows(promptTogglesRes.rows),
-      promptItems: groupMessageRows(promptItemsRes.rows),
-    };
-    return messagesRes.rows.map((row) => {
-      const key = `${row.chat_id}\0${row.id}`;
-      return rebuildMessage(row, {
-        attributes: relations.attributes.get(key),
-        generation: relations.generation.get(key),
-        promptInfo: relations.promptInfo.get(key),
-        promptToggles: relations.promptToggles.get(key),
-        promptItems: relations.promptItems.get(key),
-      });
+      promptInfos: await dialect.selectByKey(
+        "chat.message_prompt_info",
+        "chat_id",
+        chatId,
+      ),
+      promptToggles: await dialect.selectByKey(
+        "chat.message_prompt_toggles",
+        "chat_id",
+        chatId,
+      ),
+      promptItems: await dialect.selectByKey(
+        "chat.message_prompt_items",
+        "chat_id",
+        chatId,
+      ),
     });
   }
 
   async migrateLegacyBranchState(client: PgClient, chatId: string) {
-    const legacyRes = await client.query<LegacyBranchStateRow>(
-      `SELECT
+    return migrateLegacyBranchStateWith(new PostgresDialect(client), chatId, {
+      readLegacyState: async () => {
+        const legacyRes = await client.query<LegacyBranchStateRow>(
+          `SELECT
                 (SELECT COUNT(*)::integer FROM chat.branches WHERE chat_id = $1) AS branch_count,
                 (SELECT value FROM chat.attributes WHERE chat_id = $1 AND key = 'branchState') AS branch_state`,
-      [chatId],
-    );
-    const legacyRow: Partial<LegacyBranchStateRow> = legacyRes.rows[0] ?? {};
-    if (
-      Number(legacyRow.branch_count ?? 0) > 1 ||
-      legacyRow.branch_state == null
-    )
-      return false;
-    const branchState = decodePostgresJsonValue(legacyRow.branch_state);
-    if (
-      !Array.isArray(branchState?.branches) ||
-      branchState.branches.length <= 1
-    )
-      return false;
-    const messages = await this._loadLinearMessagesForBranchMigration(
-      client,
-      chatId,
-    );
-    const plan = buildLegacyBranchMigrationPlan(
-      { id: chatId, message: messages, branchState },
-      () => crypto.randomUUID(),
-    );
-    if (!plan) return false;
-
-    await client.query("DELETE FROM chat.active_branches WHERE chat_id = $1", [
-      chatId,
-    ]);
-    await client.query(
-      "DELETE FROM chat.message_branch_links WHERE chat_id = $1",
-      [chatId],
-    );
-    await client.query("DELETE FROM chat.branches WHERE chat_id = $1", [
-      chatId,
-    ]);
-
-    const splitMessages: MessageSplit[] = plan.messages.map((message) =>
-      splitMessage({
-        chatId,
-        id: message.id,
-        position: message.position,
-        data: message.data,
-      }),
-    );
-    const messageColumns = [
-      "chat_id",
-      "id",
-      "position",
-      "role",
-      "content_text",
-      "content_binary",
-      "saying_character_id",
-      "sent_time",
-      "sender_name",
-      "other_user",
-      "disabled_scope",
-      "is_comment",
-    ];
-    await bulkInsert(
-      client,
-      "chat.messages",
-      messageColumns,
-      [
-        "text",
-        "text",
-        "integer",
-        "text",
-        "text",
-        "bytea",
-        "text",
-        "bigint",
-        "text",
-        "boolean",
-        "text",
-        "boolean",
-      ],
-      splitMessages.map((item) => item.core),
-      buildUpsertClause(
-        "chat.messages",
-        ["chat_id", "id"],
-        messageColumns.slice(2),
-        true,
-      ),
-    );
-
-    const ids = splitMessages.map((item) => item.core.id);
-    if (ids.length > 0) {
-      for (const table of [
-        "chat.message_attributes",
-        "chat.message_generation",
-        "chat.message_prompt_info",
-        "chat.message_prompt_toggles",
-        "chat.message_prompt_items",
-      ]) {
-        await client.query(
-          `DELETE FROM ${table} WHERE chat_id = $1 AND message_id = ANY($2::text[])`,
-          [chatId, ids],
+          [chatId],
         );
-      }
-    }
-    await bulkInsert(
-      client,
-      "chat.message_attributes",
-      ["chat_id", "message_id", "key", "value"],
-      ["text", "text", "text", "jsonb"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((row) => ({
-          ...row,
-          chat_id: item.core.chat_id,
-          message_id: item.core.id,
-        })),
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_generation",
-      [
-        "chat_id",
-        "message_id",
-        "model",
-        "generation_id",
-        "input_tokens",
-        "output_tokens",
-        "max_context",
-        "stage1_time",
-        "stage2_time",
-        "stage3_time",
-        "stage4_time",
-      ],
-      [
-        "text",
-        "text",
-        "text",
-        "text",
-        "integer",
-        "integer",
-        "integer",
-        "double precision",
-        "double precision",
-        "double precision",
-        "double precision",
-      ],
-      splitMessages.flatMap((item) =>
-        item.generation ? [item.generation] : [],
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_info",
-      ["chat_id", "message_id", "prompt_name"],
-      ["text", "text", "text"],
-      splitMessages.flatMap((item) =>
-        item.prompt?.info ? [item.prompt.info] : [],
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_toggles",
-      ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-      ["text", "text", "integer", "text", "text"],
-      splitMessages.flatMap((item) => item.prompt?.toggles || []),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_items",
-      ["chat_id", "message_id", "position", "payload"],
-      ["text", "text", "integer", "jsonb"],
-      splitMessages.flatMap((item) => item.prompt?.items || []),
-    );
-
-    await bulkInsert(
-      client,
-      "chat.branches",
-      [
-        "chat_id",
-        "id",
-        "parent_branch_id",
-        "fork_message_id",
-        "head_message_id",
-        "reason",
-        "created_at",
-      ],
-      ["text", "text", "text", "text", "text", "text", "bigint"],
-      plan.branches.map((branch) => ({
-        chat_id: chatId,
-        id: branch.id,
-        parent_branch_id: branch.parentBranchId ?? null,
-        fork_message_id: branch.forkMessageId ?? null,
-        head_message_id: branch.headMessageId ?? null,
-        reason: branch.reason,
-        created_at: branch.createdAt,
-      })),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_branch_links",
-      ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
-      ["text", "text", "text", "text"],
-      plan.links.map((link) => ({
-        chat_id: chatId,
-        message_id: link.messageId,
-        parent_message_id: link.parentMessageId ?? null,
-        origin_branch_id: link.originBranchId,
-      })),
-    );
-    await client.query(
-      "INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)",
-      [chatId, plan.activeBranchId],
-    );
-    // Keep branchState stored as archival input until per-branch runtime state
-    // also has a persistent table. Runtime loaders ignore it after migration.
-    return true;
+        const legacyRow: Partial<LegacyBranchStateRow> =
+          legacyRes.rows[0] ?? {};
+        return {
+          branchCount: Number(legacyRow.branch_count ?? 0),
+          branchState: legacyRow.branch_state,
+        };
+      },
+      readLinearMessages: () =>
+        this._loadLinearMessagesForBranchMigration(client, chatId),
+      decodeState: decodePostgresJsonValue,
+      newId: () => crypto.randomUUID(),
+    });
   }
 
   async ensureChatBranchGraphs(client: PgClient, chatIds: readonly unknown[]) {

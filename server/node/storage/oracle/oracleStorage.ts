@@ -22,9 +22,7 @@ import {
   notes as authorNoteSql,
 } from "../authorNotes.ts";
 import {
-  asRows,
   asUnknownArray,
-  decodePresetData,
   isSqlRow,
   mapBranchRow,
   type ExternalSyncTransaction as ExternalSyncTransactionOf,
@@ -236,7 +234,6 @@ type OracleStorageOptions = {
 
 const oracledb: OracleModule = await loadOracle();
 import * as crypto from "crypto";
-import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
@@ -280,10 +277,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  createCharacterRelations,
-  createChatRelations,
-  createMessageRelations,
-  rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
@@ -299,6 +292,13 @@ import {
   type ScalarSettingRow,
   type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
+import {
+  decodeLegacyBranchState,
+  migrateLegacyBranchStateWith,
+  rebuildLinearMessages,
+} from "../sqlBranchMigration.ts";
+import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { OracleDialect } from "./oracleDialect.ts";
 import {
   buildChatBranchGraph,
   buildRestorePreview,
@@ -465,9 +465,6 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key: string) => `'${key.replace(/'/g, "''")}'`,
-).join(", ");
-const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
   (key: string) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 
@@ -2013,318 +2010,25 @@ class OracleStorage extends SqlStorageBase {
     try {
       // Oracle: READ ONLY 트랜잭션
       await conn.execute("SET TRANSACTION READ ONLY");
-      const metaRow = await fetchRequiredRow<StorageMetaRow>(
-        conn,
-        `SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1`,
-      );
-      const revision = Number(metaRow.revision);
-      const initialized = num1ToBool(metaRow.initialized);
-      if (!initialized) {
-        await conn.rollback();
-        return { revision, initialized, database: null };
-      }
-
-      // 전체 로드
-      const allSettings = await fetchRows<OracleSettingScalarRow>(
-        conn,
-        `SELECT key, text_val, num_val, bool_val FROM system_settings WHERE key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY key`,
-        [],
-        { clobColumns: ["text_val"] },
-      );
-      const allSettingValues = await fetchRows<SettingValueRow>(
-        conn,
-        `SELECT * FROM system_setting_values WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-        [],
+      const snapshot = await exportDatabaseSnapshotWith(
+        new OracleDialect(conn),
         {
-          clobColumns: [
-            "member_key",
-            "encoded_member_key",
-            "text_value",
-            "encoded_text_value",
-          ],
+          readMeta: async () => {
+            const metaRow = await fetchRequiredRow<StorageMetaRow>(
+              conn,
+              `SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1`,
+            );
+            return {
+              revision: Number(metaRow.revision),
+              initialized: Boolean(num1ToBool(metaRow.initialized)),
+            };
+          },
+          readAuthorNotes: () =>
+            authorNoteSql.exportAuthorNotes(authorNoteDatabase("oracle", conn)),
         },
       );
-      const characters = await fetchRows<CharacterCoreRow>(
-        conn,
-        `SELECT * FROM character_characters ORDER BY position, id`,
-        [],
-        {
-          clobColumns: [
-            "image",
-            "description",
-            "notes",
-            "creator_notes",
-            "system_prompt",
-            "post_history_instructions",
-            "personality",
-            "scenario",
-            "example_message",
-            "license",
-            "default_variables",
-            "additional_text",
-            "translator_note",
-            "background_html",
-            "background_css",
-            "first_message",
-          ],
-        },
-      );
-      const characterAttributes = await fetchRows<CharacterAttributeRow>(
-        conn,
-        `SELECT * FROM character_attributes ORDER BY character_id, key_value`,
-      );
-      const tags = await fetchRows<CharacterTagRow>(
-        conn,
-        `SELECT * FROM character_tags ORDER BY character_id, position`,
-      );
-      const greetings = await fetchRows<CharacterGreetingRow>(
-        conn,
-        `SELECT * FROM character_greetings ORDER BY character_id, greeting_type, position`,
-        [],
-        { clobColumns: ["content"] },
-      );
-      const biases = await fetchRows<CharacterBiasRow>(
-        conn,
-        `SELECT * FROM character_biases ORDER BY character_id, position`,
-      );
-      const emotions = await fetchRows<CharacterEmotionRow>(
-        conn,
-        `SELECT * FROM character_emotions ORDER BY character_id, position`,
-        [],
-        { clobColumns: ["asset"] },
-      );
-      const characterModules = await fetchRows<CharacterModuleRow>(
-        conn,
-        `SELECT * FROM character_modules ORDER BY character_id, position`,
-      );
-      const groupMembers = await fetchRows<CharacterGroupMemberRow>(
-        conn,
-        `SELECT * FROM character_group_members ORDER BY group_id, position`,
-      );
-      const chatFolders = await fetchRows<CharacterChatFolderRow>(
-        conn,
-        `SELECT * FROM character_chat_folders ORDER BY character_id, position`,
-      );
-      const scripts = await fetchRows<CharacterScriptRow>(
-        conn,
-        `SELECT * FROM character_scripts ORDER BY character_id, script_kind, position`,
-        [],
-        { clobColumns: ["comment_text", "input_text", "output_text", "flag"] },
-      );
-      const sdData = await fetchRows<CharacterSdRow>(
-        conn,
-        `SELECT * FROM character_sd_data ORDER BY character_id, position`,
-        [],
-        { clobColumns: ["value"] },
-      );
-      const assets = await fetchRows<CharacterAssetRow>(
-        conn,
-        `SELECT * FROM character_assets ORDER BY character_id, position`,
-        [],
-        { clobColumns: ["uri", "extra_value"] },
-      );
-      const characterLore = await fetchRows<CharacterLoreRow>(
-        conn,
-        `SELECT * FROM character_lore_entries ORDER BY character_id, position`,
-        [],
-        { clobColumns: ["comment_text", "content"] },
-      );
-      const chats = await fetchRows<ChatCoreRow>(
-        conn,
-        `SELECT * FROM chat_chats ORDER BY character_id, position, id`,
-        [],
-        { clobColumns: ["note", "sd_data", "supa_memory_data", "last_memory"] },
-      );
-      const chatAttributes = await fetchRows<ChatAttributeRow>(
-        conn,
-        `SELECT * FROM chat_attributes ORDER BY chat_id, key_value`,
-      );
-      const suggestions = await fetchRows<ChatSuggestionRow>(
-        conn,
-        `SELECT * FROM chat_suggestions ORDER BY chat_id, position`,
-        [],
-        { clobColumns: ["content"] },
-      );
-      const chatModules = await fetchRows<ChatModuleRow>(
-        conn,
-        `SELECT * FROM chat_modules ORDER BY chat_id, position`,
-      );
-      const scriptState = await fetchRows<ChatScriptStateRow>(
-        conn,
-        `SELECT * FROM chat_script_state ORDER BY chat_id, key_value`,
-        [],
-        { clobColumns: ["text_value"] },
-      );
-      const bookmarks = await fetchRows<ChatBookmarkRow>(
-        conn,
-        `SELECT * FROM chat_bookmarks ORDER BY chat_id, position`,
-      );
-      const memory = await fetchRows<ChatMemoryRow>(
-        conn,
-        `SELECT * FROM chat_memory ORDER BY chat_id, memory_type`,
-      );
-      const chatLore = await fetchRows<ChatLoreRow>(
-        conn,
-        `SELECT * FROM chat_lore_entries ORDER BY chat_id, position`,
-        [],
-        { clobColumns: ["comment_text", "content"] },
-      );
-      const messages = await fetchRows<MessageCoreRow>(
-        conn,
-        `SELECT * FROM chat_messages ORDER BY chat_id, position, id`,
-        [],
-        { clobColumns: ["content_text"], blobColumns: ["content_binary"] },
-      );
-      const messageAttributes = await fetchRows<MessageAttributeRow>(
-        conn,
-        `SELECT * FROM chat_message_attributes ORDER BY chat_id, message_id, key_value`,
-      );
-      const generations = await fetchRows<MessageGenerationRow>(
-        conn,
-        `SELECT * FROM chat_message_generation`,
-      );
-      const promptInfos = await fetchRows<MessagePromptInfoRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_info`,
-      );
-      const promptToggles = await fetchRows<MessagePromptToggleRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_toggles ORDER BY chat_id, message_id, position`,
-        [],
-        { clobColumns: ["toggle_value"] },
-      );
-      const promptItems = await fetchRows<MessagePromptItemRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_items ORDER BY chat_id, message_id, position`,
-      );
-
-      const database = rebuildSettings(allSettings, allSettingValues);
-      Object.assign(
-        database,
-        await authorNoteSql.exportAuthorNotes(
-          authorNoteDatabase("oracle", conn),
-        ),
-      );
-      for (const row of allSettings)
-        if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
-          database[row.key] = mapColumnsToSettingValue(row);
-        }
-      const pluginRows = await fetchRows<OracleKeyValueRow>(
-        conn,
-        `SELECT key, JSON_SERIALIZE(value RETURNING CLOB) AS value FROM system_plugin_custom_storage`,
-        [],
-        { clobColumns: ["value"] },
-      );
-      database.pluginCustomStorage = Object.fromEntries(
-        pluginRows.map((row) => [row.key, JSON.parse(String(row.value))]),
-      );
-      const characterRelations = createCharacterRelations({
-        attributes: characterAttributes,
-        tags,
-        greetings,
-        biases,
-        emotions,
-        modules: characterModules,
-        groupMembers,
-        chatFolders,
-        scripts,
-        sdData,
-        assets,
-        lore: characterLore,
-      });
-      const chatRelations = createChatRelations({
-        attributes: chatAttributes,
-        suggestions,
-        modules: chatModules,
-        scriptState,
-        bookmarks,
-        memory,
-        lore: chatLore,
-      });
-      const messageRelations = createMessageRelations({
-        attributes: messageAttributes,
-        generations,
-        promptInfos,
-        promptToggles,
-        promptItems,
-      });
-      rebuildDatabaseGraph({
-        database,
-        characters,
-        chats,
-        messages,
-        characterRelations,
-        chatRelations,
-        messageRelations,
-        rebuildCharacter,
-        rebuildChat,
-        rebuildMessage,
-      });
-
-      const moduleResult = await this.loadModuleRecords();
-      database.modules = moduleResult?.modules || database.modules || [];
-
-      const pluginRecords = await fetchRows<PluginRecordRow>(
-        conn,
-        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system_plugin_records ORDER BY position",
-      );
-      const pluginValues = await fetchRows<SettingValueRow>(
-        conn,
-        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_plugin_values ORDER BY plugin_id, node_id",
-        [],
-        {
-          clobColumns: [
-            "member_key",
-            "encoded_member_key",
-            "text_value",
-            "encoded_text_value",
-          ],
-        },
-      );
-      const pluginScripts = await fetchRows<PluginScriptRow>(
-        conn,
-        "SELECT plugin_id, script FROM system_plugin_scripts ORDER BY plugin_id",
-        [],
-        { clobColumns: ["script"] },
-      );
-      const pluginScriptMap = new Map<string, unknown>(
-        pluginScripts.map((row) => [row.plugin_id, row.script]),
-      );
-      database.plugins = rebuildPluginRecords(pluginRecords, pluginValues).map(
-        (plugin) => {
-          const { id, position: _position, ...metadata } = plugin;
-          const script = pluginScriptMap.get(id);
-          if (script === undefined) {
-            throw new Error(`Plugin script is missing: ${id}`);
-          }
-          return { ...metadata, script };
-        },
-      );
-
-      const presetRows = await fetchRows<OracleBotPresetRow>(
-        conn,
-        "SELECT preset_id, data FROM system_bot_presets ORDER BY position",
-        [],
-        { clobColumns: ["data"] },
-      );
-      if (presetRows.length > 0) {
-        database.botPresets = presetRows.map((row) => {
-          const data = decodePresetData(row.data);
-          const { id: _id, ...rest } = data;
-          return rest;
-        });
-        const activeId = database.activeBotPresetId;
-        database.botPresetsId = Math.max(
-          0,
-          presetRows.findIndex((row) => row.preset_id === activeId),
-        );
-      } else {
-        database.botPresets = database.botPresets || [];
-        database.botPresetsId = database.botPresetsId || 0;
-      }
-
       await conn.rollback();
-      return { revision, initialized, database };
+      return snapshot;
     } catch (error) {
       try {
         await conn.rollback();
@@ -2336,10 +2040,6 @@ class OracleStorage extends SqlStorageBase {
       } catch (e) {}
     }
   }
-
-  // ============================================================
-  // 엔티티 로드: loadCharacter, loadChat, loadChatMessages
-  // ============================================================
 
   async loadCharacter(characterId: unknown) {
     this.assertEnabled();
@@ -2577,67 +2277,34 @@ class OracleStorage extends SqlStorageBase {
     conn: OracleConnection,
     chatId: string,
   ) {
-    const [
-      messages,
-      attributes,
-      generations,
-      promptInfos,
-      promptToggles,
-      promptItems,
-    ] = await Promise.all([
-      fetchRows<MessageCoreRow>(
-        conn,
-        `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`,
-        [chatId],
-        { clobColumns: ["content_text"], blobColumns: ["content_binary"] },
+    const dialect = new OracleDialect(conn);
+    return rebuildLinearMessages({
+      messages: await dialect.selectByKey("chat.messages", "chat_id", chatId),
+      attributes: await dialect.selectByKey(
+        "chat.message_attributes",
+        "chat_id",
+        chatId,
       ),
-      fetchRows<MessageAttributeRow>(
-        conn,
-        `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`,
-        [chatId],
+      generations: await dialect.selectByKey(
+        "chat.message_generation",
+        "chat_id",
+        chatId,
       ),
-      fetchRows<MessageGenerationRow>(
-        conn,
-        `SELECT * FROM chat_message_generation WHERE chat_id = :1`,
-        [chatId],
+      promptInfos: await dialect.selectByKey(
+        "chat.message_prompt_info",
+        "chat_id",
+        chatId,
       ),
-      fetchRows<MessagePromptInfoRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`,
-        [chatId],
+      promptToggles: await dialect.selectByKey(
+        "chat.message_prompt_toggles",
+        "chat_id",
+        chatId,
       ),
-      fetchRows<MessagePromptToggleRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`,
-        [chatId],
-        { clobColumns: ["toggle_value"] },
+      promptItems: await dialect.selectByKey(
+        "chat.message_prompt_items",
+        "chat_id",
+        chatId,
       ),
-      fetchRows<MessagePromptItemRow>(
-        conn,
-        `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`,
-        [chatId],
-      ),
-    ]);
-    const relations = {
-      attributes: groupMessageRows(attributes),
-      generation: new Map<string, MessageGenerationRow>(
-        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
-      ),
-      promptInfo: new Map<string, MessagePromptInfoRow>(
-        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
-      ),
-      promptToggles: groupMessageRows(promptToggles),
-      promptItems: groupMessageRows(promptItems),
-    };
-    return messages.map((row) => {
-      const key = `${row.chat_id}\0${row.id}`;
-      return rebuildMessage(row, {
-        attributes: relations.attributes.get(key),
-        generation: relations.generation.get(key),
-        promptInfo: relations.promptInfo.get(key),
-        promptToggles: relations.promptToggles.get(key),
-        promptItems: relations.promptItems.get(key),
-      });
     });
   }
 
@@ -2689,174 +2356,29 @@ class OracleStorage extends SqlStorageBase {
   }
 
   async migrateLegacyBranchState(conn: OracleConnection, chatId: string) {
-    const legacyRow = await fetchOne<LegacyBranchStateRow>(
-      conn,
-      `
+    return migrateLegacyBranchStateWith(new OracleDialect(conn), chatId, {
+      readLegacyState: async () => {
+        const legacyRow = await fetchOne<LegacyBranchStateRow>(
+          conn,
+          `
             SELECT
                 (SELECT COUNT(*) FROM chat_branches WHERE chat_id = :chatId) AS branch_count,
                 (SELECT value FROM chat_attributes WHERE chat_id = :chatId AND key_value = 'branchState') AS branch_state
               FROM dual
         `,
-      { chatId },
-    );
-    if (
-      !legacyRow ||
-      Number(legacyRow.branch_count ?? 0) > 1 ||
-      legacyRow.branch_state == null
-    )
-      return false;
-    let branchState = legacyRow.branch_state;
-    if (typeof branchState === "string") {
-      try {
-        branchState = JSON.parse(branchState);
-      } catch {}
-    }
-    branchState = decodePostgresJsonValue(branchState);
-    const legacyBranches = isSqlRow(branchState) ? branchState.branches : null;
-    if (!Array.isArray(legacyBranches) || legacyBranches.length <= 1)
-      return false;
-    const messages = await this._loadLinearMessagesForBranchMigration(
-      conn,
-      chatId,
-    );
-    const plan = buildLegacyBranchMigrationPlan(
-      { id: chatId, message: messages, branchState },
-      () => crypto.randomUUID(),
-    );
-    if (!plan) return false;
-
-    await conn.execute(`DELETE FROM chat_active_branches WHERE chat_id = :1`, [
-      chatId,
-    ]);
-    await conn.execute(
-      `DELETE FROM chat_message_branch_links WHERE chat_id = :1`,
-      [chatId],
-    );
-    await conn.execute(`DELETE FROM chat_branches WHERE chat_id = :1`, [
-      chatId,
-    ]);
-
-    const splitMessages: MessageSplit[] = plan.messages.map((message) =>
-      splitMessage({
-        chatId,
-        id: message.id,
-        position: message.position,
-        data: message.data,
-      }),
-    );
-    await deleteMessageChildren(
-      conn,
-      plan.messages.map((message) => ({ chatId, id: message.id })),
-    );
-    await this._upsertMessagesForBranchMigration(conn, splitMessages);
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_attributes",
-      ["chat_id", "message_id", "key_value", "value"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((row) => ({
-          chat_id: chatId,
-          message_id: item.core.id,
-          key_value: row.key,
-          value: row.value,
-        })),
-      ),
-    );
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_generation",
-      [
-        "chat_id",
-        "message_id",
-        "model",
-        "generation_id",
-        "input_tokens",
-        "output_tokens",
-        "max_context",
-        "stage1_time",
-        "stage2_time",
-        "stage3_time",
-        "stage4_time",
-      ],
-      splitMessages.flatMap((item) =>
-        item.generation
-          ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }]
-          : [],
-      ),
-    );
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_prompt_info",
-      ["chat_id", "message_id", "prompt_name"],
-      splitMessages.flatMap((item) =>
-        item.prompt?.info
-          ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }]
-          : [],
-      ),
-    );
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_prompt_toggles",
-      ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.toggles || []).map((row) => ({
-          ...row,
-          chat_id: chatId,
-          message_id: item.core.id,
-        })),
-      ),
-    );
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_prompt_items",
-      ["chat_id", "message_id", "position", "payload"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.items || []).map((row) => ({
-          ...row,
-          chat_id: chatId,
-          message_id: item.core.id,
-        })),
-      ),
-    );
-
-    await this._bulkInsertRows(
-      conn,
-      "chat_branches",
-      [
-        "chat_id",
-        "id",
-        "parent_branch_id",
-        "fork_message_id",
-        "head_message_id",
-        "reason",
-        "created_at",
-      ],
-      plan.branches.map((branch) => ({
-        chat_id: chatId,
-        id: branch.id,
-        parent_branch_id: branch.parentBranchId ?? null,
-        fork_message_id: branch.forkMessageId ?? null,
-        head_message_id: branch.headMessageId ?? null,
-        reason: branch.reason,
-        created_at: branch.createdAt,
-      })),
-    );
-    await this._bulkInsertRows(
-      conn,
-      "chat_message_branch_links",
-      ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
-      plan.links.map((link) => ({
-        chat_id: chatId,
-        message_id: link.messageId,
-        parent_message_id: link.parentMessageId ?? null,
-        origin_branch_id: link.originBranchId,
-      })),
-    );
-    await conn.execute(
-      `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (:1, :2)`,
-      [chatId, plan.activeBranchId],
-    );
-    return true;
+          { chatId },
+        );
+        return {
+          branchCount: Number(legacyRow?.branch_count ?? 0),
+          branchState: legacyRow?.branch_state ?? null,
+        };
+      },
+      readLinearMessages: () =>
+        this._loadLinearMessagesForBranchMigration(conn, chatId),
+      decodeState: (value) =>
+        decodePostgresJsonValue(decodeLegacyBranchState(value)),
+      newId: () => crypto.randomUUID(),
+    });
   }
 
   async ensureChatBranchGraphs(

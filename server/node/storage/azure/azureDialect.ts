@@ -282,6 +282,24 @@ export class AzureDialect implements SqlDialect {
     return result.recordset ?? [];
   }
 
+  async selectByKey(
+    table: string,
+    column: string,
+    value: string,
+  ): Promise<SqlRow[]> {
+    const spec = sqlTable(table);
+    const order =
+      spec.orderBy.length > 0
+        ? ` ORDER BY ${spec.orderBy.map(quote).join(", ")}`
+        : "";
+    const request = this.request();
+    request.input("filterValue", sql.NVarChar(450), value);
+    const result = await request.query<SqlRow>(
+      `SELECT * FROM ${quoteTable(table)} WHERE ${quote(column)} = @filterValue${order}`,
+    );
+    return result.recordset ?? [];
+  }
+
   async countRows(table: string): Promise<number> {
     const result = await this.request().query<{ total: number | string }>(
       `SELECT COUNT(*) AS total FROM ${quoteTable(table)}`,

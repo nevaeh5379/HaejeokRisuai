@@ -13,7 +13,6 @@ import {
 
 const sql: typeof import("mssql") = await loadMssql();
 import * as crypto from "crypto";
-import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
@@ -110,10 +109,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  createCharacterRelations,
-  createChatRelations,
-  createMessageRelations,
-  rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
@@ -129,6 +124,13 @@ import {
   type ScalarSettingRow,
   type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
+import {
+  decodeLegacyBranchState,
+  migrateLegacyBranchStateWith,
+  rebuildLinearMessages,
+} from "../sqlBranchMigration.ts";
+import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { AzureDialect } from "./azureDialect.ts";
 import {
   buildChatBranchGraph,
   buildRestorePreview,
@@ -299,9 +301,6 @@ const STARTUP_EXCLUDED_SETTING_KEYS = [
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key: string) => `'${key.replace(/'/g, "''")}'`,
-).join(", ");
-const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
   (key: string) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 
@@ -1117,324 +1116,17 @@ class AzureStorage extends SqlStorageBase {
   async exportDatabaseSnapshot() {
     const pool = await this.getPool();
     const state = await this.getState();
-
     if (!state.initialized) {
       return { revision: state.revision, initialized: false, database: null };
     }
-
-    // 1. Settings
-    const settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY [key]`;
-    const settingsRes = await pool
-      .request()
-      .query<AzureSettingScalarRow>(settingsQuery);
-    const settings = settingsRes.recordset;
-    const settingKeys = new Set<string>(settings.map((row) => row.key));
-    const settingValuesRes = await pool
-      .request()
-      .query<SettingValueRow>(
-        `SELECT * FROM [system].[setting_values] WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-      );
-    const database = rebuildSettings(
-      settings,
-      settingValuesRes.recordset.filter((row) =>
-        settingKeys.has(row.setting_key),
-      ),
-    );
-    for (const row of settings)
-      if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
-        database[row.key] = mapColumnsToSettingValue(row);
-      }
-    const pluginRows = (
-      await pool
-        .request()
-        .query<{ key: string; value: unknown }>(
-          "SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]",
-        )
-    ).recordset;
-    Object.assign(
-      database,
-      await withAuthorNoteDatabase(
-        this,
-        "azure",
-        authorNoteSql.exportAuthorNotes,
-      ),
-    );
-    database.pluginCustomStorage = Object.fromEntries(
-      pluginRows.map((row) => [row.key, JSON.parse(String(row.value))]),
-    );
-
-    // 2. Characters & 3. Chats
-    let characterRelations;
-    let chatRelations;
-    let charsRes;
-    let chatsRes;
-
-    const [
-      cRes,
-      charAttrsRes,
-      charTagsRes,
-      charGreetingsRes,
-      charBiasesRes,
-      charEmotionsRes,
-      charModulesRes,
-      charGroupMembersRes,
-      charFoldersRes,
-      charScriptsRes,
-      charSdDataRes,
-      charAssetsRes,
-      charLoreEntriesRes,
-      chRes,
-      chatAttrsRes,
-      chatSuggestionsRes,
-      chatModulesRes,
-      chatScriptStateRes,
-      chatBookmarksRes,
-      chatMemoryRes,
-      chatLoreEntriesRes,
-    ] = await Promise.all([
-      pool
-        .request()
-        .query("SELECT * FROM [character].[characters] ORDER BY position, id"),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[attributes] ORDER BY character_id, [key]",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[tags] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[greetings] ORDER BY character_id, greeting_type, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[biases] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[emotions] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[modules] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[group_members] ORDER BY group_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[chat_folders] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[scripts] ORDER BY character_id, script_kind, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[sd_data] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[assets] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [character].[lore_entries] ORDER BY character_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[chats] ORDER BY character_id, position, id",
-        ),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[attributes] ORDER BY chat_id, [key]"),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[suggestions] ORDER BY chat_id, position"),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[modules] ORDER BY chat_id, position"),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[script_state] ORDER BY chat_id, [key]"),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[bookmarks] ORDER BY chat_id, position"),
-      pool
-        .request()
-        .query("SELECT * FROM [chat].[memory] ORDER BY chat_id, memory_type"),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[lore_entries] ORDER BY chat_id, position",
-        ),
-    ]);
-
-    charsRes = cRes;
-    chatsRes = chRes;
-
-    characterRelations = createCharacterRelations({
-      attributes: charAttrsRes.recordset,
-      tags: charTagsRes.recordset,
-      greetings: charGreetingsRes.recordset,
-      biases: charBiasesRes.recordset,
-      emotions: charEmotionsRes.recordset,
-      modules: charModulesRes.recordset,
-      groupMembers: charGroupMembersRes.recordset,
-      chatFolders: charFoldersRes.recordset,
-      scripts: charScriptsRes.recordset,
-      sdData: charSdDataRes.recordset,
-      assets: charAssetsRes.recordset,
-      lore: charLoreEntriesRes.recordset,
+    return exportDatabaseSnapshotWith(new AzureDialect(pool), {
+      readMeta: async () => ({
+        revision: state.revision,
+        initialized: state.initialized,
+      }),
+      readAuthorNotes: () =>
+        authorNoteSql.exportAuthorNotes(authorNoteDatabase("azure", pool)),
     });
-    chatRelations = createChatRelations({
-      attributes: chatAttrsRes.recordset,
-      suggestions: chatSuggestionsRes.recordset,
-      modules: chatModulesRes.recordset,
-      scriptState: chatScriptStateRes.recordset,
-      bookmarks: chatBookmarksRes.recordset,
-      memory: chatMemoryRes.recordset,
-      lore: chatLoreEntriesRes.recordset,
-    });
-
-    // 4. Messages (if not shallow)
-    let messages = [];
-    let messageRelations = null;
-
-    const [
-      msgsRes,
-      msgAttrsRes,
-      msgGenRes,
-      msgPromptInfoRes,
-      msgPromptTogglesRes,
-      msgPromptItemsRes,
-    ] = await Promise.all([
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[messages] ORDER BY chat_id, position, id",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[message_attributes] ORDER BY chat_id, message_id, [key]",
-        ),
-      pool.request().query("SELECT * FROM [chat].[message_generation]"),
-      pool.request().query("SELECT * FROM [chat].[message_prompt_info]"),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[message_prompt_toggles] ORDER BY chat_id, message_id, position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT * FROM [chat].[message_prompt_items] ORDER BY chat_id, message_id, position",
-        ),
-    ]);
-
-    messages = msgsRes.recordset;
-    messageRelations = createMessageRelations({
-      attributes: msgAttrsRes.recordset,
-      generations: msgGenRes.recordset,
-      promptInfos: msgPromptInfoRes.recordset,
-      promptToggles: msgPromptTogglesRes.recordset,
-      promptItems: msgPromptItemsRes.recordset,
-    });
-
-    rebuildDatabaseGraph({
-      database,
-      characters: charsRes.recordset,
-      chats: chatsRes.recordset,
-      messages,
-      characterRelations,
-      chatRelations,
-      messageRelations,
-      rebuildCharacter,
-      rebuildChat,
-      rebuildMessage,
-    });
-
-    const moduleResult = await this.loadModuleRecords();
-    database.modules = moduleResult?.modules || database.modules || [];
-
-    const [pluginRecordsResult, pluginValuesResult, pluginScriptsResult] =
-      await Promise.all([
-        pool
-          .request()
-          .query(
-            "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM [system].[plugin_records] ORDER BY position",
-          ),
-        pool
-          .request()
-          .query(
-            "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[plugin_values] ORDER BY plugin_id, node_id",
-          ),
-        pool
-          .request()
-          .query(
-            "SELECT plugin_id, script FROM [system].[plugin_scripts] ORDER BY plugin_id",
-          ),
-      ]);
-    const pluginScriptMap = new Map<string, unknown>(
-      pluginScriptsResult.recordset.map((row) => [row.plugin_id, row.script]),
-    );
-    database.plugins = rebuildPluginRecords(
-      pluginRecordsResult.recordset,
-      pluginValuesResult.recordset,
-    ).map((plugin) => {
-      const { id, position: _position, ...metadata } = plugin;
-      const script = pluginScriptMap.get(id);
-      if (script === undefined) {
-        throw new Error(`Plugin script is missing: ${id}`);
-      }
-      return { ...metadata, script };
-    });
-
-    const presetRows = (
-      await pool
-        .request()
-        .query(
-          "SELECT preset_id, data FROM [system].[bot_presets] ORDER BY position",
-        )
-    ).recordset;
-    if (presetRows.length > 0) {
-      database.botPresets = presetRows.map((row) => {
-        const data =
-          typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-        const { id: _id, ...rest } = data;
-        return rest;
-      });
-      const activeId = database.activeBotPresetId;
-      database.botPresetsId = Math.max(
-        0,
-        presetRows.findIndex((row) => row.preset_id === activeId),
-      );
-    } else {
-      database.botPresets = database.botPresets || [];
-      database.botPresetsId = database.botPresetsId || 0;
-    }
-
-    return {
-      database,
-      revision: state.revision,
-      initialized: state.initialized,
-    };
   }
 
   async loadCharacter(characterId: unknown) {
@@ -1632,322 +1324,60 @@ class AzureStorage extends SqlStorageBase {
     target: AzureRequestTarget,
     chatId: string,
   ) {
-    const query = async (sqlText: string) =>
-      target
-        .request()
-        .input("legacyChatId", sql.NVarChar(450), chatId)
-        .query(sqlText);
-    const [
-      messagesRes,
-      attrsRes,
-      generationRes,
-      promptInfoRes,
-      togglesRes,
-      itemsRes,
-    ] = await Promise.all([
-      query(
-        "SELECT * FROM [chat].[messages] WHERE chat_id = @legacyChatId ORDER BY position, id",
+    const dialect = new AzureDialect(target);
+    return rebuildLinearMessages({
+      messages: await dialect.selectByKey("chat.messages", "chat_id", chatId),
+      attributes: await dialect.selectByKey(
+        "chat.message_attributes",
+        "chat_id",
+        chatId,
       ),
-      query(
-        "SELECT * FROM [chat].[message_attributes] WHERE chat_id = @legacyChatId ORDER BY message_id, [key]",
+      generations: await dialect.selectByKey(
+        "chat.message_generation",
+        "chat_id",
+        chatId,
       ),
-      query(
-        "SELECT * FROM [chat].[message_generation] WHERE chat_id = @legacyChatId",
+      promptInfos: await dialect.selectByKey(
+        "chat.message_prompt_info",
+        "chat_id",
+        chatId,
       ),
-      query(
-        "SELECT * FROM [chat].[message_prompt_info] WHERE chat_id = @legacyChatId",
+      promptToggles: await dialect.selectByKey(
+        "chat.message_prompt_toggles",
+        "chat_id",
+        chatId,
       ),
-      query(
-        "SELECT * FROM [chat].[message_prompt_toggles] WHERE chat_id = @legacyChatId ORDER BY message_id, position",
+      promptItems: await dialect.selectByKey(
+        "chat.message_prompt_items",
+        "chat_id",
+        chatId,
       ),
-      query(
-        "SELECT * FROM [chat].[message_prompt_items] WHERE chat_id = @legacyChatId ORDER BY message_id, position",
-      ),
-    ]);
-    const relations = {
-      attributes: groupMessageRows(attrsRes.recordset),
-      generation: new Map<string, MessageGenerationRow>(
-        generationRes.recordset.map((row) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
-      ),
-      promptInfo: new Map<string, MessagePromptInfoRow>(
-        promptInfoRes.recordset.map((row) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
-      ),
-      promptToggles: groupMessageRows(togglesRes.recordset),
-      promptItems: groupMessageRows(itemsRes.recordset),
-    };
-    return messagesRes.recordset.map((row) => {
-      const key = `${row.chat_id}\0${row.id}`;
-      return rebuildMessage(row, {
-        attributes: relations.attributes.get(key) || [],
-        generation: relations.generation.get(key) || null,
-        promptInfo: relations.promptInfo.get(key) || null,
-        promptToggles: relations.promptToggles.get(key) || [],
-        promptItems: relations.promptItems.get(key) || [],
-      });
     });
   }
 
   async migrateLegacyBranchState(target: AzureRequestTarget, chatId: string) {
-    let req = target.request();
-    req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
-    const legacyRes = await req.query(`
+    return migrateLegacyBranchStateWith(new AzureDialect(target), chatId, {
+      readLegacyState: async () => {
+        const req = target.request();
+        req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
+        const legacyRes = await req.query(`
             SELECT
                 (SELECT COUNT(*) FROM [chat].[branches] WHERE chat_id = @legacyBranchChatId) AS branch_count,
                 (SELECT TOP 1 [value] FROM [chat].[attributes]
                   WHERE chat_id = @legacyBranchChatId AND [key] = 'branchState') AS branch_state
         `);
-    const legacyRow = legacyRes.recordset[0] || {};
-    if (
-      Number(legacyRow.branch_count ?? 0) > 1 ||
-      legacyRow.branch_state == null
-    )
-      return false;
-    let branchState = legacyRow.branch_state;
-    if (typeof branchState === "string") branchState = JSON.parse(branchState);
-    branchState = decodePostgresJsonValue(branchState);
-    if (
-      !Array.isArray(branchState?.branches) ||
-      branchState.branches.length <= 1
-    )
-      return false;
-    const messages = await this._loadLinearMessagesForBranchMigration(
-      target,
-      chatId,
-    );
-    const plan = buildLegacyBranchMigrationPlan(
-      { id: chatId, message: messages, branchState },
-      () => crypto.randomUUID(),
-    );
-    if (!plan) return false;
-
-    req = target.request();
-    req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
-    await req.query(`
-            DELETE FROM [chat].[active_branches] WHERE chat_id = @legacyBranchChatId;
-            DELETE FROM [chat].[message_branch_links] WHERE chat_id = @legacyBranchChatId;
-            DELETE FROM [chat].[branches] WHERE chat_id = @legacyBranchChatId;
-        `);
-
-    const splitMessages: MessageSplit[] = plan.messages.map((message) =>
-      splitMessage({
-        chatId,
-        id: message.id,
-        position: message.position,
-        data: message.data,
-      }),
-    );
-    const msgCols = [
-      "chat_id",
-      "id",
-      "position",
-      "role",
-      "content_text",
-      "content_binary",
-      "saying_character_id",
-      "sent_time",
-      "sender_name",
-      "other_user",
-      "disabled_scope",
-      "is_comment",
-    ];
-    const msgTypes = [
-      "nvarchar(450)",
-      "nvarchar(450)",
-      "int",
-      "nvarchar(32)",
-      "nvarchar(max)",
-      "varbinary(max)",
-      "nvarchar(max)",
-      "bigint",
-      "nvarchar(max)",
-      "bit",
-      "nvarchar(32)",
-      "bit",
-    ];
-    await bulkInsert(
-      target,
-      "chat.messages",
-      msgCols,
-      msgTypes,
-      splitMessages.map((item) => item.core),
-      ["chat_id", "id"],
-    );
-
-    if (splitMessages.length > 0) {
-      req = target.request();
-      req.input(
-        "legacyMessagePairs",
-        sql.NVarChar(sql.MAX),
-        JSON.stringify(
-          splitMessages.map((item) => ({
-            chat_id: chatId,
-            message_id: item.core.id,
-          })),
-        ),
-      );
-      for (const table of [
-        "chat.message_attributes",
-        "chat.message_generation",
-        "chat.message_prompt_info",
-        "chat.message_prompt_toggles",
-        "chat.message_prompt_items",
-      ]) {
-        await req.query(`DELETE targetRows FROM ${assertSqlIdentifier(table)} targetRows
-                    INNER JOIN OPENJSON(@legacyMessagePairs) WITH (
-                        chat_id NVARCHAR(450) '$.chat_id', message_id NVARCHAR(450) '$.message_id'
-                    ) src ON targetRows.chat_id = src.chat_id AND targetRows.message_id = src.message_id;`);
-      }
-    }
-    await bulkInsert(
-      target,
-      "chat.message_attributes",
-      ["chat_id", "message_id", "key", "value"],
-      ["nvarchar(450)", "nvarchar(450)", "nvarchar(450)", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((attr) => ({
-          chat_id: chatId,
-          message_id: item.core.id,
-          key: attr.key,
-          value: JSON.stringify(attr.value),
-        })),
-      ),
-    );
-    await bulkInsert(
-      target,
-      "chat.message_generation",
-      [
-        "chat_id",
-        "message_id",
-        "model",
-        "generation_id",
-        "input_tokens",
-        "output_tokens",
-        "max_context",
-        "stage1_time",
-        "stage2_time",
-        "stage3_time",
-        "stage4_time",
-      ],
-      [
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "nvarchar(512)",
-        "nvarchar(450)",
-        "int",
-        "int",
-        "int",
-        "float",
-        "float",
-        "float",
-        "float",
-      ],
-      splitMessages.flatMap((item) =>
-        item.generation
-          ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }]
-          : [],
-      ),
-    );
-    await bulkInsert(
-      target,
-      "chat.message_prompt_info",
-      ["chat_id", "message_id", "prompt_name"],
-      ["nvarchar(450)", "nvarchar(450)", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
-        item.prompt?.info
-          ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }]
-          : [],
-      ),
-    );
-    await bulkInsert(
-      target,
-      "chat.message_prompt_toggles",
-      ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-      [
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "int",
-        "nvarchar(450)",
-        "nvarchar(max)",
-      ],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.toggles || []).map((row) => ({
-          ...row,
-          chat_id: chatId,
-          message_id: item.core.id,
-        })),
-      ),
-    );
-    await bulkInsert(
-      target,
-      "chat.message_prompt_items",
-      ["chat_id", "message_id", "position", "payload"],
-      ["nvarchar(450)", "nvarchar(450)", "int", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.items || []).map((row) => ({
-          chat_id: chatId,
-          message_id: item.core.id,
-          position: row.position,
-          payload: JSON.stringify(row.payload),
-        })),
-      ),
-    );
-
-    await bulkInsert(
-      target,
-      "chat.branches",
-      [
-        "chat_id",
-        "id",
-        "parent_branch_id",
-        "fork_message_id",
-        "head_message_id",
-        "reason",
-        "created_at",
-      ],
-      [
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "nvarchar(450)",
-        "nvarchar(32)",
-        "bigint",
-      ],
-      plan.branches.map((branch) => ({
-        chat_id: chatId,
-        id: branch.id,
-        parent_branch_id: branch.parentBranchId ?? null,
-        fork_message_id: branch.forkMessageId ?? null,
-        head_message_id: branch.headMessageId ?? null,
-        reason: branch.reason,
-        created_at: branch.createdAt,
-      })),
-    );
-    await bulkInsert(
-      target,
-      "chat.message_branch_links",
-      ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
-      ["nvarchar(450)", "nvarchar(450)", "nvarchar(450)", "nvarchar(450)"],
-      plan.links.map((link) => ({
-        chat_id: chatId,
-        message_id: link.messageId,
-        parent_message_id: link.parentMessageId ?? null,
-        origin_branch_id: link.originBranchId,
-      })),
-    );
-    req = target.request();
-    req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
-    req.input("legacyActiveBranchId", sql.NVarChar(450), plan.activeBranchId);
-    await req.query(
-      "INSERT INTO [chat].[active_branches] (chat_id, branch_id) VALUES (@legacyBranchChatId, @legacyActiveBranchId)",
-    );
-    return true;
+        const legacyRow = legacyRes.recordset[0] || {};
+        return {
+          branchCount: Number(legacyRow.branch_count ?? 0),
+          branchState: legacyRow.branch_state ?? null,
+        };
+      },
+      readLinearMessages: () =>
+        this._loadLinearMessagesForBranchMigration(target, chatId),
+      decodeState: (value) =>
+        decodePostgresJsonValue(decodeLegacyBranchState(value)),
+      newId: () => crypto.randomUUID(),
+    });
   }
 
   async ensureChatBranchGraphs(

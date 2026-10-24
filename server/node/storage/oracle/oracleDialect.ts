@@ -127,6 +127,91 @@ const COLUMN_RENAMES: Readonly<
   "cold.message_attributes": { key: "key_value" },
 };
 
+/**
+ * Read hints for tables whose LOB columns the spec does not declare yet.
+ *
+ * `selectOrdered` needs to know which columns arrive as CLOB/BLOB locators;
+ * `oracledb` already fetches them as strings/buffers globally, so this is the
+ * safety net and the place the write path's neutral types will replace it.
+ * 스펙에 컬럼이 선언되지 않은 테이블의 LOB 컬럼 목록입니다.
+ */
+const LOB_COLUMNS: Readonly<
+  Record<string, { text?: readonly string[]; binary?: readonly string[] }>
+> = {
+  "system.settings": { text: ["text_val"] },
+  "system.setting_values": {
+    text: [
+      "member_key",
+      "encoded_member_key",
+      "text_value",
+      "encoded_text_value",
+    ],
+  },
+  "system.module_values": {
+    text: [
+      "member_key",
+      "encoded_member_key",
+      "text_value",
+      "encoded_text_value",
+    ],
+  },
+  "system.plugin_values": {
+    text: [
+      "member_key",
+      "encoded_member_key",
+      "text_value",
+      "encoded_text_value",
+    ],
+  },
+  "system.plugin_scripts": { text: ["script"] },
+  "system.bot_presets": { text: ["image", "data"] },
+  "character.characters": {
+    text: [
+      "image",
+      "first_message",
+      "description",
+      "notes",
+      "creator_notes",
+      "system_prompt",
+      "post_history_instructions",
+      "personality",
+      "scenario",
+      "example_message",
+      "license",
+      "default_variables",
+      "additional_text",
+      "translator_note",
+      "background_html",
+      "background_css",
+    ],
+  },
+  "character.attributes": { text: ["value"] },
+  "character.tags": {},
+  "character.greetings": { text: ["content"] },
+  "character.emotions": { text: ["asset"] },
+  "character.scripts": {
+    text: ["comment", "input_text", "output_text", "flag", "trigger_payload"],
+  },
+  "character.sd_data": { text: ["value"] },
+  "character.assets": { text: ["uri", "extra_value"] },
+  "character.lore_entries": {
+    text: ["comment", "content"],
+    binary: [],
+  },
+  "chat.chats": {
+    text: ["note", "sd_data", "supa_memory_data", "last_memory"],
+  },
+  "chat.attributes": { text: ["value"] },
+  "chat.suggestions": { text: ["content"] },
+  "chat.script_state": { text: ["text_value"] },
+  "chat.memory": { text: ["payload"] },
+  "chat.lore_entries": { text: ["comment", "content"] },
+  "chat.messages": { text: ["content_text"], binary: ["content_binary"] },
+  "chat.message_attributes": { text: ["value"] },
+  "chat.message_prompt_toggles": { text: ["toggle_value"] },
+  "chat.message_prompt_items": { text: ["payload"] },
+};
+
 /** Short strings can bind straight to CLOB columns below this size. */
 const STRING_BIND_MAX_BYTES = 4000;
 /** Rows per `executeMany` call; matches the driver's existing chunk. */
@@ -489,29 +574,65 @@ export class OracleDialect implements SqlDialect {
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const rows: unknown[] = result.rows || [];
+    const hydrated: SqlRow[] = [];
+    for (const raw of rows) hydrated.push(await this.restoreRow(table, raw));
+    return hydrated;
+  }
+
+  /**
+   * Canonicalizes one raw Oracle row: upper-case keys, reserved-word renames,
+   * LOB locators and the empty-string sentinel.
+   * Oracle이 돌려준 행을 canonical 형태로 되돌립니다.
+   */
+  private async restoreRow(table: string, raw: unknown): Promise<SqlRow> {
+    const spec = sqlTable(table);
     // Type information comes from the spec where it is declared; the driver
     // also sets fetchAsString/fetchAsBuffer globally for everything else.
     const textColumns = new Set<string>();
     const binaryColumns = new Set<string>();
     for (const [column, type] of spec.columns ?? []) {
-      const canonical = ORACLE_TO_CANONICAL[column] || column;
-      if (type === "binary") binaryColumns.add(canonical);
-      else if (type === "text" || type === "json") textColumns.add(canonical);
+      if (type === "binary") binaryColumns.add(column);
+      else if (type === "text" || type === "json") textColumns.add(column);
     }
-    const hydrated: SqlRow[] = [];
-    for (const raw of rows) {
-      const row = mapRow(raw);
-      for (const [key, value] of Object.entries(row)) {
-        if (value === null || value === undefined) continue;
-        if (binaryColumns.has(key)) row[key] = await lobToBuffer(value);
-        else if (textColumns.has(key)) row[key] = await lobToString(value);
-      }
-      for (const key of Object.keys(row)) {
-        if (row[key] === "\u0000") row[key] = "";
-      }
-      hydrated.push(row);
+    const hints = LOB_COLUMNS[table];
+    for (const column of hints?.text ?? []) textColumns.add(column);
+    for (const column of hints?.binary ?? []) {
+      binaryColumns.add(column);
+      textColumns.delete(column);
     }
-    return hydrated;
+    const row = mapRow(raw);
+    for (const [key, value] of Object.entries(row)) {
+      if (value === null || value === undefined) continue;
+      if (binaryColumns.has(key)) row[key] = await lobToBuffer(value);
+      else if (textColumns.has(key)) row[key] = await lobToString(value);
+    }
+    for (const key of Object.keys(row)) {
+      if (row[key] === "\u0000") row[key] = "";
+    }
+    return row;
+  }
+
+  async selectByKey(
+    table: string,
+    column: string,
+    value: string,
+  ): Promise<SqlRow[]> {
+    const spec = sqlTable(table);
+    const order =
+      spec.orderBy.length > 0
+        ? ` ORDER BY ${spec.orderBy
+            .map((name) => physicalColumn(table, name))
+            .join(", ")}`
+        : "";
+    const result = await this.connection.execute(
+      `SELECT * FROM ${quoteTable(table)} WHERE ${physicalColumn(table, column)} = :1${order}`,
+      [value],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const rows: unknown[] = result.rows || [];
+    const restored: SqlRow[] = [];
+    for (const raw of rows) restored.push(await this.restoreRow(table, raw));
+    return restored;
   }
 
   async countRows(table: string): Promise<number> {

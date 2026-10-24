@@ -252,6 +252,23 @@ export class PostgresDialect implements SqlDialect {
     return result.rows;
   }
 
+  async selectByKey(
+    table: string,
+    column: string,
+    value: string,
+  ): Promise<SqlRow[]> {
+    const spec = sqlTable(table);
+    const order =
+      spec.orderBy.length > 0
+        ? ` ORDER BY ${spec.orderBy.map(quote).join(", ")}`
+        : "";
+    const result = await this.client.query<SqlRow>(
+      `SELECT * FROM ${quoteTable(table)} WHERE ${quote(column)} = $1${order}`,
+      [value],
+    );
+    return result.rows;
+  }
+
   async countRows(table: string): Promise<number> {
     const result = await this.client.query<{ count: number | string }>(
       `SELECT COUNT(*)::bigint AS count FROM ${quoteTable(table)}`,

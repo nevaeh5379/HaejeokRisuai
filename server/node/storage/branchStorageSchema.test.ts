@@ -98,19 +98,28 @@ describe("legacy branch migration wiring", () => {
   ] as const) {
     it(`${label} migrates legacy branchState before creating a synthetic root`, () => {
       const source = readSource(vendor, file);
-      expect(source).toContain("buildLegacyBranchMigrationPlan");
+      // The plan itself is shared; the driver must still delegate to it and
+      // run the migration before a synthetic root can be created.
       expect(source).toContain("async migrateLegacyBranchState");
+      expect(source).toContain("migrateLegacyBranchStateWith(");
+      expect(source).toContain("newId: () => crypto.randomUUID()");
       expect(source).toMatch(
         /ensureChatBranchGraph[\s\S]{0,500}migrateLegacyBranchState/,
+      );
+      expect(read("storage/sqlBranchMigration.ts")).toContain(
+        "buildLegacyBranchMigrationPlan",
       );
     });
 
     it(`${label} keeps legacy branchState as archival recovery data after migration`, () => {
       const source = readSource(vendor, file);
       const start = source.indexOf("async migrateLegacyBranchState");
-      const end = source.indexOf("async ensureChatBranchGraph", start);
-      const migration = source.slice(start, end);
+      const end = source.indexOf("\n  async ", start + 10);
+      const migration = source.slice(start, end < 0 ? undefined : end);
       expect(migration).not.toMatch(/DELETE[\s\S]{0,180}branchState/);
+      expect(read("storage/sqlBranchMigration.ts")).not.toMatch(
+        /DELETE[\s\S]{0,180}branchState/,
+      );
     });
   }
 
