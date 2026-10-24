@@ -51,6 +51,7 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
 
 const POSTGRES_SCHEMA_VERSION = 4;
@@ -370,11 +371,12 @@ import {
   PostgresRevisionConflictError,
   PostgresPayloadError,
 } from "../storageErrors.ts";
+const helpers: SqlStorageHelpers = createSqlStorageHelpers({
+  PayloadError: PostgresPayloadError,
+  maxIdLength: 1024,
+});
 const {
   asArray,
-  assertId,
-  assertPosition,
-  assertData,
   normalizeColdStorageKey,
   validateColdStorageValue,
   splitColdStorageValue,
@@ -383,10 +385,13 @@ const {
   validateSyncPayload,
   captureSyncCommitImpact,
   dedupeRootUpserts,
-} = createSqlStorageHelpers({
-  PayloadError: PostgresPayloadError,
-  maxIdLength: 1024,
-});
+} = helpers;
+// Assertion helpers need an explicit type annotation on their name before they
+// can be called as assertions, so they cannot be destructured.
+const assertId: SqlStorageHelpers["assertId"] = helpers.assertId;
+const assertPosition: SqlStorageHelpers["assertPosition"] =
+  helpers.assertPosition;
+const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
 
 function assertDbExplorerIdentifier(value?: any, field?: any) {
   if (typeof value !== "string" || value.length === 0 || value.length > 128) {
@@ -594,6 +599,14 @@ async function pruneKeyedChildren(
 export type PostgresStorageContract = PostgresStorage;
 
 class PostgresStorage extends SqlStorageBase {
+  // The `pg` package ships no type definitions and is loaded lazily.
+  declare pool: any;
+  declare connectionString: string;
+  declare poolMax: number;
+  declare postgresSchemaSql: string | null;
+  declare schemaRecoveryPromise: Promise<void> | null;
+  declare startupSettings: ReturnType<typeof readStorageStartupSettings>;
+
   constructor(options: any = {}) {
     super();
     this.connectionString = options.connectionString || "";
@@ -5096,7 +5109,7 @@ class PostgresStorage extends SqlStorageBase {
             -1,
           ) + 1;
         for (const entry of payload.plugins.upserts) {
-          const data = entry.data || {};
+          const data = (entry.data || {}) as Record<string, unknown>;
           if (typeof data.name !== "string" || data.name.length === 0) {
             throw new PostgresPayloadError(
               `Plugin ${entry.id} must have a non-empty name`,

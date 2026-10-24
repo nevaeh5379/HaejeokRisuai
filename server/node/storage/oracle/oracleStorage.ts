@@ -77,13 +77,16 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
 
+const helpers: SqlStorageHelpers = createSqlStorageHelpers({
+  PayloadError: StoragePayloadError,
+  allowShortColdStorageKeys: true,
+  suppressLegacyReadErrors: true,
+});
 const {
   asArray,
-  assertId,
-  assertPosition,
-  assertData,
   normalizeColdStorageKey,
   validateColdStorageValue,
   splitColdStorageValue,
@@ -92,11 +95,13 @@ const {
   validateSyncPayload,
   captureSyncCommitImpact,
   dedupeRootUpserts,
-} = createSqlStorageHelpers({
-  PayloadError: StoragePayloadError,
-  allowShortColdStorageKeys: true,
-  suppressLegacyReadErrors: true,
-});
+} = helpers;
+// Assertion helpers need an explicit type annotation on their name before they
+// can be called as assertions, so they cannot be destructured.
+const assertId: SqlStorageHelpers["assertId"] = helpers.assertId;
+const assertPosition: SqlStorageHelpers["assertPosition"] =
+  helpers.assertPosition;
+const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
 
 // Oracle LOB 컬럼을 자동으로 string 및 Buffer로 가져오도록 글로벌 설정 (성능 최적화 및 스트림 행 방지)
 try {
@@ -824,6 +829,16 @@ async function deleteMessageChildren(
 }
 
 class OracleStorage extends SqlStorageBase {
+  // The `oracledb` package ships no type definitions and is loaded lazily.
+  declare pool: any;
+  declare user: string;
+  declare password: string;
+  declare tnsAlias: string;
+  declare walletPath: string;
+  declare walletPassword: string;
+  declare poolMax: number;
+  declare startupSettings: ReturnType<typeof readStorageStartupSettings>;
+
   constructor(options: any = {}) {
     super();
     this.user = options.user || "";
@@ -4337,7 +4352,7 @@ class OracleStorage extends SqlStorageBase {
             VALUES
             (:plugin_id,:position,:name,:display_name,:api_version,:plugin_version,:update_url,:enabled,SYSTIMESTAMP)`;
         for (const entry of payload.plugins.upserts) {
-          const data = entry.data || {};
+          const data = (entry.data || {}) as Record<string, unknown>;
           if (typeof data.name !== "string" || data.name.length === 0) {
             throw new StoragePayloadError(
               `Plugin ${entry.id} must have a non-empty name`,
@@ -4480,7 +4495,7 @@ class OracleStorage extends SqlStorageBase {
             position:
               entry.position ?? positions.get(entry.id) ?? nextPosition++,
             name: data.name || "",
-            image: clobBind(data.image || ""),
+            image: clobBind((data.image || "") as string),
             api_type: data.apiType || "",
             ai_model: data.aiModel || "",
             data: clobBind(serialized),

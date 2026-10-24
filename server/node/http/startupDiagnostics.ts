@@ -30,7 +30,16 @@ function readBoundedInteger(
   return parsed;
 }
 
-function readStorageStartupSettings(env: any = process.env): any {
+/** Startup timings shared by every relational storage driver. */
+type StorageStartupSettings = {
+  startupTimeoutMs: number;
+  connectTimeoutMs: number;
+  heartbeatMs: number;
+};
+
+function readStorageStartupSettings(
+  env: any = process.env,
+): StorageStartupSettings {
   const startupTimeoutMs: any = readBoundedInteger(
     env.RISU_STORAGE_STARTUP_TIMEOUT_MS,
     DEFAULT_STORAGE_STARTUP_TIMEOUT_MS,

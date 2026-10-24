@@ -121,8 +121,23 @@ export type AuthRequest = {
   query?: Record<string, unknown>;
 };
 
+/**
+ * Driver-specific members the server reads across every SQL vendor: pool
+ * shutdown and the connection fields used to identify the storage target.
+ */
+export interface ServerSqlStorageVendorFields {
+  /** The Postgres driver keeps no closable pool of its own. */
+  close?(): Promise<void>;
+  user?: string;
+  tnsAlias?: string;
+  server?: string;
+  database?: string;
+  port?: number;
+}
+
 // The SQL drivers share the Postgres API plus the base class contracts used
 // by restore and plugin routes; the base class is still a CommonJS module.
 export type ServerSqlStorage = PostgresStorageContract &
   ReturnType<ConstructorParameters<typeof LocalBackupImportRecordStore>[0]> &
-  ReturnType<PluginStorageRouteDependencies["getStorage"]>;
+  ReturnType<PluginStorageRouteDependencies["getStorage"]> &
+  ServerSqlStorageVendorFields;

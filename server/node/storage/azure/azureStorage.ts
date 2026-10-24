@@ -63,13 +63,16 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
 
+const helpers: SqlStorageHelpers = createSqlStorageHelpers({
+  PayloadError: StoragePayloadError,
+  allowShortColdStorageKeys: true,
+  suppressLegacyReadErrors: true,
+});
 const {
   asArray,
-  assertId,
-  assertPosition,
-  assertData,
   normalizeColdStorageKey,
   validateColdStorageValue,
   splitColdStorageValue,
@@ -78,11 +81,13 @@ const {
   validateSyncPayload,
   captureSyncCommitImpact,
   dedupeRootUpserts,
-} = createSqlStorageHelpers({
-  PayloadError: StoragePayloadError,
-  allowShortColdStorageKeys: true,
-  suppressLegacyReadErrors: true,
-});
+} = helpers;
+// Assertion helpers need an explicit type annotation on their name before they
+// can be called as assertions, so they cannot be destructured.
+const assertId: SqlStorageHelpers["assertId"] = helpers.assertId;
+const assertPosition: SqlStorageHelpers["assertPosition"] =
+  helpers.assertPosition;
+const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
 
 function mapSettingValueToColumns(value?: any) {
   if (typeof value === "boolean") {
@@ -451,7 +456,41 @@ async function bulkInsert(
   }
 }
 
+/** A cold-storage archive row; the payload shape follows the archive `kind`. */
+type AzureColdStorageArchive = {
+  key: string;
+  revision: number;
+  updated_at: unknown;
+} & (
+  | { kind: "legacy"; data: unknown[] }
+  | {
+      kind: "character";
+      data: {
+        character: Record<string, unknown> & {
+          name?: unknown;
+          chats?: unknown[];
+        };
+      };
+    }
+  | {
+      kind: "chat";
+      data: Record<string, unknown> & { message?: unknown[] };
+    }
+);
+
 class AzureStorage extends SqlStorageBase {
+  declare pool: import("mssql").ConnectionPool | null;
+  declare poolPromise: Promise<import("mssql").ConnectionPool> | null;
+  declare options: Record<string, unknown>;
+  declare server: string;
+  declare database: string;
+  declare user: string;
+  declare password: string;
+  declare port: number;
+  declare poolMax: number;
+  declare schemaPath: string;
+  declare startupSettings: ReturnType<typeof readStorageStartupSettings>;
+
   constructor(options: any = {}) {
     super();
     this.options = { ...options };
@@ -3224,7 +3263,7 @@ class AzureStorage extends SqlStorageBase {
             -1,
           ) + 1;
         for (const entry of payload.plugins.upserts) {
-          const data = entry.data || {};
+          const data = (entry.data || {}) as Record<string, unknown>;
           if (typeof data.name !== "string" || data.name.length === 0) {
             throw new StoragePayloadError(
               `Plugin ${entry.id} must have a non-empty name`,
@@ -3643,7 +3682,7 @@ class AzureStorage extends SqlStorageBase {
         const shallowPayloadChars = [];
 
         for (const charRow of payload.characters) {
-          const data = charRow.data || {};
+          const data = (charRow.data || {}) as Record<string, unknown>;
           const isShallow =
             !payload.replaceAll &&
             (data.detailsLoaded === false ||
@@ -4062,14 +4101,10 @@ class AzureStorage extends SqlStorageBase {
       if (payload.characterTouches.length > 0) {
         for (const touch of payload.characterTouches) {
           const touchRequest = tx.request();
-          touchRequest.input(
-            "character_touch_id",
-            this.sql.NVarChar(450),
-            touch.id,
-          );
+          touchRequest.input("character_touch_id", sql.NVarChar(450), touch.id);
           touchRequest.input(
             "character_touch_time",
-            this.sql.BigInt,
+            sql.BigInt,
             touch.lastInteraction,
           );
           await touchRequest.query(`
@@ -4093,7 +4128,7 @@ class AzureStorage extends SqlStorageBase {
         const shallowPayloadChats = [];
 
         for (const chatRow of payload.chats) {
-          const data = chatRow.data || {};
+          const data = (chatRow.data || {}) as Record<string, unknown>;
           const isShallow =
             !payload.replaceAll &&
             (data.detailsLoaded === false ||
@@ -5075,7 +5110,9 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async loadColdStorage(key?: any) {
+  // The archive payload shape follows `kind`: raw rows for legacy archives, a
+  // character graph for characters, and a chat object for chats.
+  async loadColdStorage(key?: any): Promise<AzureColdStorageArchive | null> {
     const normalizedKey = normalizeColdStorageKey(key);
     const pool = await this.getPool();
 
@@ -5307,7 +5344,8 @@ class AzureStorage extends SqlStorageBase {
       };
     }
 
-    const chat = chats[0] || {};
+    const chat: Record<string, unknown> & { message?: unknown[] } =
+      chats[0] || {};
     return {
       key: normalizedKey,
       kind: "chat",
