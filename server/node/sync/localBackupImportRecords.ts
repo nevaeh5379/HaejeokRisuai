@@ -371,11 +371,11 @@ export class LocalBackupImportRecordStore {
     const result = await (client as OracleClient).execute(
       `SELECT sequence_no, tier, payload
          FROM system_local_backup_import_records
-        WHERE restore_id = :1
-          AND (tier > :2 OR (tier = :2 AND sequence_no > :3))
+        WHERE restore_id = :restore_id
+          AND (tier > :last_tier OR (tier = :last_tier AND sequence_no > :last_sequence))
         ORDER BY tier, sequence_no
         FETCH FIRST ${PAGE_SIZE} ROWS ONLY`,
-      [id, lastTier, lastSequence],
+      { restore_id: id, last_tier: lastTier, last_sequence: lastSequence },
       { outFormat: (await loadOracle()).OUT_FORMAT_ARRAY },
     );
     return (result.rows ?? []).map((row) => ({
