@@ -300,10 +300,47 @@ describe("table spec conformance", () => {
   const schemaRoot = resolve(import.meta.dirname);
 
   /** Crude but sufficient parser: table → column → physical type. */
+  /**
+   * Parses the three schema files into `table → column → physical type`.
+   * Bodies are split on top-level commas because Azure puts several columns on
+   * one line.
+   */
   function parseSchema(file: string, kind: "pg" | "azure" | "oracle") {
     const text = readFileSync(resolve(schemaRoot, file), "utf8");
     const tables = new Map<string, Map<string, string>>();
+    const CONSTRAINT_KEYWORDS = new Set([
+      "primary",
+      "unique",
+      "constraint",
+      "foreign",
+      "index",
+      "check",
+      "on",
+      "deferrable",
+      "references",
+    ]);
+
+    /** Splits a fragment list on commas that are not inside parentheses. */
+    function splitTopLevel(input: string): string[] {
+      const parts: string[] = [];
+      let depth = 0;
+      let current = "";
+      for (const char of input) {
+        if (char === "(") depth += 1;
+        if (char === ")") depth -= 1;
+        if (char === "," && depth === 0) {
+          parts.push(current);
+          current = "";
+          continue;
+        }
+        current += char;
+      }
+      parts.push(current);
+      return parts;
+    }
+
     let current: string | null = null;
+    let body = "";
     for (const rawLine of text.split("\n")) {
       const line = rawLine.trim();
       const create = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(.+?)\s*\($/i.exec(
@@ -315,43 +352,33 @@ describe("table spec conformance", () => {
           .replace(/\s+/g, "")
           .toLowerCase();
         current = name;
+        body = "";
         tables.set(current, new Map());
         continue;
       }
-      if (current && line.startsWith(")")) {
+      if (current === null) continue;
+      if (/^\)[^)]*$/.test(line)) {
+        for (const fragment of splitTopLevel(body)) {
+          const parsed =
+            /^[[\]"]?([A-Za-z_][A-Za-z0-9_]*)[\]"]?\s+([A-Za-z][A-Za-z0-9_ ()']*)/.exec(
+              fragment.trim(),
+            );
+          if (!parsed) continue;
+          const column = parsed[1].toLowerCase();
+          if (CONSTRAINT_KEYWORDS.has(column)) continue;
+          const physicalType = parsed[2]
+            .toLowerCase()
+            .replace(
+              /\s+(not|null|check|default|primary|references|unique|generated|collate|constraint).*$/,
+              "",
+            )
+            .trim();
+          tables.get(current)?.set(column, physicalType);
+        }
         current = null;
         continue;
       }
-      if (!current) continue;
-      const column =
-        /^(?:[[\]"]?([A-Za-z_][A-Za-z0-9_]*)[\]"]?)\s+([A-Za-z][A-Za-z0-9_ ()']*)/.exec(
-          line,
-        );
-      if (!column) continue;
-      const name = column[1].toLowerCase();
-      const physicalType = column[2]
-        .toLowerCase()
-        .replace(
-          /\s+(not|null|check|default|primary|references|unique|generated|collate).*$/,
-          "",
-        )
-        .trim();
-      if (
-        [
-          "primary",
-          "unique",
-          "constraint",
-          "foreign",
-          "index",
-          "check",
-          "on",
-          "deferrable",
-          "references",
-        ].includes(name)
-      ) {
-        continue;
-      }
-      tables.get(current)?.set(name, physicalType);
+      body += ` ${line}`;
     }
     return tables;
   }

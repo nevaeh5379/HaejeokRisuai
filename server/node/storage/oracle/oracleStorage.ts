@@ -277,7 +277,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
   createSettingColumnMappers,
@@ -298,6 +297,7 @@ import {
   rebuildLinearMessages,
 } from "../sqlBranchMigration.ts";
 import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { syncModuleRecords } from "../sqlSyncDomain.ts";
 import { OracleDialect } from "./oracleDialect.ts";
 import {
   buildChatBranchGraph,
@@ -3746,103 +3746,15 @@ class OracleStorage extends SqlStorageBase {
       }
 
       if (payload.modules) {
-        const existing = await fetchRows<ModuleRecordRow>(
-          conn,
-          "SELECT module_id, position FROM system_module_records ORDER BY position",
+        await syncModuleRecords(
+          new OracleDialect(conn),
+          payload.modules,
+          {
+            replaceAll: Boolean(payload.replaceAll),
+            legacyMergeAllowed: !external?.storageSyncImport,
+          },
+          payload,
         );
-        if (
-          !payload.replaceAll &&
-          existing.length === 0 &&
-          !external?.storageSyncImport
-        ) {
-          const settings = await fetchRows<OracleSettingScalarRow>(
-            conn,
-            "SELECT * FROM system_settings WHERE key = 'modules'",
-          );
-          const values = await fetchRows<SettingValueRow>(
-            conn,
-            "SELECT * FROM system_setting_values WHERE setting_key = 'modules' ORDER BY node_id",
-            [],
-            {
-              clobColumns: [
-                "member_key",
-                "encoded_member_key",
-                "text_value",
-                "encoded_text_value",
-              ],
-            },
-          );
-          mergeLegacyModulesIntoPayload(
-            payload,
-            rebuildSettings(settings, values).modules,
-          );
-        }
-        for (const id of payload.modules.deletes) {
-          await conn.execute(
-            "DELETE FROM system_module_records WHERE module_id = :1",
-            [id],
-          );
-        }
-        if (payload.modules.order) {
-          await conn.execute(
-            "UPDATE system_module_records SET position = position + 1000000000",
-          );
-        }
-        const positions = new Map<string, number>(
-          existing.map((row) => [row.module_id, Number(row.position)]),
-        );
-        const mergeModule = `MERGE INTO system_module_records t
-                    USING (SELECT :module_id module_id FROM dual) s ON (t.module_id=s.module_id)
-                    WHEN MATCHED THEN UPDATE SET t.position=:position,t.updated_at=SYSTIMESTAMP
-                    WHEN NOT MATCHED THEN INSERT (module_id,position,updated_at)
-                    VALUES (:module_id,:position,SYSTIMESTAMP)`;
-        for (const entry of payload.modules.upserts) {
-          await conn.execute(mergeModule, {
-            module_id: entry.id,
-            position: entry.position ?? positions.get(entry.id) ?? 0,
-          });
-        }
-        if (payload.modules.upserts.length > 0) {
-          await conn.executeMany(
-            "DELETE FROM system_module_values WHERE module_id = :1",
-            payload.modules.upserts.map((entry) => [entry.id]),
-          );
-          const rows = payload.modules.upserts.flatMap((entry) =>
-            splitSetting(entry.id, entry.data).values.map(
-              (row: SettingValueRow) => ({
-                ...row,
-                module_id: row.setting_key,
-              }),
-            ),
-          );
-          await this._bulkInsertRows(
-            conn,
-            "system_module_values",
-            [
-              "module_id",
-              "node_id",
-              "parent_node_id",
-              "member_key",
-              "encoded_member_key",
-              "position",
-              "value_type",
-              "text_value",
-              "encoded_text_value",
-              "number_value",
-              "boolean_value",
-            ],
-            rows,
-            onProgress,
-          );
-        }
-        if (payload.modules.order) {
-          for (const [position, id] of payload.modules.order.entries()) {
-            await conn.execute(
-              "UPDATE system_module_records SET position = :1 WHERE module_id = :2",
-              [position, id],
-            );
-          }
-        }
       }
 
       if (payload.plugins) {

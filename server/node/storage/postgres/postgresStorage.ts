@@ -146,7 +146,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
   createSettingColumnMappers,
@@ -165,6 +164,7 @@ import {
   rebuildLinearMessages,
 } from "../sqlBranchMigration.ts";
 import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { syncModuleRecords } from "../sqlSyncDomain.ts";
 import { PostgresDialect } from "./postgresDialect.ts";
 import {
   buildChatBranchGraph,
@@ -4695,64 +4695,15 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       if (payload.modules) {
-        const existing = (
-          await client.query<ModuleRecordRow>(
-            "SELECT module_id, position FROM system.module_records ORDER BY position",
-          )
-        ).rows;
-        if (
-          !payload.replaceAll &&
-          existing.length === 0 &&
-          !external?.storageSyncImport
-        ) {
-          const legacySettings = (
-            await client.query<SettingScalarRow>(
-              "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'",
-            )
-          ).rows;
-          const legacyValues = (
-            await client.query<SettingValueRow>(
-              "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id",
-            )
-          ).rows;
-          const legacy = rebuildSettingRows(
-            legacySettings,
-            legacyValues,
-          ).modules;
-          mergeLegacyModulesIntoPayload(payload, legacy);
-        }
-        if (payload.modules.deletes.length) {
-          await client.query(
-            "DELETE FROM system.module_records WHERE module_id = ANY($1::text[])",
-            [payload.modules.deletes],
-          );
-        }
-        if (payload.modules.order) {
-          await client.query(
-            "UPDATE system.module_records SET position = position + 1000000000",
-          );
-        }
-        const positions = new Map<string, number>(
-          existing.map((row) => [row.module_id, Number(row.position)]),
+        await syncModuleRecords(
+          new PostgresDialect(client),
+          payload.modules,
+          {
+            replaceAll: Boolean(payload.replaceAll),
+            legacyMergeAllowed: !external?.storageSyncImport,
+          },
+          payload,
         );
-        for (const entry of payload.modules.upserts) {
-          const position = entry.position ?? positions.get(entry.id) ?? 0;
-          await client.query(
-            `INSERT INTO system.module_records (module_id, position, updated_at)
-                         VALUES ($1, $2, NOW()) ON CONFLICT (module_id) DO UPDATE SET
-                         position=EXCLUDED.position, updated_at=NOW()`,
-            [entry.id, position],
-          );
-        }
-        await replaceModuleValueRows(client, payload.modules.upserts);
-        if (payload.modules.order) {
-          for (const [position, id] of payload.modules.order.entries()) {
-            await client.query(
-              "UPDATE system.module_records SET position = $1 WHERE module_id = $2",
-              [position, id],
-            );
-          }
-        }
       }
 
       if (payload.plugins) {

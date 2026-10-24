@@ -109,7 +109,6 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  mergeLegacyModulesIntoPayload,
   pluginExtensionData,
   rebuildPluginRecords,
   createSettingColumnMappers,
@@ -130,6 +129,7 @@ import {
   rebuildLinearMessages,
 } from "../sqlBranchMigration.ts";
 import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { syncModuleRecords } from "../sqlSyncDomain.ts";
 import { AzureDialect } from "./azureDialect.ts";
 import {
   buildChatBranchGraph,
@@ -2533,126 +2533,15 @@ class AzureStorage extends SqlStorageBase {
       }
 
       if (payload.modules) {
-        const existing = (
-          await tx
-            .request()
-            .query(
-              "SELECT module_id, position FROM [system].[module_records] ORDER BY position",
-            )
-        ).recordset;
-        if (
-          !payload.replaceAll &&
-          existing.length === 0 &&
-          !external?.storageSyncImport
-        ) {
-          const settings = (
-            await tx
-              .request()
-              .query(
-                "SELECT [key] FROM [system].[settings] WHERE [key]='modules'",
-              )
-          ).recordset;
-          const values = (
-            await tx
-              .request()
-              .query(
-                "SELECT * FROM [system].[setting_values] WHERE setting_key='modules' ORDER BY node_id",
-              )
-          ).recordset;
-          mergeLegacyModulesIntoPayload(
-            payload,
-            rebuildSettings(settings, values).modules,
-          );
-        }
-        for (const id of payload.modules.deletes) {
-          const request = tx.request();
-          request.input("id", sql.NVarChar(450), id);
-          await request.query(
-            "DELETE FROM [system].[module_records] WHERE module_id=@id",
-          );
-        }
-        if (payload.modules.order) {
-          await tx
-            .request()
-            .query(
-              "UPDATE [system].[module_records] SET position=position+1000000000",
-            );
-        }
-        const positions = new Map<string, number>(
-          existing.map((row) => [row.module_id, Number(row.position)]),
+        await syncModuleRecords(
+          new AzureDialect(tx),
+          payload.modules,
+          {
+            replaceAll: Boolean(payload.replaceAll),
+            legacyMergeAllowed: !external?.storageSyncImport,
+          },
+          payload,
         );
-        for (const entry of payload.modules.upserts) {
-          const request = tx.request();
-          request.input("id", sql.NVarChar(450), entry.id);
-          request.input(
-            "position",
-            sql.Int,
-            entry.position ?? positions.get(entry.id) ?? 0,
-          );
-          await request.query(`MERGE [system].[module_records] AS t
-                        USING (SELECT @id module_id) AS s ON t.module_id=s.module_id
-                        WHEN MATCHED THEN UPDATE SET position=@position,updated_at=SYSDATETIMEOFFSET()
-                        WHEN NOT MATCHED THEN INSERT (module_id,position) VALUES (@id,@position);`);
-        }
-        if (payload.modules.upserts.length > 0) {
-          const ids = payload.modules.upserts
-            .map((entry) => `'${entry.id.replace(/'/g, "''")}'`)
-            .join(", ");
-          await tx
-            .request()
-            .query(
-              `DELETE FROM [system].[module_values] WHERE module_id IN (${ids})`,
-            );
-          const rows = payload.modules.upserts.flatMap((entry) =>
-            splitSetting(entry.id, entry.data).values.map(
-              (row: SettingValueRow) => ({
-                ...row,
-                module_id: row.setting_key,
-              }),
-            ),
-          );
-          await bulkInsert(
-            tx,
-            "system.module_values",
-            [
-              "module_id",
-              "node_id",
-              "parent_node_id",
-              "member_key",
-              "encoded_member_key",
-              "position",
-              "value_type",
-              "text_value",
-              "encoded_text_value",
-              "number_value",
-              "boolean_value",
-            ],
-            [
-              "nvarchar(450)",
-              "int",
-              "int",
-              "nvarchar(max)",
-              "nvarchar(max)",
-              "int",
-              "nvarchar(32)",
-              "nvarchar(max)",
-              "nvarchar(max)",
-              "float",
-              "bit",
-            ],
-            rows,
-          );
-        }
-        if (payload.modules.order) {
-          for (const [position, id] of payload.modules.order.entries()) {
-            const request = tx.request();
-            request.input("id", sql.NVarChar(450), id);
-            request.input("position", sql.Int, position);
-            await request.query(
-              "UPDATE [system].[module_records] SET position=@position WHERE module_id=@id",
-            );
-          }
-        }
       }
 
       if (payload.plugins) {
