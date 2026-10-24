@@ -102,12 +102,9 @@ import {
   type PositionalOwnerLength,
   type RecentChatRow,
   type RestoreMetadataRow,
-  type RestorePreviewSummary,
   type RestoreTable,
-  type RevisionDiffEntry,
   type RevisionListRow,
   type RevisionRow,
-  type RevisionTableSummary,
   type SettingScalarRow,
   type SettingValueRow,
   type SqlStorageRow,
@@ -168,6 +165,22 @@ import {
   type SqlStorageHelpers,
   type ScalarSettingColumns,
 } from "../sqlStorageCommon.ts";
+import {
+  buildChatBranchGraph,
+  buildRestorePreview,
+  buildRevisionDetails,
+  buildRevisionDiffTables,
+  buildBotPresetList,
+  buildModuleRecordsSnapshot,
+  mapAssetCatalogStats,
+  mapBotChatStatsRow,
+  mapRecentChatRow,
+  mapRevisionListRow,
+  mapStartupCharacters,
+  mapTokenUsageRow,
+  parseRevisionListLimit,
+  summarizeStorageSyncRow,
+} from "../sqlStorageReadModels.ts";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
 type SqlParameter = unknown;
@@ -1049,20 +1062,7 @@ class PostgresStorage extends SqlStorageBase {
        WHERE meta.singleton = TRUE
     `);
     const row: Partial<StorageSyncSummaryRow> = result.rows[0] ?? {};
-    const records = {
-      settings: Number(row.settings_count) || 0,
-      characters: Number(row.characters_count) || 0,
-      chats: Number(row.chats_count) || 0,
-      messages: Number(row.messages_count) || 0,
-    };
-    return {
-      revision: Number(row.revision) || 0,
-      initialized: Boolean(row.initialized),
-      records: {
-        ...records,
-        total: Object.values(records).reduce((a, b) => a + b, 0),
-      },
-    };
+    return summarizeStorageSyncRow(row);
   }
 
   async isAssetCatalogInitialized(sourceId?: string | null): Promise<boolean> {
@@ -1117,10 +1117,7 @@ class PostgresStorage extends SqlStorageBase {
     const result = await this.pool.query(
       "SELECT COUNT(*)::bigint AS total_objects, COALESCE(SUM(size_bytes), 0)::bigint AS total_size FROM system.asset_catalog",
     );
-    return {
-      totalObjects: Number(result.rows[0].total_objects),
-      totalSizeBytes: Number(result.rows[0].total_size),
-    };
+    return mapAssetCatalogStats(result.rows[0] ?? {});
   }
 
   async upsertAssetCatalog(
@@ -1206,31 +1203,13 @@ class PostgresStorage extends SqlStorageBase {
              GROUP BY revision.id
              ORDER BY revision.id DESC`;
     const params: SqlParameter[] = [];
-    if (
-      rawLimit !== null &&
-      rawLimit !== undefined &&
-      rawLimit !== "" &&
-      rawLimit !== "all" &&
-      rawLimit !== 0 &&
-      rawLimit !== "0"
-    ) {
-      const parsedLimit = Number.parseInt(String(rawLimit), 10);
-      if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
-        sql += " LIMIT $1";
-        params.push(parsedLimit);
-      }
+    const parsedLimit = parseRevisionListLimit(rawLimit);
+    if (parsedLimit !== null) {
+      sql += " LIMIT $1";
+      params.push(parsedLimit);
     }
     const result = await this.pool.query<RevisionListRow>(sql, params);
-    return result.rows.map((row) => ({
-      ...row,
-      id: Number(row.id),
-      storage_revision:
-        row.storage_revision === null ? null : Number(row.storage_revision),
-      restored_from_revision:
-        row.restored_from_revision === null
-          ? null
-          : Number(row.restored_from_revision),
-    }));
+    return result.rows.map((row) => mapRevisionListRow(row));
   }
 
   async getRevisionDetails(rawRevisionId: unknown) {
@@ -1251,63 +1230,14 @@ class PostgresStorage extends SqlStorageBase {
     const revision = revResult.rows[0];
 
     const auditResult = await this.pool.query<AuditLogEntryRow>(
-      `SELECT sequence, table_name, operation, before_row, after_row, recorded_at
+      `SELECT sequence, revision_id, table_name, operation, before_row, after_row, recorded_at
              FROM system.audit_log
              WHERE revision_id = $1
              ORDER BY sequence ASC`,
       [revisionId],
     );
 
-    const tableMap = new Map<string, RevisionTableSummary>();
-    const auditLogs = auditResult.rows.map((row) => {
-      const table = row.table_name;
-      const op = row.operation;
-      let stat = tableMap.get(table);
-      if (!stat) {
-        stat = {
-          tableName: table,
-          insertCount: 0,
-          updateCount: 0,
-          deleteCount: 0,
-          totalCount: 0,
-        };
-        tableMap.set(table, stat);
-      }
-      stat.totalCount += 1;
-      if (op === "INSERT") stat.insertCount += 1;
-      else if (op === "UPDATE") stat.updateCount += 1;
-      else if (op === "DELETE") stat.deleteCount += 1;
-
-      return {
-        sequence: Number(row.sequence),
-        tableName: row.table_name,
-        operation: row.operation,
-        beforeRow: row.before_row,
-        afterRow: row.after_row,
-        recordedAt: row.recorded_at,
-      };
-    });
-
-    const tableSummaries = Array.from(tableMap.values());
-
-    return {
-      id: Number(revision.id),
-      storage_revision:
-        revision.storage_revision === null
-          ? null
-          : Number(revision.storage_revision),
-      database_initialized: revision.database_initialized,
-      scope: revision.scope,
-      action: revision.action,
-      restored_from_revision:
-        revision.restored_from_revision === null
-          ? null
-          : Number(revision.restored_from_revision),
-      created_at: revision.created_at,
-      change_count: auditLogs.length,
-      tableSummaries,
-      auditLogs,
-    };
+    return buildRevisionDetails(revision, auditResult.rows);
   }
 
   async getRevisionDiff(rawBaseId: unknown, rawTargetId: unknown) {
@@ -1335,45 +1265,11 @@ class PostgresStorage extends SqlStorageBase {
       [minId, maxId],
     );
 
-    const tableMap = new Map<
-      string,
-      RevisionTableSummary & { entries: RevisionDiffEntry[] }
-    >();
-    for (const row of auditResult.rows) {
-      const table = row.table_name;
-      const op = row.operation;
-      let stat = tableMap.get(table);
-      if (!stat) {
-        stat = {
-          tableName: table,
-          insertCount: 0,
-          updateCount: 0,
-          deleteCount: 0,
-          totalCount: 0,
-          entries: [],
-        };
-        tableMap.set(table, stat);
-      }
-      stat.totalCount += 1;
-      if (op === "INSERT") stat.insertCount += 1;
-      else if (op === "UPDATE") stat.updateCount += 1;
-      else if (op === "DELETE") stat.deleteCount += 1;
-      stat.entries.push({
-        sequence: Number(row.sequence),
-        revisionId: Number(row.revision_id),
-        tableName: row.table_name,
-        operation: row.operation,
-        beforeRow: row.before_row,
-        afterRow: row.after_row,
-        recordedAt: row.recorded_at,
-      });
-    }
-
     return {
       baseRevisionId: baseId,
       targetRevisionId: targetId,
       totalChanges: auditResult.rowCount,
-      tables: Array.from(tableMap.values()),
+      tables: buildRevisionDiffTables(auditResult.rows),
     };
   }
 
@@ -1405,46 +1301,11 @@ class PostgresStorage extends SqlStorageBase {
       [targetRevisionId],
     );
 
-    const tableMap = new Map<string, RestorePreviewSummary>();
-    let restoreInsertCount = 0;
-    let restoreDeleteCount = 0;
-    let restoreUpdateCount = 0;
-
-    for (const event of auditResult.rows) {
-      const table = event.table_name;
-      let stat = tableMap.get(table);
-      if (!stat) {
-        stat = {
-          tableName: table,
-          revertedInserts: 0,
-          revertedUpdates: 0,
-          revertedDeletes: 0,
-          totalChanges: 0,
-        };
-        tableMap.set(table, stat);
-      }
-      stat.totalChanges += 1;
-      if (event.operation === "INSERT") {
-        stat.revertedInserts += 1;
-        restoreDeleteCount += 1;
-      } else if (event.operation === "DELETE") {
-        stat.revertedDeletes += 1;
-        restoreInsertCount += 1;
-      } else if (event.operation === "UPDATE") {
-        stat.revertedUpdates += 1;
-        restoreUpdateCount += 1;
-      }
-    }
-
     return {
       targetRevisionId,
       currentRevisionId,
       revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
-      totalOperations: auditResult.rowCount,
-      restoreInsertCount,
-      restoreDeleteCount,
-      restoreUpdateCount,
-      affectedTables: Array.from(tableMap.values()),
+      ...buildRestorePreview(auditResult.rows),
     };
   }
 
@@ -2799,26 +2660,10 @@ class PostgresStorage extends SqlStorageBase {
         asRows<SettingScalarRow>(settingsResult.rows),
         asRows<SettingValueRow>(settingValueResult.rows),
       );
-      const characters = characterResult.rows.map((row) => ({
-        chaId: String(row.id),
-        type: typeof row.kind === "string" ? row.kind : "character",
-        name: typeof row.name === "string" ? row.name : "",
-        image: typeof row.image === "string" ? row.image : "",
-        trashTime: row.trash_time == null ? undefined : Number(row.trash_time),
-        creationDate:
-          row.creation_time == null ? undefined : Number(row.creation_time),
-        modificationDate:
-          row.modification_time == null
-            ? undefined
-            : Number(row.modification_time),
-        lastInteraction:
-          row.last_interaction_time == null
-            ? undefined
-            : Number(row.last_interaction_time),
-        detailsLoaded: false,
-        chats: [],
-        chatPage: 0,
-      }));
+      const characters = mapStartupCharacters(
+        asRows<CharacterCoreRow>(characterResult.rows),
+        (value) => (value == null ? undefined : Number(value)),
+      );
       await client.query("COMMIT");
       return {
         status: "ready",
@@ -4149,25 +3994,7 @@ class PostgresStorage extends SqlStorageBase {
         [chatId],
       );
       await client.query("COMMIT");
-      const branches = branchResult.rows.map(mapBranchRow);
-      const messages = graphRows.rows.map((row) => {
-        const message = rebuildMessage(row);
-        if (row.graph_generation_model != null) {
-          message.generationInfo = { model: row.graph_generation_model };
-        }
-        return message;
-      });
-      const links = graphRows.rows.map((row) => ({
-        messageId: String(row.id),
-        parentMessageId: row.parent_message_id ?? undefined,
-        originBranchId: row.origin_branch_id,
-      }));
-      return {
-        branches,
-        activeBranchId: branchResult.rows[0]?.active_branch_id ?? undefined,
-        messages,
-        links,
-      };
+      return buildChatBranchGraph(branchResult.rows, graphRows.rows);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4504,22 +4331,7 @@ class PostgresStorage extends SqlStorageBase {
         )
       ).rows;
       await client.query("COMMIT");
-      if (modules.length === 0) return null;
-      const rebuilt: Record<string, unknown> = rebuildSettings(
-        modules.map((row) => ({ key: row.module_id })),
-        values,
-      );
-      const result = modules.map((row) => ({
-        ...decodePresetData(rebuilt[row.module_id]),
-        id: row.module_id,
-      }));
-      return {
-        modules: result,
-        hash: crypto
-          .createHash("sha256")
-          .update(JSON.stringify(result))
-          .digest("hex"),
-      };
+      return buildModuleRecordsSnapshot(modules, values);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4535,19 +4347,7 @@ class PostgresStorage extends SqlStorageBase {
       `SELECT preset_id, position, name, image, api_type, ai_model, content_hash
              FROM system.bot_presets ORDER BY position`,
     );
-    const presets = result.rows.map((row) => ({
-      id: row.preset_id,
-      position: Number(row.position),
-      name: row.name || "",
-      image: row.image || "",
-      apiType: row.api_type || "",
-      aiModel: row.ai_model || "",
-      hash: row.content_hash,
-    }));
-    const hash = crypto
-      .createHash("sha256")
-      .update(JSON.stringify(presets))
-      .digest("hex");
+    const { presets, hash } = buildBotPresetList(result.rows);
     return {
       presets,
       hash,
@@ -6768,19 +6568,7 @@ class PostgresStorage extends SqlStorageBase {
               LIMIT $1`,
       [limit, activeChatId],
     );
-    return result.rows.map((row) => ({
-      characterId: row.character_id,
-      characterName: row.character_name || "",
-      characterImage: row.character_image || null,
-      characterType: row.character_kind === "group" ? "group" : "character",
-      chatId: row.chat_id,
-      chatPosition: Number(row.chat_position) || 0,
-      chatName: row.chat_name || "",
-      folderId: row.folder_id || null,
-      lastDate:
-        row.last_message_time == null ? null : Number(row.last_message_time),
-      lastMessage: row.last_message_text || "",
-    }));
+    return result.rows.map((row) => mapRecentChatRow(row));
   }
 
   async searchMessages(rawQuery: unknown, rawScope = "all", rawLimit = 50) {
@@ -6862,12 +6650,7 @@ class PostgresStorage extends SqlStorageBase {
              GROUP BY model
              ORDER BY total_output_tokens DESC, total_input_tokens DESC`,
     );
-    return result.rows.map((row) => ({
-      model: row.model,
-      messageCount: row.message_count,
-      totalInputTokens: Number(row.total_input_tokens),
-      totalOutputTokens: Number(row.total_output_tokens),
-    }));
+    return result.rows.map((row) => mapTokenUsageRow(row));
   }
 
   async getBotChatStats() {
@@ -6915,29 +6698,7 @@ class PostgresStorage extends SqlStorageBase {
             GROUP BY c.id, c.name, c.image, c.kind, c.position, c.last_interaction_time, cms.total_messages, cms.user_messages, cms.bot_messages, cms.avg_bot_len, cms.avg_user_len
             ORDER BY c.position ASC`,
     );
-    return result.rows.map((row) => {
-      const totalSessions = Number(row.total_sessions || 0);
-      const totalMessages = Number(row.total_messages || 0);
-      return {
-        id: row.id,
-        name: row.name || (row.kind === "group" ? "Group" : "Character"),
-        avatarKey: row.image || undefined,
-        image: row.image || undefined,
-        isGroup: row.kind === "group",
-        totalSessions,
-        totalMessages,
-        userMessages: Number(row.user_messages || 0),
-        botMessages: Number(row.bot_messages || 0),
-        longestSessionMessages: Number(row.longest_session_messages || 0),
-        lastActiveDate:
-          row.last_active_date != null ? Number(row.last_active_date) : null,
-        avgBotMessageLen: Number(row.avg_bot_message_len || 0),
-        avgUserMessageLen: Number(row.avg_user_message_len || 0),
-        avgMessagesPerSession: Number(
-          totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0,
-        ),
-      };
-    });
+    return result.rows.map((row) => mapBotChatStatsRow(row));
   }
 
   async searchCharactersByTag(rawTag: unknown, rawLimit = 100) {

@@ -33,7 +33,6 @@ import {
   type AttributeRow,
   type AuditLogEntryRow,
   type BotPresetDataRow,
-  type BotPresetListRow,
   type BranchPageOptions,
   type BranchRow,
   type CharacterAssetRow,
@@ -89,11 +88,8 @@ import {
   type PluginRecordRow,
   type PluginScriptRow,
   type RecentChatRow,
-  type RevisionDiffEntry,
   type RevisionListRow,
   type RevisionRow,
-  type RestorePreviewSummary,
-  type RevisionTableSummary,
   SETTING_RELATION_DEFINITIONS,
   SETTING_RELATION_TABLES,
   type SettingScalarRow,
@@ -303,6 +299,23 @@ import {
   type ScalarSettingRow,
   type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
+import {
+  buildChatBranchGraph,
+  buildRestorePreview,
+  buildRevisionDetails,
+  buildRevisionDiffTables,
+  buildBotPresetList,
+  buildModuleRecordsSnapshot,
+  mapAssetCatalogStats,
+  mapBotChatStatsRow,
+  mapRecentChatRow,
+  mapRevisionListRow,
+  mapStartupCharacters,
+  mapTokenUsageRow,
+  parseJsonSnapshot,
+  parseRevisionListLimit,
+  summarizeStorageSyncRow,
+} from "../sqlStorageReadModels.ts";
 
 const helpers: SqlStorageHelpers = createSqlStorageHelpers({
   PayloadError: StoragePayloadError,
@@ -1559,20 +1572,9 @@ class OracleStorage extends SqlStorageBase {
            FROM system_storage_meta meta
           WHERE meta.singleton = 1`,
       );
-      const records = {
-        settings: Number(row?.settings_count) || 0,
-        characters: Number(row?.characters_count) || 0,
-        chats: Number(row?.chats_count) || 0,
-        messages: Number(row?.messages_count) || 0,
-      };
-      return {
-        revision: Number(row?.revision) || 0,
-        initialized: num1ToBool(row?.initialized),
-        records: {
-          ...records,
-          total: Object.values(records).reduce((a, b) => a + b, 0),
-        },
-      };
+      return summarizeStorageSyncRow(row ?? {}, {
+        decodeInitialized: num1ToBool,
+      });
     } finally {
       await conn.close();
     }
@@ -1658,10 +1660,7 @@ class OracleStorage extends SqlStorageBase {
         `SELECT COUNT(*) AS total_objects, NVL(SUM(size_bytes), 0) AS total_size
                  FROM system_asset_catalog`,
       );
-      return {
-        totalObjects: Number(row.total_objects),
-        totalSizeBytes: Number(row.total_size),
-      };
+      return mapAssetCatalogStats(row);
     } finally {
       await conn.close();
     }
@@ -1787,36 +1786,15 @@ class OracleStorage extends SqlStorageBase {
                           r.scope, r.action, r.restored_from_revision, r.created_at
                  ORDER BY r.id DESC`;
       const params: OracleBind[] = [];
-      if (
-        rawLimit !== null &&
-        rawLimit !== undefined &&
-        rawLimit !== "" &&
-        rawLimit !== "all" &&
-        rawLimit !== 0 &&
-        rawLimit !== "0"
-      ) {
-        const parsedLimit = Number.parseInt(String(rawLimit), 10);
-        if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
-          sql += " FETCH FIRST :1 ROWS ONLY";
-          params.push(parsedLimit);
-        }
+      const parsedLimit = parseRevisionListLimit(rawLimit);
+      if (parsedLimit !== null) {
+        sql += " FETCH FIRST :1 ROWS ONLY";
+        params.push(parsedLimit);
       }
       const rows = await fetchRows<RevisionListRow>(conn, sql, params);
-      return rows.map((row) => ({
-        ...row,
-        id: Number(row.id),
-        storage_revision:
-          row.storage_revision === null ? null : Number(row.storage_revision),
-        database_initialized:
-          row.database_initialized === null
-            ? null
-            : num1ToBool(row.database_initialized),
-        restored_from_revision:
-          row.restored_from_revision === null
-            ? null
-            : Number(row.restored_from_revision),
-        change_count: Number(row.change_count),
-      }));
+      return rows.map((row) =>
+        mapRevisionListRow(row, { decodeDatabaseInitialized: num1ToBool }),
+      );
     } finally {
       await conn.close();
     }
@@ -1837,67 +1815,14 @@ class OracleStorage extends SqlStorageBase {
 
       const auditRows = await fetchRows<AuditLogEntryRow>(
         conn,
-        "SELECT sequence_num, table_name, operation, before_row, after_row, recorded_at FROM system_audit_log WHERE revision_id = :1 ORDER BY sequence_num ASC",
+        "SELECT sequence_num, revision_id, table_name, operation, before_row, after_row, recorded_at FROM system_audit_log WHERE revision_id = :1 ORDER BY sequence_num ASC",
         [revisionId],
       );
 
-      const tableMap = new Map<string, RevisionTableSummary>();
-      const auditLogs = auditRows.map((a) => {
-        const table = a.table_name;
-        const op = a.operation;
-        let stat = tableMap.get(table);
-        if (!stat) {
-          stat = {
-            tableName: table,
-            insertCount: 0,
-            updateCount: 0,
-            deleteCount: 0,
-            totalCount: 0,
-          };
-          tableMap.set(table, stat);
-        }
-        stat.totalCount += 1;
-        if (op === "INSERT") stat.insertCount += 1;
-        else if (op === "UPDATE") stat.updateCount += 1;
-        else if (op === "DELETE") stat.deleteCount += 1;
-
-        return {
-          sequence: Number(a.sequence),
-          tableName: a.table_name,
-          operation: a.operation,
-          beforeRow: a.before_row
-            ? typeof a.before_row === "string"
-              ? JSON.parse(a.before_row)
-              : a.before_row
-            : null,
-          afterRow: a.after_row
-            ? typeof a.after_row === "string"
-              ? JSON.parse(a.after_row)
-              : a.after_row
-            : null,
-          recordedAt: a.recorded_at,
-        };
+      return buildRevisionDetails(rev, auditRows, {
+        decodeRow: parseJsonSnapshot,
+        decodeDatabaseInitialized: num1ToBool,
       });
-
-      return {
-        id: Number(rev.id),
-        storage_revision:
-          rev.storage_revision === null ? null : Number(rev.storage_revision),
-        database_initialized:
-          rev.database_initialized === null
-            ? null
-            : num1ToBool(rev.database_initialized),
-        scope: rev.scope,
-        action: rev.action,
-        restored_from_revision:
-          rev.restored_from_revision === null
-            ? null
-            : Number(rev.restored_from_revision),
-        created_at: rev.created_at,
-        change_count: auditLogs.length,
-        tableSummaries: Array.from(tableMap.values()),
-        auditLogs,
-      };
     } finally {
       await conn.close();
     }
@@ -1915,53 +1840,13 @@ class OracleStorage extends SqlStorageBase {
         [minId, maxId],
       );
 
-      const tableMap = new Map<
-        string,
-        RevisionTableSummary & { entries: RevisionDiffEntry[] }
-      >();
-      for (const a of auditRows) {
-        const table = a.table_name;
-        const op = a.operation;
-        let stat = tableMap.get(table);
-        if (!stat) {
-          stat = {
-            tableName: table,
-            insertCount: 0,
-            updateCount: 0,
-            deleteCount: 0,
-            totalCount: 0,
-            entries: [],
-          };
-          tableMap.set(table, stat);
-        }
-        stat.totalCount += 1;
-        if (op === "INSERT") stat.insertCount += 1;
-        else if (op === "UPDATE") stat.updateCount += 1;
-        else if (op === "DELETE") stat.deleteCount += 1;
-        stat.entries.push({
-          sequence: Number(a.sequence),
-          revisionId: Number(a.revision_id),
-          tableName: a.table_name,
-          operation: a.operation,
-          beforeRow: a.before_row
-            ? typeof a.before_row === "string"
-              ? JSON.parse(a.before_row)
-              : a.before_row
-            : null,
-          afterRow: a.after_row
-            ? typeof a.after_row === "string"
-              ? JSON.parse(a.after_row)
-              : a.after_row
-            : null,
-          recordedAt: a.recorded_at,
-        });
-      }
-
       return {
         baseRevisionId: Number(baseId),
         targetRevisionId: Number(targetId),
         totalChanges: auditRows.length,
-        tables: Array.from(tableMap.values()),
+        tables: buildRevisionDiffTables(auditRows, {
+          decodeRow: parseJsonSnapshot,
+        }),
       };
     } finally {
       await conn.close();
@@ -1997,46 +1882,11 @@ class OracleStorage extends SqlStorageBase {
         [targetRevisionId],
       );
 
-      const tableMap = new Map<string, RestorePreviewSummary>();
-      let restoreInsertCount = 0;
-      let restoreDeleteCount = 0;
-      let restoreUpdateCount = 0;
-
-      for (const event of auditRows) {
-        const table = event.table_name;
-        let stat = tableMap.get(table);
-        if (!stat) {
-          stat = {
-            tableName: table,
-            revertedInserts: 0,
-            revertedUpdates: 0,
-            revertedDeletes: 0,
-            totalChanges: 0,
-          };
-          tableMap.set(table, stat);
-        }
-        stat.totalChanges += 1;
-        if (event.operation === "INSERT") {
-          stat.revertedInserts += 1;
-          restoreDeleteCount += 1;
-        } else if (event.operation === "DELETE") {
-          stat.revertedDeletes += 1;
-          restoreInsertCount += 1;
-        } else if (event.operation === "UPDATE") {
-          stat.revertedUpdates += 1;
-          restoreUpdateCount += 1;
-        }
-      }
-
       return {
         targetRevisionId,
         currentRevisionId,
         revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
-        totalOperations: auditRows.length,
-        restoreInsertCount,
-        restoreDeleteCount,
-        restoreUpdateCount,
-        affectedTables: Array.from(tableMap.values()),
+        ...buildRestorePreview(auditRows),
       };
     } finally {
       await conn.close();
@@ -2100,20 +1950,10 @@ class OracleStorage extends SqlStorageBase {
         [],
         { clobColumns: ["image"] },
       );
-      const characters = characterRows.map((row) => ({
-        chaId: row.id,
-        type: row.kind || "character",
-        name: row.name || "",
-        image: row.image || "",
-        trashTime: row.trash_time ?? undefined,
-        creationDate: timestampToNumber(row.creation_time) ?? undefined,
-        modificationDate: timestampToNumber(row.modification_time) ?? undefined,
-        lastInteraction:
-          timestampToNumber(row.last_interaction_time) ?? undefined,
-        detailsLoaded: false,
-        chats: [],
-        chatPage: 0,
-      }));
+      const characters = mapStartupCharacters(
+        characterRows,
+        (value) => timestampToNumber(value) ?? undefined,
+      );
       await conn.rollback();
       return {
         status: "ready",
@@ -3765,25 +3605,7 @@ class OracleStorage extends SqlStorageBase {
         },
       );
       await conn.commit();
-      const branches = branchesRows.map(mapBranchRow);
-      const messages = graphRows.map((row) => {
-        const message = rebuildMessage(row);
-        if (row.graph_generation_model != null) {
-          message.generationInfo = { model: row.graph_generation_model };
-        }
-        return message;
-      });
-      const links = graphRows.map((row) => ({
-        messageId: String(row.id),
-        parentMessageId: row.parent_message_id ?? undefined,
-        originBranchId: row.origin_branch_id,
-      }));
-      return {
-        branches,
-        activeBranchId: branchesRows[0]?.active_branch_id ?? undefined,
-        messages,
-        links,
-      };
+      return buildChatBranchGraph(branchesRows, graphRows);
     } catch (error) {
       try {
         await conn.rollback();
@@ -4169,21 +3991,7 @@ class OracleStorage extends SqlStorageBase {
           ],
         },
       );
-      const rebuilt: Record<string, unknown> = rebuildSettings(
-        modules.map((row) => ({ key: row.module_id })),
-        values,
-      );
-      const result = modules.map((row) => ({
-        ...decodePresetData(rebuilt[row.module_id]),
-        id: row.module_id,
-      }));
-      return {
-        modules: result,
-        hash: crypto
-          .createHash("sha256")
-          .update(JSON.stringify(result))
-          .digest("hex"),
-      };
+      return buildModuleRecordsSnapshot(modules, values);
     } finally {
       try {
         await conn.close();
@@ -4203,21 +4011,10 @@ class OracleStorage extends SqlStorageBase {
         [],
         { clobColumns: ["image"] },
       );
-      const presets = rows.map((row) => ({
-        id: row.preset_id,
-        position: Number(row.position),
-        name: row.name || "",
-        image: row.image || "",
-        apiType: row.api_type || "",
-        aiModel: row.ai_model || "",
-        hash: row.content_hash,
-      }));
+      const { presets, hash } = buildBotPresetList(rows);
       return {
         presets,
-        hash: crypto
-          .createHash("sha256")
-          .update(JSON.stringify(presets))
-          .digest("hex"),
+        hash,
         queryMs: Number(process.hrtime.bigint() - started) / 1e6,
       };
     } finally {
@@ -5934,19 +5731,7 @@ class OracleStorage extends SqlStorageBase {
         { limit, activeChatId },
         { clobColumns: ["character_image", "last_message_text"] },
       );
-      return rows.map((row) => ({
-        characterId: row.character_id,
-        characterName: row.character_name || "",
-        characterImage: row.character_image || null,
-        characterType: row.character_kind === "group" ? "group" : "character",
-        chatId: row.chat_id,
-        chatPosition: Number(row.chat_position) || 0,
-        chatName: row.chat_name || "",
-        folderId: row.folder_id || null,
-        lastDate:
-          row.last_message_time == null ? null : Number(row.last_message_time),
-        lastMessage: row.last_message_text || "",
-      }));
+      return rows.map((row) => mapRecentChatRow(row));
     } finally {
       try {
         await conn.close();
@@ -6049,12 +5834,7 @@ class OracleStorage extends SqlStorageBase {
                  GROUP BY model
                  ORDER BY total_output_tokens DESC, total_input_tokens DESC`,
       );
-      return rows.map((row) => ({
-        model: row.model,
-        messageCount: Number(row.message_count),
-        totalInputTokens: Number(row.total_input_tokens),
-        totalOutputTokens: Number(row.total_output_tokens),
-      }));
+      return rows.map((row) => mapTokenUsageRow(row));
     } finally {
       try {
         await conn.close();
@@ -6112,29 +5892,7 @@ class OracleStorage extends SqlStorageBase {
                 ORDER BY c.position ASC
             `,
       );
-      return rows.map((row) => {
-        const totalSessions = Number(row.total_sessions) || 0;
-        const totalMessages = Number(row.total_messages) || 0;
-        return {
-          id: row.id,
-          name: row.name || (row.kind === "group" ? "Group" : "Character"),
-          avatarKey: row.image || undefined,
-          image: row.image || undefined,
-          isGroup: row.kind === "group",
-          totalSessions,
-          totalMessages,
-          userMessages: Number(row.user_messages) || 0,
-          botMessages: Number(row.bot_messages) || 0,
-          longestSessionMessages: Number(row.longest_session_messages) || 0,
-          lastActiveDate:
-            row.last_active_date != null ? Number(row.last_active_date) : null,
-          avgBotMessageLen: Math.round(Number(row.avg_bot_message_len) || 0),
-          avgUserMessageLen: Math.round(Number(row.avg_user_message_len) || 0),
-          avgMessagesPerSession: Number(
-            totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0,
-          ),
-        };
-      });
+      return rows.map((row) => mapBotChatStatsRow(row));
     } finally {
       try {
         await conn.close();
