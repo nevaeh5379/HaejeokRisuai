@@ -1,4 +1,5 @@
 import type { LLMFormatValue } from "../protocol/modelFormat.ts";
+import { LLM_FORMATS } from "../protocol/modelFormat.ts";
 
 export type ProviderRoute =
   | "openai"
@@ -17,11 +18,8 @@ export type ProviderRoute =
   | "horde"
   | "webllm"
   | "echo";
-("use strict");
 
-import { LLM_FORMATS } from "../protocol/modelFormat.ts";
-
-const ROUTE_BY_FORMAT: any = new Map([
+const ROUTE_BY_FORMAT = new Map<number, ProviderRoute>([
   [LLM_FORMATS.OpenAICompatible, "openai"],
   [LLM_FORMATS.Mistral, "openai"],
   [LLM_FORMATS.NanoGPT, "openai"],
@@ -50,9 +48,8 @@ const ROUTE_BY_FORMAT: any = new Map([
 
 function resolveProviderRoute(
   format: LLMFormatValue | number,
-): ProviderRoute | null;
-function resolveProviderRoute(format?: any): any {
-  return ROUTE_BY_FORMAT.get(format) || null;
+): ProviderRoute | null {
+  return ROUTE_BY_FORMAT.get(format) ?? null;
 }
 
 export { resolveProviderRoute };

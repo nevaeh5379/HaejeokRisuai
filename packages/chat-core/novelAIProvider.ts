@@ -375,19 +375,18 @@ const NOVELAI_REPETITION_PENALTY_WHITELIST: readonly number[] = Object.freeze([
   12,
 ]);
 
-function resolveNovelAIGenerateUrl(variant: string): string | null;
-function resolveNovelAIGenerateUrl(variant?: any): any {
-  return NOVELAI_GENERATE_URLS[variant] ?? null;
+function resolveNovelAIGenerateUrl(variant: string): string | null {
+  return NOVELAI_GENERATE_URLS[variant as NovelAIVariant] ?? null;
 }
 
 function buildNovelAIRequest(options: NovelAIRequestOptions): {
   variant: NovelAIVariant;
   body: NovelAIRequestBody;
-};
-function buildNovelAIRequest(options?: any): any {
-  const variant: any = options.modelId === "novelai_kayra" ? "kayra" : "clio";
-  const settings: any = options.settings;
-  const parameters: any = {
+} {
+  const variant: NovelAIVariant =
+    options.modelId === "novelai_kayra" ? "kayra" : "clio";
+  const settings = options.settings;
+  const parameters: Record<string, unknown> = {
     temperature: options.temperature,
     max_length: options.maxTokens,
     min_length: 1,

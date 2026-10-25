@@ -19,7 +19,10 @@ export function buildFullBackupPayload(
 
   const idFactory = options.idFactory ?? randomUUID;
   const rootUpserts: Array<{ key: string; value: unknown }> = [];
-  for (const [key, value] of Object.entries(database)) {
+  const dbKeys = Object.keys(database);
+  for (let i = 0; i < dbKeys.length; i++) {
+    const key = dbKeys[i];
+    const value = database[key];
     if (
       key === "characters" ||
       value === undefined ||

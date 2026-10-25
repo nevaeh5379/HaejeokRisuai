@@ -1,3 +1,5 @@
+const SHARED_TEXT_ENCODER = new TextEncoder();
+
 export interface AccountBackupEncryptionMetadata {
   time: number;
   type: "account";
@@ -35,7 +37,7 @@ export async function prepareAccountBackupEncryption(
       ? { databaseEncryption: options.databaseEncryption }
       : {}),
   };
-  const encoded: Uint8Array = new TextEncoder().encode(
+  const encoded: Uint8Array = SHARED_TEXT_ENCODER.encode(
     JSON.stringify(metadata),
   );
   await options.write(options.metadataEntryName, encoded);

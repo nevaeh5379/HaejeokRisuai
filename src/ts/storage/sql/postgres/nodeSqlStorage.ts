@@ -1,4 +1,6 @@
 import localforage from "localforage";
+
+const SHARED_TEXT_ENCODER = new TextEncoder();
 import { getNodeClientSessionId } from "../../../network/nodeClientSession";
 import type {
   Database,
@@ -986,7 +988,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     const remoteSession =
       await this.localBackupClient.createDatabaseStreamSession();
     const validator = new PortableDatabaseStreamValidator();
-    const textEncoder = new TextEncoder();
     const maxBatchRecords = 64;
     const maxBatchBytes = 4 * 1024 * 1024;
     const maxRecordBytes = 16 * 1024 * 1024;
@@ -1024,9 +1025,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         for (let index = 0; index < fragment.records.length; index++) {
           const record = fragment.records[index];
           const encoded = encodeStorageSyncValue(record);
-          const recordBytes = textEncoder.encode(
-            JSON.stringify(encoded),
-          ).byteLength;
+          const serialized = JSON.stringify(encoded);
+          const recordBytes =
+            typeof Buffer !== "undefined"
+              ? Buffer.byteLength(serialized, "utf8")
+              : SHARED_TEXT_ENCODER.encode(serialized).byteLength;
           if (recordBytes > maxRecordBytes) {
             throw new Error(
               `Portable database record exceeds ${maxRecordBytes} bytes`,

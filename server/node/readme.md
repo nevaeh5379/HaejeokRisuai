@@ -84,6 +84,25 @@ Large initial migrations and cold-storage writes use an authenticated PostgreSQL
 
 Large relational mutations are serialized before body parsing so concurrent clients cannot hold multiple migration payloads in the Node heap. SQL inserts use bounded batches (`RISUAI_SQL_BATCH_ROWS`, default `1000`), and plugin/custom-storage objects are not retained in a process-wide cache by default. Set `RISUAI_SQL_OBJECT_CACHE=1` only when lower database latency matters more than minimum resident memory.
 
+Local backup restoration records completed assets in SQL catalog batches of 256.
+Set `HAEJEOK_BACKUP_ASSET_CATALOG_BATCH_SIZE` to a positive safe integer to change
+the number of entries per batch (for example, `512`), then restart the server.
+Unset or empty values use 256; invalid values log a warning and use 256. The
+default, PostgreSQL, and RustFS Compose examples forward this variable from the
+host environment or Compose `.env` file. For an existing container, recreate
+the application container after changing its environment.
+
+Only asset keys and sizes are buffered; file bodies continue streaming directly
+to storage. The final partial batch is written before applying the restored
+database. A catalog write failure stops the restore instead of reporting
+success. Cancellation or another restore error also attempts to record already
+completed assets before cleaning up temporary database records; a failed batch
+is not retried during cleanup. A file that finishes saving after cancellation
+records its metadata immediately. Files already saved remain in storage. A forced
+process exit can leave the current metadata batch unrecorded; use asset catalog
+resynchronization to recover it. Ordinary uploads retain their existing catalog
+error handling.
+
 `RISU_POSTGRES_BOOTSTRAP_URL` can seed an editable server-side configuration on the first start. The provided Docker Compose examples use `DATABASE_URL` instead so container-managed credentials always take precedence over a previously saved `save/__postgres_config.json`. `RISU_SAVE_PATH` optionally changes the Node server save directory and defaults to `<working directory>/save`.
 
 If SQL storage has not been configured, the Node server exposes the same configuration-only recovery surface. Legacy files in `save/` are retained for an explicit import, but they are not activated as an automatic application database.

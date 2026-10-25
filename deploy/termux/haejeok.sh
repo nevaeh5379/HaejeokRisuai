@@ -27,13 +27,26 @@ service_daemon_running() {
   kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 ensure_service_daemon() {
-  if service_daemon_running; then
-    return
+  if ! service_daemon_running; then
+    command -v service-daemon >/dev/null 2>&1 || fail "termux-services is not installed."
+    service-daemon start || fail "Could not start the Termux service daemon."
   fi
-  command -v service-daemon >/dev/null 2>&1 || fail "termux-services is not installed."
-  service-daemon start >/dev/null 2>&1 || true
-  sleep 0.2
-  service_daemon_running || fail "Could not start the Termux service daemon."
+
+  # A running runsvdir may not have discovered newly installed services yet.
+  local service attempt
+  for service in haejeok-postgres haejeok-risuai; do
+    [ -d "$SVDIR/$service" ] || fail "Service is not installed: $service. Rerun the Termux installer."
+    for ((attempt = 0; attempt < 60; attempt++)); do
+      if sv status "$service" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.25
+    done
+    if ! sv status "$service" >/dev/null 2>&1; then
+      sv status "$service" >&2 || true
+      fail "Termux service supervision is not ready for $service after 15 seconds. Check service-daemon and $SVDIR/$service."
+    fi
+  done
 }
 
 wait_postgres() {

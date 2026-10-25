@@ -364,7 +364,8 @@ export class LocalBackupDatabaseStreamStore<
         );
       }
     }
-    for (const [type, count] of Object.entries(parsed.counts)) {
+    for (const type of Object.keys(parsed.counts)) {
+      const count = parsed.counts[type];
       if (!isAllowedRecordType(type) && Number(count) !== 0) {
         throw new LocalBackupDatabaseStreamError(
           `Portable database stream contains unsupported record type '${type}'`,

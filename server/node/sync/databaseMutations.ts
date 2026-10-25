@@ -59,7 +59,11 @@ type MutationArgs = {
         beforeCommit?: (transactionContext?: any) => Promise<void>;
         afterCommit?: (result?: any) => Promise<void>;
         rollback?: () => Promise<void>;
-        onProgress?: (progress: { applied: number; type: string }) => void;
+        onProgress?: (progress: {
+          applied: number;
+          type: string;
+          detail?: string;
+        }) => void;
       };
     },
     rawSourceClientId: unknown,

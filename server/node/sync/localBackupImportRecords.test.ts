@@ -128,14 +128,28 @@ function azureStorage(rows: StoredRow[]) {
 
 function oracleStorage(rows: StoredRow[]) {
   const connection = {
-    async execute(sql: string, binds: unknown[] = []) {
+    async execute(
+      sql: string,
+      binds: unknown[] | Record<string, unknown> = [],
+    ) {
       if (sql.includes("SELECT sequence_no")) {
+        const placeholders = [...sql.matchAll(/:(\w+)/g)].map(
+          (match) => match[1],
+        );
+        if (Array.isArray(binds) && placeholders.length !== binds.length) {
+          throw new Error(
+            `NJS-098: ${placeholders.length} bind placeholders were used in the SQL statement but ${binds.length} bind values were provided`,
+          );
+        }
+        const values = Array.isArray(binds)
+          ? binds
+          : placeholders.map((name) => binds[name]);
         return {
           rows: selected(
             rows,
-            String(binds[0]),
-            Number(binds[1]),
-            Number(binds[2]),
+            String(values[0]),
+            Number(values[1]),
+            Number(values[3]),
           ).map((row) => [row.sequence, row.tier, row.payload]),
         };
       }

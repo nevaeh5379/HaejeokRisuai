@@ -32,6 +32,10 @@ import {
   type ImageGenerationSettings,
 } from "../../../packages/protocol/src/imageGeneration.ts";
 
+const FORBIDDEN_SUBMODEL_HEADERS_REGEX =
+  /^(host|connection|content-length|risu-auth|x-risu-client-id)$/i;
+const HEADER_NEWLINE_REGEX = /[\r\n]/;
+
 /**
  * Extends paged message reads with settings, character metadata and SQL revisions.
  *
@@ -519,16 +523,17 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
           const headers: Record<string, string> = {
             "content-type": "application/json",
           };
-          for (const [key, value] of Object.entries(
-            raw.tagRequest.headers ?? {},
-          )) {
-            if (typeof value !== "string" || /[\r\n]/.test(key + value))
-              throw new TypeError("Invalid submodel header");
+          const rawHeaders = raw.tagRequest.headers ?? {};
+          const headerKeys = Object.keys(rawHeaders);
+          for (let i = 0; i < headerKeys.length; i++) {
+            const key = headerKeys[i];
+            const value = rawHeaders[key];
             if (
-              !/^(host|connection|content-length|risu-auth|x-risu-client-id)$/i.test(
-                key,
-              )
+              typeof value !== "string" ||
+              HEADER_NEWLINE_REGEX.test(key + value)
             )
+              throw new TypeError("Invalid submodel header");
+            if (!FORBIDDEN_SUBMODEL_HEADERS_REGEX.test(key))
               headers[key.toLowerCase()] = value;
           }
           request = {

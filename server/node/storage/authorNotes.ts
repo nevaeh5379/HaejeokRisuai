@@ -56,11 +56,15 @@ function authorNoteDatabase(
         NOTE_COMMIT_RESULT: { type: oracle.STRING },
       },
     });
-    return (result.rows ?? []).map((row: Record<string, unknown>) =>
-      Object.fromEntries(
-        Object.entries(row).map(([key, value]) => [key.toLowerCase(), value]),
-      ),
-    );
+    return (result.rows ?? []).map((row: Record<string, unknown>) => {
+      const lowerRow: Record<string, unknown> = {};
+      const keys = Object.keys(row);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        lowerRow[key.toLowerCase()] = row[key];
+      }
+      return lowerRow;
+    });
   };
   return {
     dialect: vendor,
