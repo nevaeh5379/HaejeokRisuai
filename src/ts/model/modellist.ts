@@ -16,8 +16,6 @@ import { AnthropicModels } from "./providers/anthropic";
 import { GoogleModels } from "./providers/google";
 import { fetchNative } from "../globalApi.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { customProviderStore, pluginV2 } from "../plugins/plugins.svelte";
-import { get } from "svelte/store";
 import { customV3ProviderMetaStore } from "../plugins/apiV3/providerStore";
 
 // Re-export types for backwards compatibility
@@ -800,7 +798,7 @@ export const LLMModels: LLMModel[] = [
   },
 ];
 
-for (let model of LLMModels) {
+for (const model of LLMModels) {
   model.shortName ??= model.name;
   model.internalID ??= model.id;
   model.fullName ??=
@@ -809,50 +807,46 @@ for (let model of LLMModels) {
       : model.name;
 }
 
-for (let i = 0; i < LLMModels.length; i++) {
+for (const element of LLMModels) {
   if (
-    LLMModels[i].provider === LLMProvider.OpenAI &&
-    LLMModels[i].format === LLMFormat.OpenAICompatible
-  ) {
+    element.provider === LLMProvider.OpenAI &&
+    element.format === LLMFormat.OpenAICompatible
+  )
     LLMModels.push({
-      ...LLMModels[i],
+      ...element,
       format: LLMFormat.OpenAIResponseAPI,
-      flags: [...LLMModels[i].flags, LLMFlags.hasPrefill],
-      id: `${LLMModels[i].id}-response-api`,
-      name: `${LLMModels[i].name} (Response API)`,
-      fullName: `${LLMModels[i].fullName ?? LLMModels[i].name} (Response API)`,
+      flags: [...element.flags, LLMFlags.hasPrefill],
+      id: `${element.id}-response-api`,
+      name: `${element.name} (Response API)`,
+      fullName: `${element.fullName ?? element.name} (Response API)`,
       recommended: false,
     });
-  }
-  if (LLMModels[i].provider === LLMProvider.GoogleCloud) {
+
+  if (element.provider === LLMProvider.GoogleCloud)
     LLMModels.push({
-      ...LLMModels[i],
-      id: `${LLMModels[i].id}-vertex`,
-      name: `${LLMModels[i].name} Vertex`,
-      fullName: `${LLMModels[i].fullName ?? LLMModels[i].name} Vertex`,
-      flags: [...LLMModels[i].flags],
-      recommended: !!LLMModels[i].recommended,
+      ...element,
+      id: `${element.id}-vertex`,
+      name: `${element.name} Vertex`,
+      fullName: `${element.fullName ?? element.name} Vertex`,
+      flags: [...element.flags],
+      recommended: !!element.recommended,
       provider: LLMProvider.VertexAI,
       format: LLMFormat.VertexAIGemini,
     });
-  }
 }
 
 const LLMModelsMap = new Map<string, LLMModel>();
 
 function indexLLMModels() {
   LLMModelsMap.clear();
-  for (const model of LLMModels) {
-    LLMModelsMap.set(model.id, model);
-  }
+  for (const model of LLMModels) LLMModelsMap.set(model.id, model);
 }
 
 indexLLMModels();
 
 export async function registerModelDynamic() {
-  if (!settingsStore.state.dynamicModelRegistry) {
-    return;
-  }
+  if (!settingsStore.state.dynamicModelRegistry) return;
+
   //google
   try {
     if (settingsStore.state.google?.accessToken) {
@@ -864,13 +858,9 @@ export async function registerModelDynamic() {
       );
       const json = await res.json();
       const models = json?.models || [];
-      for (let model of models) {
-        if (
-          !model.supportedGenerationMethods ||
-          !model.supportedGenerationMethods.includes("generateContent")
-        ) {
+      for (const model of models) {
+        if (!model.supportedGenerationMethods?.includes("generateContent"))
           continue;
-        }
 
         const id = model.name.startsWith("models/")
           ? model.name.replace("models/", "")
@@ -933,7 +923,7 @@ export async function registerModelDynamic() {
         display_name: string;
       }[] = json?.data || [];
 
-      for (let model of models) {
+      for (const model of models) {
         const dynamicId = `dynamic_anthropic_${model.id}`;
         const exists =
           LLMModelsMap.has(dynamicId) ||
@@ -976,22 +966,18 @@ export async function registerModelDynamic() {
         },
       });
       const json = await res.json();
-      if (!json.data) {
-        throw "Invaild Openai Model Response";
-      }
+      if (!json.data) throw new Error("Invaild Openai Model Response");
+
       let i = 0;
       for (const model of json.data) {
         const exists =
           LLMModelsMap.has(model.id) ||
           LLMModels.some((m) => m.id === model.id || m.internalID === model.id);
 
-        if (exists) {
-          continue;
-        }
+        if (exists) continue;
 
-        if (!model.id.startsWith("gpt-")) {
-          continue;
-        }
+        if (!model.id.startsWith("gpt-")) continue;
+
         i++;
 
         const a: LLMModel = {
@@ -1037,7 +1023,7 @@ globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
   const db = settingsStore.state;
-  if (!id) {
+  if (!id)
     return {
       id: "",
       name: "Unknown",
@@ -1050,22 +1036,19 @@ export function getModelInfo(id?: string | null): LLMModel {
       parameters: OpenAIParameters,
       tokenizer: LLMTokenizer.Unknown,
     };
-  }
+
   let found = LLMModelsMap.get(id);
   if (!found) {
     found = LLMModels.find((model) => model.id === id);
-    if (found) {
-      LLMModelsMap.set(id, found);
-    }
+    if (found) LLMModelsMap.set(id, found);
   }
 
   if (found) {
-    if (presetStore.state.enableCustomFlags) {
+    if (presetStore.state.enableCustomFlags)
       return {
         ...found,
         flags: presetStore.state.customFlags,
       };
-    }
 
     return { ...found };
   }
@@ -1103,7 +1086,7 @@ export function getModelInfo(id?: string | null): LLMModel {
   if (id.startsWith("xcustom:::")) {
     const customModels = db?.customModels || [];
     const found = customModels.find((model) => model.id === id);
-    if (found) {
+    if (found)
       return {
         id: found.id,
         name: found.name,
@@ -1126,16 +1109,13 @@ export function getModelInfo(id?: string | null): LLMModel {
         ],
         tokenizer: found.tokenizer,
       };
-    }
   }
 
   if (id.startsWith("pluginmodel:::")) {
     const pluginModel = customV3ProviderMetaStore.find(
       (model) => model.id === id,
     );
-    if (pluginModel) {
-      return pluginModel;
-    }
+    if (pluginModel) return pluginModel;
   }
 
   return {
@@ -1165,12 +1145,12 @@ export function getModelList(arg: {
   recommendedOnly?: boolean;
   groupedByProvider: true;
 }): GetModelListGroup[];
-export function getModelList<T extends boolean = false>(
+export function getModelList(
   arg: {
     recommendedOnly?: boolean;
-    groupedByProvider?: T;
+    groupedByProvider?: boolean;
   } = {},
-): T extends true ? GetModelListGroup[] : LLMModel[] {
+): LLMModel[] | GetModelListGroup[] {
   const models = arg.recommendedOnly
     ? LLMModels.filter((model) => model.recommended)
     : LLMModels;
@@ -1207,15 +1187,13 @@ export function getModelList<T extends boolean = false>(
       targetGroup.models.push(model);
     }
 
-    if (pluginGroup.models.length > 0) {
-      group.push(pluginGroup);
-    }
-    return group as any;
+    if (pluginGroup.models.length > 0) group.push(pluginGroup);
+
+    return group;
   } else {
     const result = models === LLMModels ? [...models] : models;
-    for (const model of pluginGroup.models) {
-      result.push(model);
-    }
-    return result as any;
+    for (const model of pluginGroup.models) result.push(model);
+
+    return result;
   }
 }
