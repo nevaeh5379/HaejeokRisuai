@@ -6,6 +6,7 @@ import { language } from "src/lang";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 
 const maxRecentChatQuery = 4;
+const DOCUMENT_PREFIX = "search_document: ";
 export async function hanuraiMemory(
   chats: OpenAIChat[],
   arg: {
@@ -40,10 +41,10 @@ export async function hanuraiMemory(
         if (!trimmedSplit) {
           continue;
         }
-        addTexts.push(`search_document: ${trimmedSplit}`);
+        addTexts.push(DOCUMENT_PREFIX + trimmedSplit);
       }
     } else {
-      addTexts.push(`search_document: ${content}`);
+      addTexts.push(DOCUMENT_PREFIX + content);
     }
   }
   if (!(await processer.prepareServerTextIndex(addTexts))) {
@@ -93,7 +94,7 @@ export async function hanuraiMemory(
 
   const existingContents = new Set<string>();
   for (let i = 0; i < chats.length; i++) {
-    const content = chats[i]?.content;
+    const content = chats[i]?.content?.trim();
     if (content) {
       existingContents.add(content);
     }
@@ -103,7 +104,10 @@ export async function hanuraiMemory(
   const candidateChats: OpenAIChat[] = [];
   for (let i = 0; i < vectorResult.length; i++) {
     const rawKey = vectorResult[i][0];
-    const content = rawKey.length > 16 ? rawKey.substring(16) : "";
+    // the index stores "search_document: <text>"; compare the bare text.
+    const content = rawKey.startsWith(DOCUMENT_PREFIX)
+      ? rawKey.slice(DOCUMENT_PREFIX.length)
+      : rawKey;
     if (content && !existingContents.has(content)) {
       candidateTexts.push(content);
       candidateChats.push({

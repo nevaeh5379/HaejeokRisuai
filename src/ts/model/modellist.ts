@@ -839,7 +839,12 @@ const LLMModelsMap = new Map<string, LLMModel>();
 
 function indexLLMModels() {
   LLMModelsMap.clear();
-  for (const model of LLMModels) LLMModelsMap.set(model.id, model);
+  // first entry wins, to match what `LLMModels.find((m) => m.id === id)` returns.
+  // "gpt-5" is registered twice, so a plain set() would silently switch the
+  // model that getModelInfo resolves (name and internalID both change).
+  for (const model of LLMModels) {
+    if (!LLMModelsMap.has(model.id)) LLMModelsMap.set(model.id, model);
+  }
 }
 
 indexLLMModels();
