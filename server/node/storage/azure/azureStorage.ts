@@ -1126,6 +1126,8 @@ class AzureStorage extends SqlStorageBase {
       }),
       readAuthorNotes: () =>
         authorNoteSql.exportAuthorNotes(authorNoteDatabase("azure", pool)),
+      decodePluginStorageValue: (value) =>
+        typeof value === "string" ? JSON.parse(value) : value,
     });
   }
 

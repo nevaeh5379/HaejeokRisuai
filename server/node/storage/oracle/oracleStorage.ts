@@ -2025,6 +2025,8 @@ class OracleStorage extends SqlStorageBase {
           },
           readAuthorNotes: () =>
             authorNoteSql.exportAuthorNotes(authorNoteDatabase("oracle", conn)),
+          decodePluginStorageValue: (value) =>
+            typeof value === "string" ? JSON.parse(value) : value,
         },
       );
       await conn.rollback();

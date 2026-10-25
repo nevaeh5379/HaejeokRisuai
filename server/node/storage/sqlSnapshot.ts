@@ -5,7 +5,7 @@
  *
  * The snapshot is a fixed list of `SELECT *` reads (`SNAPSHOT_TABLES`) plus the
  * same assembly: settings, modules, plugins, presets, plugin storage and the
- * character/chat/message graph. Only the statement text and the script
+ * character/chat/message graph. Only the statement text and the JSON/script
  * decoding differ, and those come from the dialect and the driver.
  * 스냅샷은 고정된 테이블 목록 조회와 동일한 조립으로 이루어지므로 한 번만
  * 구현하고, 문장은 방언이, 스크립트 디코딩은 드라이버가 제공합니다.
@@ -79,6 +79,8 @@ export type SnapshotOptions = {
    * vendors store plain text.
    */
   decodeScript?: (value: unknown) => unknown;
+  /** Decodes plugin storage JSON text; Postgres already returns parsed values. */
+  decodePluginStorageValue?: (value: unknown) => unknown;
 };
 
 /** Alias used by `rebuildSettings`: relation tables store `<x>_id AS setting_key`. */
@@ -119,11 +121,12 @@ export async function exportDatabaseSnapshotWith(
   }
 
   Object.assign(database, await options.readAuthorNotes());
-  // The JSON column arrives parsed from Postgres and as text from Oracle.
+  const decodePluginStorageValue =
+    options.decodePluginStorageValue ?? ((value: unknown) => value);
   database.pluginCustomStorage = Object.fromEntries(
     read("system.plugin_custom_storage").map((row) => [
       String(row.key),
-      typeof row.value === "string" ? JSON.parse(row.value) : row.value,
+      decodePluginStorageValue(row.value),
     ]),
   );
 
