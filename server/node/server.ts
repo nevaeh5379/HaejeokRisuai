@@ -998,7 +998,7 @@ async function mirrorFullBackupToBackup(onProgress?: (event?: any) => void) {
   payload.presets = {
     upserts: (
       await Promise.all(
-        presetSummaries.map((summary: { id: string; key: string }) =>
+        presetSummaries.map((summary: { id: string }) =>
           postgresStorage.loadBotPreset(summary.id),
         ),
       )
@@ -1010,9 +1010,7 @@ async function mirrorFullBackupToBackup(onProgress?: (event?: any) => void) {
         data: result.preset,
       })),
     deletes: [],
-    order: presetSummaries.map(
-      (summary: { id: string; key: string }) => summary.id,
-    ),
+    order: presetSummaries.map((summary: { id: string }) => summary.id),
     activeId: loaded.database.activeBotPresetId || presetSummaries[0]?.id,
   };
   const settingsCount =
@@ -1112,7 +1110,7 @@ async function restoreBackupToMainDatabase(onProgress?: (event?: any) => void) {
   payload.presets = {
     upserts: (
       await Promise.all(
-        presetSummaries.map((summary: { id: string; key: string }) =>
+        presetSummaries.map((summary: { id: string }) =>
           backupStorage.loadBotPreset(summary.id),
         ),
       )
@@ -1124,9 +1122,7 @@ async function restoreBackupToMainDatabase(onProgress?: (event?: any) => void) {
         data: result.preset,
       })),
     deletes: [],
-    order: presetSummaries.map(
-      (summary: { id: string; key: string }) => summary.id,
-    ),
+    order: presetSummaries.map((summary: { id: string }) => summary.id),
     activeId: loaded.database.activeBotPresetId || presetSummaries[0]?.id,
   };
   const settingsCount =
@@ -1479,7 +1475,7 @@ async function getCatalogedAssetDetails() {
   const config =
     assetStorageManager.s3Config || assetStorageManager.config || {};
   const initialized = await postgresStorage.isAssetCatalogInitialized(sourceId);
-  let assets = [];
+  let assets: AssetEntry[] = [];
   if (initialized) {
     const rows = await postgresStorage.listAssetCatalogEntries("");
     assets = rows.map((row: AssetEntry) => ({
@@ -1547,7 +1543,7 @@ async function upsertAssetCatalogKey(key: string, size: number | null = null) {
 
 async function removeAssetCatalogKeys(keys: unknown[]) {
   const assetKeys = (Array.isArray(keys) ? keys : []).filter(
-    (key: string) => typeof key === "string" && key.length > 0,
+    (key): key is string => typeof key === "string" && key.length > 0,
   );
   if (
     assetKeys.length === 0 ||
@@ -4203,7 +4199,7 @@ async function listServerBackupColdStorageKeys() {
     typeof postgresStorage.listColdStorage === "function"
       ? await postgresStorage.listColdStorage()
       : [];
-  return summaries.map((summary: { id: string; key: string }) => summary.key);
+  return summaries.map((summary: { key: string }) => summary.key);
 }
 
 async function loadServerBackupColdStorageItems() {
@@ -4247,7 +4243,7 @@ async function buildPortableServerDatabase() {
     const summaries = (await postgresStorage.listBotPresets()).presets;
     const loadedPresets = (
       await Promise.all(
-        summaries.map((summary: { id: string; key: string }) =>
+        summaries.map((summary: { id: string }) =>
           postgresStorage.loadBotPreset(summary.id),
         ),
       )
@@ -4259,9 +4255,7 @@ async function buildPortableServerDatabase() {
     const activeId = database.activeBotPresetId;
     database.botPresetsId = Math.max(
       0,
-      summaries.findIndex(
-        (summary: { id: string; key: string }) => summary.id === activeId,
-      ),
+      summaries.findIndex((summary: { id: string }) => summary.id === activeId),
     );
   }
   if (!database.modules) {
