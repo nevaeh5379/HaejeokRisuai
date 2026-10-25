@@ -323,6 +323,7 @@ export const SNAPSHOT_TABLES: readonly string[] = [
   "system.plugin_values",
   "system.plugin_scripts",
   "system.bot_presets",
+  "system.plugin_custom_storage"
 ];
 
 /** Looks up one table spec; unknown tables are a programming error. */
