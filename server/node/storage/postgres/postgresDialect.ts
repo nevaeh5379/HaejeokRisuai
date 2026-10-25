@@ -61,7 +61,7 @@ function columnBatches(
       const value = rows[index][column];
       values[index] =
         type === "json"
-          ? value === undefined || value === null
+          ? value === undefined
             ? null
             : JSON.stringify(value)
           : (value ?? null);
