@@ -33,6 +33,7 @@ export default defineConfig({
       "src/**/*.test.ts",
       "server/**/*.test.ts",
       "packages/**/*.test.ts",
+      "tooling/build-version.test.ts",
     ],
     environment: "happy-dom",
     setupFiles: ["vitest.setup.ts"],

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { defaultRepoRoot, resolveBuildVersion } from "./build-version.mjs";
+import { defaultRepoRoot, resolveBuildVersion } from "./build-version.ts";
 
 describe("resolveBuildVersion", () => {
   it("uses the HAEJEOK_BUILD_NUMBER override when provided", () => {

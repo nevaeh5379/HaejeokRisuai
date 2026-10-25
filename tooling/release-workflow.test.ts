@@ -17,7 +17,9 @@ const publishStep = workflow.slice(
 );
 
 const downloadLinksStep = workflow.slice(
-  workflow.indexOf("      - name: Add platform download links to release notes"),
+  workflow.indexOf(
+    "      - name: Add platform download links to release notes",
+  ),
   workflow.indexOf("      - name: Publish release"),
 );
 
@@ -26,11 +28,11 @@ test("binds every draft release to the requested build tag", () => {
   assert.match(releaseStep, /\.tag_name == \$tag or \.name == \$tag/);
   assert.match(
     releaseStep,
-    /ACTUAL_TAG=.*?if \[ \"\$ACTUAL_TAG\" != \"\$BUILD_TAG\" \]/s,
+    /ACTUAL_TAG=.*?if \[ "\$ACTUAL_TAG" != "\$BUILD_TAG" \]/s,
   );
   assert.match(
     releaseStep,
-    /gh api --method PATCH \"repos\/\$\{GITHUB_REPOSITORY\}\/releases\/\$\{RELEASE_ID\}\"/,
+    /gh api --method PATCH "repos\/\$\{GITHUB_REPOSITORY\}\/releases\/\$\{RELEASE_ID\}"/,
   );
   assert.match(releaseStep, /still associated with tag/);
 });
