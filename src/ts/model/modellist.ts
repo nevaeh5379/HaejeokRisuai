@@ -16,8 +16,6 @@ import { AnthropicModels } from "./providers/anthropic";
 import { GoogleModels } from "./providers/google";
 import { fetchNative } from "../globalApi.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { customProviderStore, pluginV2 } from "../plugins/plugins.svelte";
-import { get } from "svelte/store";
 import { customV3ProviderMetaStore } from "../plugins/apiV3/providerStore";
 
 // Re-export types for backwards compatibility
@@ -800,7 +798,7 @@ export const LLMModels: LLMModel[] = [
   },
 ];
 
-for (let model of LLMModels) {
+for (const model of LLMModels) {
   model.shortName ??= model.name;
   model.internalID ??= model.id;
   model.fullName ??=
@@ -809,39 +807,51 @@ for (let model of LLMModels) {
       : model.name;
 }
 
-for (let i = 0; i < LLMModels.length; i++) {
+for (const element of LLMModels) {
   if (
-    LLMModels[i].provider === LLMProvider.OpenAI &&
-    LLMModels[i].format === LLMFormat.OpenAICompatible
-  ) {
+    element.provider === LLMProvider.OpenAI &&
+    element.format === LLMFormat.OpenAICompatible
+  )
     LLMModels.push({
-      ...LLMModels[i],
+      ...element,
       format: LLMFormat.OpenAIResponseAPI,
-      flags: [...LLMModels[i].flags, LLMFlags.hasPrefill],
-      id: `${LLMModels[i].id}-response-api`,
-      name: `${LLMModels[i].name} (Response API)`,
-      fullName: `${LLMModels[i].fullName ?? LLMModels[i].name} (Response API)`,
+      flags: [...element.flags, LLMFlags.hasPrefill],
+      id: `${element.id}-response-api`,
+      name: `${element.name} (Response API)`,
+      fullName: `${element.fullName ?? element.name} (Response API)`,
       recommended: false,
     });
-  }
-  if (LLMModels[i].provider === LLMProvider.GoogleCloud) {
+
+  if (element.provider === LLMProvider.GoogleCloud)
     LLMModels.push({
-      ...LLMModels[i],
-      id: `${LLMModels[i].id}-vertex`,
-      name: `${LLMModels[i].name} Vertex`,
-      fullName: `${LLMModels[i].fullName ?? LLMModels[i].name} Vertex`,
-      flags: [...LLMModels[i].flags],
-      recommended: !!LLMModels[i].recommended,
+      ...element,
+      id: `${element.id}-vertex`,
+      name: `${element.name} Vertex`,
+      fullName: `${element.fullName ?? element.name} Vertex`,
+      flags: [...element.flags],
+      recommended: !!element.recommended,
       provider: LLMProvider.VertexAI,
       format: LLMFormat.VertexAIGemini,
     });
+}
+
+const LLMModelsMap = new Map<string, LLMModel>();
+
+function indexLLMModels() {
+  LLMModelsMap.clear();
+  // first entry wins, to match what `LLMModels.find((m) => m.id === id)` returns.
+  // "gpt-5" is registered twice, so a plain set() would silently switch the
+  // model that getModelInfo resolves (name and internalID both change).
+  for (const model of LLMModels) {
+    if (!LLMModelsMap.has(model.id)) LLMModelsMap.set(model.id, model);
   }
 }
 
+indexLLMModels();
+
 export async function registerModelDynamic() {
-  if (!settingsStore.state.dynamicModelRegistry) {
-    return;
-  }
+  if (!settingsStore.state.dynamicModelRegistry) return;
+
   //google
   try {
     if (settingsStore.state.google?.accessToken) {
@@ -852,25 +862,20 @@ export async function registerModelDynamic() {
         },
       );
       const json = await res.json();
-      console.log("Google models response", json);
       const models = json?.models || [];
-      for (let model of models) {
-        if (
-          !model.supportedGenerationMethods ||
-          !model.supportedGenerationMethods.includes("generateContent")
-        ) {
+      for (const model of models) {
+        if (!model.supportedGenerationMethods?.includes("generateContent"))
           continue;
-        }
 
         const id = model.name.startsWith("models/")
           ? model.name.replace("models/", "")
           : model.name;
-        const exists = LLMModels.find(
-          (m) => m.id === id || m.internalID === id,
-        );
+        const exists =
+          LLMModelsMap.has("dynamic_google_" + id) ||
+          LLMModels.some((m) => m.id === id || m.internalID === id);
 
         if (!exists) {
-          LLMModels.push({
+          const dynamicModel: LLMModel = {
             id: "dynamic_google_" + id,
             name: model.displayName || id,
             shortName: model.displayName || id,
@@ -896,7 +901,9 @@ export async function registerModelDynamic() {
               "frequency_penalty",
             ],
             tokenizer: LLMTokenizer.GoogleCloud,
-          });
+          };
+          LLMModels.push(dynamicModel);
+          LLMModelsMap.set(dynamicModel.id, dynamicModel);
         }
       }
     }
@@ -916,20 +923,20 @@ export async function registerModelDynamic() {
       });
 
       const json = await res.json();
-      console.log("Anthropic models response", json);
       const models: {
         id: string;
         display_name: string;
       }[] = json?.data || [];
 
-      for (let model of models) {
-        const exists = LLMModels.find(
-          (m) => m.id === model.id || m.internalID === model.id,
-        );
+      for (const model of models) {
+        const dynamicId = `dynamic_anthropic_${model.id}`;
+        const exists =
+          LLMModelsMap.has(dynamicId) ||
+          LLMModels.some((m) => m.id === model.id || m.internalID === model.id);
         if (!exists) {
-          LLMModels.push({
+          const dynamicModel: LLMModel = {
             name: model.display_name || model.id,
-            id: `dynamic_anthropic_${model.id}`,
+            id: dynamicId,
             shortName: model.display_name || model.id,
             fullName: model.display_name || model.id,
             internalID: model.id,
@@ -945,7 +952,9 @@ export async function registerModelDynamic() {
             parameters: [...ClaudeParameters, "thinking_tokens"],
             tokenizer: LLMTokenizer.Claude,
             recommended: true,
-          });
+          };
+          LLMModels.push(dynamicModel);
+          LLMModelsMap.set(dynamicModel.id, dynamicModel);
         }
       }
     }
@@ -962,23 +971,18 @@ export async function registerModelDynamic() {
         },
       });
       const json = await res.json();
-      console.log(json);
-      if (!json.data) {
-        throw "Invaild Openai Model Response";
-      }
+      if (!json.data) throw new Error("Invaild Openai Model Response");
+
       let i = 0;
       for (const model of json.data) {
-        const exists = LLMModels.find(
-          (m) => m.id === model.id || m.internalID === model.id,
-        );
+        const exists =
+          LLMModelsMap.has(model.id) ||
+          LLMModels.some((m) => m.id === model.id || m.internalID === model.id);
 
-        if (exists) {
-          continue;
-        }
+        if (exists) continue;
 
-        if (!model.id.startsWith("gpt-")) {
-          continue;
-        }
+        if (!model.id.startsWith("gpt-")) continue;
+
         i++;
 
         const a: LLMModel = {
@@ -1001,7 +1005,7 @@ export async function registerModelDynamic() {
           recommended: i < 8,
         };
 
-        LLMModels.push(a, {
+        const responseApiModel: LLMModel = {
           ...a,
           format: LLMFormat.OpenAIResponseAPI,
           flags: [...a.flags, LLMFlags.hasPrefill],
@@ -1009,7 +1013,11 @@ export async function registerModelDynamic() {
           name: `${a.name} (Response API)`,
           fullName: `${a.fullName ?? a.name} (Response API)`,
           recommended: false,
-        });
+        };
+
+        LLMModels.push(a, responseApiModel);
+        LLMModelsMap.set(a.id, a);
+        LLMModelsMap.set(responseApiModel.id, responseApiModel);
       }
     }
   } catch (error) {}
@@ -1020,7 +1028,7 @@ globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
   const db = settingsStore.state;
-  if (!id) {
+  if (!id)
     return {
       id: "",
       name: "Unknown",
@@ -1033,17 +1041,21 @@ export function getModelInfo(id?: string | null): LLMModel {
       parameters: OpenAIParameters,
       tokenizer: LLMTokenizer.Unknown,
     };
+
+  let found = LLMModelsMap.get(id);
+  if (!found) {
+    found = LLMModels.find((model) => model.id === id);
+    if (found) LLMModelsMap.set(id, found);
   }
-  const found: LLMModel = safeStructuredClone(
-    LLMModels.find((model) => model.id === id),
-  );
 
   if (found) {
-    if (presetStore.state.enableCustomFlags) {
-      found.flags = presetStore.state.customFlags;
-    }
+    if (presetStore.state.enableCustomFlags)
+      return {
+        ...found,
+        flags: presetStore.state.customFlags,
+      };
 
-    return found;
+    return { ...found };
   }
 
   if (id.startsWith("hf:::")) {
@@ -1079,7 +1091,7 @@ export function getModelInfo(id?: string | null): LLMModel {
   if (id.startsWith("xcustom:::")) {
     const customModels = db?.customModels || [];
     const found = customModels.find((model) => model.id === id);
-    if (found) {
+    if (found)
       return {
         id: found.id,
         name: found.name,
@@ -1102,16 +1114,13 @@ export function getModelInfo(id?: string | null): LLMModel {
         ],
         tokenizer: found.tokenizer,
       };
-    }
   }
 
   if (id.startsWith("pluginmodel:::")) {
     const pluginModel = customV3ProviderMetaStore.find(
       (model) => model.id === id,
     );
-    if (pluginModel) {
-      return pluginModel;
-    }
+    if (pluginModel) return pluginModel;
   }
 
   return {
@@ -1128,29 +1137,37 @@ export function getModelInfo(id?: string | null): LLMModel {
   };
 }
 
-interface GetModelListGroup {
+export interface GetModelListGroup {
   providerName: string;
   models: LLMModel[];
 }
 
-export function getModelList<T extends boolean>(
+export function getModelList(arg?: {
+  recommendedOnly?: boolean;
+  groupedByProvider?: false;
+}): LLMModel[];
+export function getModelList(arg: {
+  recommendedOnly?: boolean;
+  groupedByProvider: true;
+}): GetModelListGroup[];
+export function getModelList(
   arg: {
     recommendedOnly?: boolean;
-    groupedByProvider?: T;
+    groupedByProvider?: boolean;
   } = {},
-): T extends true ? GetModelListGroup[] : LLMModel[] {
-  let models = [...LLMModels];
-  if (arg.recommendedOnly) {
-    models = models.filter((model) => model.recommended);
-  }
+): LLMModel[] | GetModelListGroup[] {
+  const models = arg.recommendedOnly
+    ? LLMModels.filter((model) => model.recommended)
+    : LLMModels;
   const pluginGroup: GetModelListGroup = {
     providerName: "Plugins",
     models: customV3ProviderMetaStore,
   };
 
   if (arg.groupedByProvider) {
-    let group: GetModelListGroup[] = [];
-    for (let model of models) {
+    const group: GetModelListGroup[] = [];
+    const groupMap = new Map<string, GetModelListGroup>();
+    for (const model of models) {
       if (
         model.provider === LLMProvider.AsIs ||
         model.provider === LLMProvider.NanoGPT
@@ -1162,27 +1179,26 @@ export function getModelList<T extends boolean>(
         continue;
       }
 
-      let providerName = ProviderNames.get(model.provider) || "Unknown";
-      let groupIndex = group.findIndex((g) => g.providerName === providerName);
-      if (groupIndex === -1) {
-        group.push({
+      const providerName = ProviderNames.get(model.provider) || "Unknown";
+      let targetGroup = groupMap.get(providerName);
+      if (!targetGroup) {
+        targetGroup = {
           providerName,
-          models: [model],
-        });
-      } else {
-        group[groupIndex].models.push(model);
+          models: [],
+        };
+        groupMap.set(providerName, targetGroup);
+        group.push(targetGroup);
       }
+      targetGroup.models.push(model);
     }
 
-    if (pluginGroup.models.length > 0) {
-      group.push(pluginGroup);
-    }
-    return group as any;
+    if (pluginGroup.models.length > 0) group.push(pluginGroup);
+
+    return group;
   } else {
-    for (const model of pluginGroup.models) {
-      models.push(model);
-    }
-  }
+    const result = models === LLMModels ? [...models] : models;
+    for (const model of pluginGroup.models) result.push(model);
 
-  return models as any;
+    return result;
+  }
 }
