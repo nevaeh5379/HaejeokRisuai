@@ -56,8 +56,15 @@ function quote(column: string): string {
   return `[${column}]`;
 }
 
-/** Column value as it travels inside the JSON payload. */
-function payloadValue(value: unknown): unknown {
+/**
+ * Column value as it travels inside the JSON payload.
+ *
+ * A `json` column stores the text verbatim, so the payload must carry JSON
+ * text for it: `null` becomes `"null"` (the destination column is NOT NULL),
+ * and strings/booleans keep their type through the read-side `JSON.parse()`.
+ */
+function payloadValue(value: unknown, type: SqlColumnType): unknown {
+  if (type === "json") return JSON.stringify(value ?? null);
   if (value === undefined || value === null) return null;
   if (Buffer.isBuffer(value)) return value.toString("hex");
   if (typeof value === "boolean") return value ? 1 : 0;
@@ -111,8 +118,8 @@ export class AzureDialect implements SqlDialect {
     for (const batch of sqlBatches(rows)) {
       const payload = batch.map((row) => {
         const item: Record<string, unknown> = {};
-        for (const [column] of columns) {
-          item[column] = payloadValue(row[column]);
+        for (const [column, type] of columns) {
+          item[column] = payloadValue(row[column], type);
         }
         return item;
       });
