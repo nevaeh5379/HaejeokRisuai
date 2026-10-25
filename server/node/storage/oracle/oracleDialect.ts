@@ -266,9 +266,9 @@ function bindTypeOf(type: SqlColumnType): number {
 
 /** Converts one value into what oracledb should bind for that type. */
 function bindValue(value: unknown, type: SqlColumnType): unknown {
+  if (type === "json") return encodeJsonValue(value);
   if (value === undefined || value === null) return null;
   if (typeof value === "boolean") return value ? 1 : 0;
-  if (type === "json") return encodeJsonValue(value);
   if (type === "binary" && typeof value === "string") {
     return Buffer.from(value);
   }

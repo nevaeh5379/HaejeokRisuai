@@ -58,7 +58,7 @@ export function sqlStringLiteral(value: string): string {
 
 /** Serializes a `json` value for dialects that store JSON as text. */
 export function encodeJsonValue(value: unknown): string | null {
-  if (value === undefined || value === null) return null;
+  if (value === undefined || value === null) return "null";
   if (typeof value === "string") {
     try {
       JSON.parse(value);

@@ -249,6 +249,29 @@ describe("Oracle dialect", () => {
     expect(sql).toContain("VALUES (:1, :2, :3, JSON(:4))");
   });
 
+  it.each(["insertRows", "upsertRows"] as const)(
+    "%s serializes JSON before generic null and boolean conversion",
+    async (method) => {
+      const { dialect, calls } = makeOracle();
+      const values = [null, undefined, true, false, 0, "hello", { a: 1 }];
+      await dialect[method](
+        "chat.message_attributes",
+        values.map((value, index) => ({
+          chat_id: "c",
+          message_id: "m",
+          key: String(index),
+          value,
+        })),
+      );
+
+      expect(
+        calls[0].params?.map((row) =>
+          Array.isArray(row) ? row[3] : (row as { value: unknown }).value,
+        ),
+      ).toEqual(["null", "null", "true", "false", "0", '"hello"', '{"a":1}']);
+    },
+  );
+
   it("orders LOB columns last so ORA-24816 cannot trigger", async () => {
     const { dialect, calls } = makeOracle();
     await dialect.insertRows("chat.messages", [MESSAGE]);
@@ -271,7 +294,12 @@ describe("Oracle dialect", () => {
     expect(sql).toContain("WHERE CHAT_ID = :chat_id AND ID = :id;");
     expect(sql).toContain("updated_at = SYSTIMESTAMP");
     expect(sql).toContain("IF SQL%ROWCOUNT = 0 THEN INSERT INTO chat_messages");
-    expect(calls[0].params?.[0]).toMatchObject({ chat_id: "chat-1" });
+    expect(calls[0].params?.[0]).toMatchObject({
+      chat_id: "chat-1",
+      content_binary: null,
+      other_user: 0,
+      is_comment: 1,
+    });
   });
 
   it("deletes key tuples with executeMany positional binds", async () => {
