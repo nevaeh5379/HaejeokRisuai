@@ -67,20 +67,80 @@ export type BotPresetDataRow = {
   content_hash: string | null;
 };
 
-/** Row of a `system.setting_values`-style flattened value table. */
-export type SettingValueRow = {
+/** Value kinds allowed by the `value_type` CHECK of the value tables. */
+export type SettingValueType =
+  "null" | "text" | "encoded-text" | "number" | "boolean" | "array" | "object";
+
+/** Columns that locate one node of a flattened value tree. */
+export type SettingValueKeyColumns = {
   setting_key: string;
   node_id: number;
   parent_node_id: number | null;
   member_key: string | null;
   encoded_member_key: string | null;
   position: number | null;
-  value_type: string;
-  text_value: string | null;
-  encoded_text_value: string | null;
-  number_value: number | null;
-  boolean_value: boolean | null;
 };
+
+/** Value columns of a kind that stores no scalar payload. */
+type SettingValueEmptyColumns = {
+  text_value: null;
+  encoded_text_value: null;
+  number_value: null;
+  boolean_value: null;
+};
+
+/**
+ * Value columns of a row, one shape per `value_type`. Only the column of the
+ * row's own kind is populated. The schemas cross-check `text_value` against
+ * `encoded_text_value` but leave that pairing to the settings codec, which is
+ * the only writer of these tables.
+ * 값 컬럼은 value_type별로 해당 컬럼만 채웁니다. kind와 컬럼의 짝은 스키마가
+ * 아니라 이 테이블의 유일한 기록 주체인 settings codec이 보장합니다.
+ */
+export type SettingValuePayloadColumns = {
+  null: SettingValueEmptyColumns;
+  text: {
+    text_value: string;
+    encoded_text_value: null;
+    number_value: null;
+    boolean_value: null;
+  };
+  "encoded-text": {
+    text_value: null;
+    encoded_text_value: string;
+    number_value: null;
+    boolean_value: null;
+  };
+  number: {
+    text_value: null;
+    encoded_text_value: null;
+    number_value: number;
+    boolean_value: null;
+  };
+  boolean: {
+    text_value: null;
+    encoded_text_value: null;
+    number_value: null;
+    boolean_value: boolean;
+  };
+  array: SettingValueEmptyColumns;
+  object: SettingValueEmptyColumns;
+};
+
+/** One `system.setting_values`-style row of a single value kind. */
+export type SettingValueRowOf<TType extends SettingValueType> =
+  SettingValueKeyColumns & {
+    value_type: TType;
+  } & SettingValuePayloadColumns[TType];
+
+/**
+ * Row of a `system.setting_values`-style flattened value table. `value_type`
+ * discriminates the row, so narrowing the kind narrows its value columns too.
+ * `value_type`가 행을 판별하므로, kind를 좁히면 값 컬럼도 함께 좁아집니다.
+ */
+export type SettingValueRow = {
+  [TType in SettingValueType]: SettingValueRowOf<TType>;
+}[SettingValueType];
 
 /**
  * Attribute row of a character, chat, archive or message. The owner id column
