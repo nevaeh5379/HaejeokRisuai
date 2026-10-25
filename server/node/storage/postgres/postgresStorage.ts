@@ -839,7 +839,7 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async recoverMissingPostgresSchema(query: PgQuery): Promise<void> {
-    if (this.schemaRecoveryPromise) {
+    if (this.schemaRecoveryPromise != null) {
       return this.schemaRecoveryPromise;
     }
     const recovery = (async () => {

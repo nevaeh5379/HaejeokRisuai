@@ -184,7 +184,7 @@ class SqlStorageBase {
 
   async loadBootstrapData(): Promise<BootstrapSnapshot> {
     if (this.bootstrapCache) return this.bootstrapCache;
-    if (this.bootstrapCachePromise) return this.bootstrapCachePromise;
+    if (this.bootstrapCachePromise != null) return this.bootstrapCachePromise;
 
     const generation = this.bootstrapCacheGeneration;
     const pending: Promise<BootstrapSnapshot> = this.loadSettingKeys(

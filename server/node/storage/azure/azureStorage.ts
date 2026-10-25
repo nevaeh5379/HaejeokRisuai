@@ -563,7 +563,7 @@ class AzureStorage extends SqlStorageBase {
     this.database = options.database || process.env.AZURE_DATABASE || "";
     this.user = options.user || process.env.AZURE_USERNAME || "";
     this.password = options.password || process.env.AZURE_PASSWORD || "";
-    this.port = parseInt(
+    this.port = Number.parseInt(
       String(options.port ?? process.env.AZURE_PORT ?? "1433"),
       10,
     );
@@ -583,10 +583,10 @@ class AzureStorage extends SqlStorageBase {
     if (!this.enabled) {
       throw new Error("Azure SQL storage is disabled");
     }
-    if (this.pool && this.pool.connected) {
+    if (this.pool?.connected) {
       return this.pool;
     }
-    if (this.poolPromise) {
+    if (this.poolPromise != undefined) {
       return this.poolPromise;
     }
     this.poolPromise = (async () => {
