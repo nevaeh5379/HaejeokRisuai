@@ -1,29 +1,47 @@
-let rerolls: { [key: string]: string[] } = {};
-let rerollIndex: { [key: string]: number } = {};
+const MAX_REROLL_ENTRIES = 64;
+const rerolls = new Map<string, string[]>();
+const rerollIndex = new Map<string, number>();
+
+function evictOldestRerolls(): void {
+  while (rerolls.size > MAX_REROLL_ENTRIES) {
+    const oldest = rerolls.keys().next().value;
+    if (oldest === undefined) break;
+    rerolls.delete(oldest);
+    rerollIndex.delete(oldest);
+  }
+}
 
 export function Prereroll(genId: string) {
-  if (rerolls[genId]) {
-    let index = rerollIndex[genId];
-    index += 1;
-    rerollIndex[genId] = index;
-    return rerolls[genId][index] ?? null;
+  const list = rerolls.get(genId);
+  if (list) {
+    const index = (rerollIndex.get(genId) ?? 0) + 1;
+    rerollIndex.set(genId, index);
+    return list[index] ?? null;
   }
   return null;
 }
+
 export function PreUnreroll(genId: string) {
-  if (rerolls[genId]) {
-    let index = rerollIndex[genId];
-    index -= 1;
+  const list = rerolls.get(genId);
+  if (list) {
+    const index = (rerollIndex.get(genId) ?? 0) - 1;
     if (index < 0) {
       return null;
     }
-    rerollIndex[genId] = index;
-    return rerolls[genId][index] ?? null;
+    rerollIndex.set(genId, index);
+    return list[index] ?? null;
   }
   return null;
 }
 
 export function addRerolls(genId: string, values: string[]) {
-  rerolls[genId] = values;
-  rerollIndex[genId] = 0;
+  rerolls.delete(genId);
+  rerolls.set(genId, values);
+  rerollIndex.set(genId, 0);
+  evictOldestRerolls();
+}
+
+export function clearRerolls(): void {
+  rerolls.clear();
+  rerollIndex.clear();
 }

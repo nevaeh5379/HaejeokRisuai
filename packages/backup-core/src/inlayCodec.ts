@@ -12,6 +12,10 @@ type InlayBackupMetadata = Omit<InlayAsset, "data"> & {
   mime?: string;
 };
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+const VALID_INLAY_TYPES = new Set(["image", "video", "audio", "signature"]);
+
 export async function encodeInlayAssetBackup(
   asset: InlayAsset,
 ): Promise<Uint8Array> {
@@ -19,29 +23,30 @@ export async function encodeInlayAssetBackup(
   const isBlob = data instanceof Blob;
   const payload = isBlob
     ? new Uint8Array(await data.arrayBuffer())
-    : new TextEncoder().encode(data);
+    : textEncoder.encode(data);
   const metadata: InlayBackupMetadata = {
     ...rest,
     dataType: isBlob ? "blob" : "text",
     ...(isBlob && data.type ? { mime: data.type } : {}),
   };
-  const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
+  const metadataBytes = textEncoder.encode(JSON.stringify(metadata));
+  const metadataLength = metadataBytes.byteLength;
   const output = new Uint8Array(
-    4 + metadataBytes.byteLength + payload.byteLength,
+    4 + metadataLength + payload.byteLength,
   );
-  new DataView(output.buffer).setUint32(0, metadataBytes.byteLength, true);
+  output[0] = metadataLength & 0xff;
+  output[1] = (metadataLength >>> 8) & 0xff;
+  output[2] = (metadataLength >>> 16) & 0xff;
+  output[3] = (metadataLength >>> 24) & 0xff;
   output.set(metadataBytes, 4);
-  output.set(payload, 4 + metadataBytes.byteLength);
+  output.set(payload, 4 + metadataLength);
   return output;
 }
 
 export function decodeInlayAssetBackup(data: Uint8Array): InlayAsset {
   if (data.byteLength < 4) throw new Error("Invalid inlay backup payload");
-  const metadataLength = new DataView(
-    data.buffer,
-    data.byteOffset,
-    data.byteLength,
-  ).getUint32(0, true);
+  const metadataLength =
+    (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0;
   if (
     metadataLength === 0 ||
     metadataLength > 1024 * 1024 ||
@@ -51,12 +56,12 @@ export function decodeInlayAssetBackup(data: Uint8Array): InlayAsset {
   }
 
   const metadata = JSON.parse(
-    new TextDecoder().decode(data.subarray(4, 4 + metadataLength)),
+    textDecoder.decode(data.subarray(4, 4 + metadataLength)),
   ) as Partial<InlayBackupMetadata>;
   if (
     typeof metadata.name !== "string" ||
     typeof metadata.ext !== "string" ||
-    !["image", "video", "audio", "signature"].includes(metadata.type ?? "") ||
+    !VALID_INLAY_TYPES.has(metadata.type ?? "") ||
     (metadata.dataType !== "blob" && metadata.dataType !== "text")
   ) {
     throw new Error("Invalid inlay backup metadata");
@@ -65,8 +70,8 @@ export function decodeInlayAssetBackup(data: Uint8Array): InlayAsset {
   const payload = data.subarray(4 + metadataLength);
   const restoredData =
     metadata.dataType === "blob"
-      ? new Blob([new Uint8Array(payload)], { type: metadata.mime ?? "" })
-      : new TextDecoder().decode(payload);
+      ? new Blob([payload as BlobPart], { type: metadata.mime ?? "" })
+      : textDecoder.decode(payload);
   return {
     name: metadata.name,
     ext: metadata.ext,
