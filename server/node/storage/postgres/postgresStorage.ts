@@ -1,5 +1,4 @@
 const __dirname = import.meta.dirname;
-export type SqlStorageRow = Record<string, unknown>;
 import {
   authorNoteDatabase,
   withAuthorNoteDatabase,
@@ -9,7 +8,111 @@ import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { loadPostgres } from "../../util/runtimeModules.ts";
-import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
+import type {
+  SqlModuleUpsert,
+  SqlPluginUpsert,
+  SqlSettingUpsert,
+} from "../../../../packages/protocol/src/sqlCommit.ts";
+import type {
+  StorageSyncActiveBranchRecord,
+  StorageSyncBranchRecord,
+  StorageSyncMessageRecord,
+} from "../../sync/storageSyncSqlApply.ts";
+import {
+  asRows,
+  asUnknownArray,
+  decodePresetData,
+  isSqlRow,
+  legacyModuleId,
+  mapBranchRow,
+  type AssetCatalogEntry,
+  type AssetCatalogEntryRow,
+  type ExternalSyncTransaction as ExternalSyncTransactionOf,
+  type AssetCatalogKeyRow,
+  type AssetCatalogRow,
+  type AttributeRow,
+  type AuditLogEntryRow,
+  type BotChatStatsRow,
+  type BotPresetDataRow,
+  type BotPresetListRow,
+  type BranchPageOptions,
+  type BranchRow,
+  type CharacterAssetRow,
+  type CharacterAttributeRow,
+  type CharacterBiasRow,
+  type CharacterChatFolderRow,
+  type CharacterCoreRow,
+  type CharacterEmotionRow,
+  type CharacterGreetingRow,
+  type CharacterGroupMemberRow,
+  type CharacterLoreRow,
+  type CharacterModuleRow,
+  type CharacterRelationName,
+  type CharacterScriptRow,
+  type CharacterSdRow,
+  type CharacterSplit,
+  type CharacterSummaryRow,
+  type CharacterTagRow,
+  type ChatAttributeRow,
+  type ChatBookmarkRow,
+  type ChatBranchInsertRow,
+  type ChatBranchSummary,
+  type ChatCoreRow,
+  type ChatLoreRow,
+  type ChatMemoryRow,
+  type ChatModuleRow,
+  type ChatRelationName,
+  type ChatScriptStateRow,
+  type ChatShellRow,
+  type ChatSplit,
+  type ChatSuggestionRow,
+  type ColdArchiveRow,
+  type ColdChatRowOf,
+  type ColdFieldPresenceRow,
+  type ColdMessageRowOf,
+  type ColdStorageSummaryRow,
+  type ColdTableName,
+  type ColdTableRows,
+  type CreateChatBranchInput,
+  type ExplorerColumn,
+  type ExplorerColumnRow,
+  SETTING_RELATION_DEFINITIONS,
+  SETTING_RELATION_TABLES,
+  type KeyedOwnerKeys,
+  type LegacyBranchStateRow,
+  type LoadChatOptions,
+  type LoadPluginsOptions,
+  type LoreEntryColumns,
+  type MessageAttributeRow,
+  type MessageCoreRow,
+  type MessageDeletion,
+  type MessageGenerationRow,
+  type MessagePromptInfoRow,
+  type MessagePromptItemRow,
+  type MessagePromptSplit,
+  type MessagePromptToggleRow,
+  type MessageSearchRow,
+  type MessageSplit,
+  type ModuleEntry,
+  type ModuleRecordRow,
+  type ModuleValueUpsert,
+  type PluginRecordRow,
+  type PluginScriptRow,
+  type PositionalOwnerLength,
+  type RecentChatRow,
+  type RestoreMetadataRow,
+  type RestoreTable,
+  type RevisionListRow,
+  type RevisionRow,
+  type SettingScalarRow,
+  type SettingValueRow,
+  type SqlStorageRow,
+  type StorageMetaRow,
+  type StorageSyncFinalizeContext,
+  type StorageSyncSummaryRow,
+  type SyncOptions,
+  type TokenUsageRow,
+} from "../relationalRows.ts";
 import { promisify } from "util";
 import { deflate, unzip } from "zlib";
 import {
@@ -31,10 +134,7 @@ import {
   splitChat,
   splitMessage,
 } from "./postgresRelationalCodec.ts";
-import {
-  projectSettings,
-  SETTING_RELATION_DEFINITIONS,
-} from "./postgresSettingRelations.ts";
+import { projectSettings } from "./postgresSettingRelations.ts";
 import { rebuildSettings, splitSetting } from "./postgresSettingsCodec.ts";
 import {
   DEFERRED_SETTING_KEYS,
@@ -46,12 +146,119 @@ import {
   groupRows,
   groupMessageRows,
   buildChatShell,
-  createCharacterRelations,
-  createChatRelations,
-  createMessageRelations,
-  rebuildDatabaseGraph,
-  mergeLegacyModulesIntoPayload,
+  pluginExtensionData,
+  rebuildPluginRecords,
+  createSettingColumnMappers,
+  createDbExplorerIdentifierValidator,
+  readSyncProgress,
+  readExternalTransaction,
+  collectAffectedMessageChatIds,
+  summarizeAuthorNotes,
+  buildSyncResult,
+  invalidateSyncCaches,
+  type SqlStorageHelpers,
+  type ScalarSettingColumns,
 } from "../sqlStorageCommon.ts";
+import {
+  migrateLegacyBranchStateWith,
+  rebuildLinearMessages,
+} from "../sqlBranchMigration.ts";
+import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
+import { syncModuleRecords } from "../sqlSyncDomain.ts";
+import { PostgresDialect } from "./postgresDialect.ts";
+import {
+  buildChatBranchGraph,
+  buildRestorePreview,
+  buildRevisionDetails,
+  buildRevisionDiffTables,
+  buildBotPresetList,
+  buildModuleRecordsSnapshot,
+  mapAssetCatalogStats,
+  mapBotChatStatsRow,
+  mapRecentChatRow,
+  mapRevisionListRow,
+  mapStartupCharacters,
+  mapTokenUsageRow,
+  parseRevisionListLimit,
+  summarizeStorageSyncRow,
+} from "../sqlStorageReadModels.ts";
+
+/** One column value accepted by a PostgreSQL query parameter list. */
+type SqlParameter = unknown;
+/** Row shape returned by the lazily loaded `pg` driver, which ships no types. */
+type PgQueryResult<TRow = SqlStorageRow> = {
+  rows: TRow[];
+  rowCount: number | null;
+};
+/** Callback form of `client.query`, still supported by `pg`. */
+type PgQueryCallback = (error: Error | null, result?: PgQueryResult) => void;
+type PgQuery = <TRow = SqlStorageRow>(
+  text: string,
+  values?: readonly SqlParameter[],
+) => Promise<PgQueryResult<TRow>>;
+type PgClient = { query: PgQuery };
+type PgPoolClient = PgClient & { release(): void };
+type PgPoolEvents = { error: Error; connect: PgClient };
+type PgPool = PgClient & {
+  connect(): Promise<PgPoolClient>;
+  end(): Promise<void>;
+  on<TEvent extends keyof PgPoolEvents>(
+    event: TEvent,
+    listener: (payload: PgPoolEvents[TEvent]) => void,
+  ): unknown;
+};
+
+/**
+ * Message object persisted by `saveMessage`. The chat role, data, timing and
+ * every other app-defined field travel through the open record part; only the
+ * routing columns are named here.
+ */
+type MessageSaveInput = SqlStorageRow & {
+  chatId?: string;
+  id?: string;
+  position?: number;
+};
+
+/**
+ * Module object passed to `saveModule`. The module body is app-defined JSON, so
+ * the record stays open beyond the two columns the writer reads.
+ */
+type ModuleRecord = SqlStorageRow & { id: string; name?: string };
+/**
+ * Bot preset passed to `saveBotPreset`. Every other preset field is stored as
+ * JSON in `system.bot_presets.data`, so the record stays open.
+ */
+type BotPresetRecord = SqlStorageRow & {
+  id?: string;
+  name?: string;
+  image?: string;
+  apiType?: string;
+  aiModel?: string;
+};
+/** Body run inside an audited storage revision. */
+type RevisionCallback = (
+  client: PgClient,
+  revisionId: number,
+) => Promise<unknown>;
+/** Transaction handed to `sync` when the storage-sync importer reuses one. */
+type ExternalSyncTransaction = ExternalSyncTransactionOf<PgClient>;
+type StorageSyncFinalizeCallback = (
+  client: PgClient,
+  context: StorageSyncFinalizeContext,
+) => Promise<unknown>;
+
+/** Branch head bookkeeping while linking incoming messages. */
+type BranchHead = {
+  chatId: string;
+  branchId: string;
+  messageId: string;
+  position: number;
+};
+/** Connection settings accepted by the storage constructor and reconfigure. */
+type PostgresStorageOptions = {
+  connectionString?: string;
+  poolMax?: number | string;
+};
 
 const POSTGRES_SCHEMA_VERSION = 4;
 const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
@@ -72,7 +279,7 @@ const AUDITED_TABLES = [
   "system.plugin_values",
   "system.plugin_custom_storage",
   "character.characters",
-  ...SETTING_RELATION_DEFINITIONS.map((definition?: any) => definition.table),
+  ...SETTING_RELATION_TABLES,
   "character.attributes",
   "character.tags",
   "character.greetings",
@@ -131,49 +338,52 @@ const AUDITED_TABLES = [
   "cold.message_prompt_toggles",
   "cold.message_prompt_items",
 ];
-const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-  ...new Set<any>([
+  ...new Set<string>([
     ...DEFERRED_STARTUP_SETTING_KEYS,
     ...SETTINGS_STORE_EXCLUDED_KEYS,
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key?: any) => `'${key}'`,
-).join(", ");
-const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
-  (key?: any) => `'${key}'`,
+  (key: string) => `'${key}'`,
 ).join(", ");
 
-function mapSettingValueToColumns(value?: any) {
-  if (typeof value === "boolean") {
-    return { text_val: null, num_val: null, bool_val: value };
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { text_val: null, num_val: value, bool_val: null };
-  }
-  if (typeof value === "string") {
-    return { text_val: value, num_val: null, bool_val: null };
-  }
-  if (value === null || value === undefined) {
-    return { text_val: null, num_val: null, bool_val: null };
-  }
-  return { text_val: null, num_val: null, bool_val: null };
+type SettingColumns = ScalarSettingColumns<boolean>;
+
+const { mapSettingValueToColumns, mapColumnsToSettingValue } =
+  createSettingColumnMappers<boolean>({
+    encodeBool: (value) => value,
+    decodeBool: (value) => value,
+  });
+
+/**
+ * `pg` resolves a multi-statement text query to one result per statement.
+ * pg는 여러 문장을 담은 텍스트 쿼리를 문장별 결과 배열로 반환합니다.
+ */
+async function queryStatementResults(
+  client: PgClient,
+  sql: string,
+): Promise<PgQueryResult[]> {
+  const results = (await client.query(sql)) as unknown as PgQueryResult[];
+  return Array.isArray(results) ? results : [results];
 }
 
-async function replaceSettingValueRows(client?: any, upserts?: any) {
+async function replaceSettingValueRows(
+  client: PgClient,
+  upserts: readonly SqlSettingUpsert[],
+): Promise<void> {
   if (upserts.length === 0) return;
-  const keys = upserts.map((item?: any) => item.key);
+  const keys = upserts.map((item) => item.key);
   await client.query(
     "DELETE FROM system.setting_values WHERE setting_key = ANY($1::text[])",
     [keys],
   );
-  const rows = upserts.flatMap(
-    (item?: any) => splitSetting(item.key, item.value).values,
+  const rows: SettingValueRow[] = upserts.flatMap(
+    (item) => splitSetting(item.key, item.value).values,
   );
   await bulkInsert(
     client,
@@ -208,15 +418,18 @@ async function replaceSettingValueRows(client?: any, upserts?: any) {
   );
 }
 
-async function replaceModuleValueRows(client?: any, upserts?: any) {
+async function replaceModuleValueRows(
+  client: PgClient,
+  upserts: readonly ModuleValueUpsert[],
+): Promise<void> {
   if (upserts.length === 0) return;
-  const ids = upserts.map((item?: any) => item.id);
+  const ids = upserts.map((item) => item.id);
   await client.query(
     "DELETE FROM system.module_values WHERE module_id = ANY($1::text[])",
     [ids],
   );
-  const rows = upserts.flatMap((item?: any) =>
-    splitSetting(item.id, item.data).values.map((row?: any) => ({
+  const rows = upserts.flatMap((item) =>
+    splitSetting(item.id, item.data).values.map((row: SettingValueRow) => ({
       ...row,
       module_id: row.setting_key,
     })),
@@ -254,26 +467,19 @@ async function replaceModuleValueRows(client?: any, upserts?: any) {
   );
 }
 
-function pluginExtensionData(data?: any) {
-  return {
-    arguments: data.arguments || {},
-    realArg: data.realArg || {},
-    customLink: data.customLink || [],
-    argMeta: data.argMeta || {},
-    allowedIPC: data.allowedIPC || [],
-  };
-}
-
-async function replacePluginValueRows(client?: any, upserts?: any) {
+async function replacePluginValueRows(
+  client: PgClient,
+  upserts: readonly SqlPluginUpsert[],
+): Promise<void> {
   if (upserts.length === 0) return;
-  const ids = upserts.map((item?: any) => item.id);
+  const ids = upserts.map((item) => item.id);
   await client.query(
     "DELETE FROM system.plugin_values WHERE plugin_id = ANY($1::text[])",
     [ids],
   );
-  const rows = upserts.flatMap((item?: any) =>
+  const rows = upserts.flatMap((item) =>
     splitSetting(item.id, pluginExtensionData(item.data)).values.map(
-      (row?: any) => ({
+      (row: SettingValueRow) => ({
         ...row,
         plugin_id: row.setting_key,
       }),
@@ -312,31 +518,11 @@ async function replacePluginValueRows(client?: any, upserts?: any) {
   );
 }
 
-function rebuildPluginRecords(records?: any, valueRows?: any) {
-  const extension = rebuildSettings(
-    records.map((row?: any) => ({ key: row.plugin_id })),
-    valueRows,
-  );
-  return records.map((row?: any) => ({
-    ...(extension[row.plugin_id] || {}),
-    id: row.plugin_id,
-    position: Number(row.position),
-    name: row.name,
-    displayName: row.display_name ?? undefined,
-    version:
-      row.api_version === "1"
-        ? 1
-        : row.api_version === "2"
-          ? 2
-          : row.api_version || undefined,
-    versionOfPlugin: row.plugin_version ?? undefined,
-    updateURL: row.update_url ?? undefined,
-    enabled: Boolean(row.enabled),
-  }));
-}
-
-function rebuildSettingRows(settings?: any, valueRows?: any) {
-  const rebuilt = rebuildSettings(settings, valueRows);
+function rebuildSettingRows(
+  settings: readonly SettingScalarRow[],
+  valueRows: readonly SettingValueRow[],
+) {
+  const rebuilt: Record<string, unknown> = rebuildSettings(settings, valueRows);
   for (const row of settings) {
     if (!Object.prototype.hasOwnProperty.call(rebuilt, row.key)) {
       rebuilt[row.key] = mapColumnsToSettingValue(row);
@@ -345,36 +531,16 @@ function rebuildSettingRows(settings?: any, valueRows?: any) {
   return rebuilt;
 }
 
-function mapColumnsToSettingValue(row?: any) {
-  if (row.bool_val !== null && row.bool_val !== undefined) return row.bool_val;
-  if (row.num_val !== null && row.num_val !== undefined)
-    return Number(row.num_val);
-  if (row.text_val !== null && row.text_val !== undefined) {
-    if (
-      row.text_val.startsWith("{") ||
-      row.text_val.startsWith("[") ||
-      row.text_val === "null"
-    ) {
-      try {
-        return JSON.parse(row.text_val);
-      } catch {
-        return row.text_val;
-      }
-    }
-    return row.text_val;
-  }
-  return null;
-}
-
 import {
   PostgresRevisionConflictError,
   PostgresPayloadError,
 } from "../storageErrors.ts";
+const helpers: SqlStorageHelpers = createSqlStorageHelpers({
+  PayloadError: PostgresPayloadError,
+  maxIdLength: 1024,
+});
 const {
   asArray,
-  assertId,
-  assertPosition,
-  assertData,
   normalizeColdStorageKey,
   validateColdStorageValue,
   splitColdStorageValue,
@@ -383,34 +549,26 @@ const {
   validateSyncPayload,
   captureSyncCommitImpact,
   dedupeRootUpserts,
-} = createSqlStorageHelpers({
+} = helpers;
+/** Cold-storage value shape produced by the shared splitter. */
+type SplitColdStorageRows = ReturnType<typeof splitColdStorageValue>;
+// Assertion helpers need an explicit type annotation on their name before they
+// can be called as assertions, so they cannot be destructured.
+const assertId: SqlStorageHelpers["assertId"] = helpers.assertId;
+const assertPosition: SqlStorageHelpers["assertPosition"] =
+  helpers.assertPosition;
+const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
+
+const assertDbExplorerIdentifier = createDbExplorerIdentifierValidator({
   PayloadError: PostgresPayloadError,
-  maxIdLength: 1024,
+  tooLong: (field) => `${field} must be a valid table or column name`,
+  invalid: (field) => `${field} must be a valid table or column name`,
 });
 
-function assertDbExplorerIdentifier(value?: any, field?: any) {
-  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
-    throw new PostgresPayloadError(
-      `${field} must be a valid table or column name`,
-    );
-  }
-  const parts = value.split(".");
-  if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
-    return value;
-  }
-  if (
-    parts.length === 2 &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])
-  ) {
-    return value;
-  }
-  throw new PostgresPayloadError(
-    `${field} must be a valid table or column name`,
-  );
-}
-
-function dbExplorerSelectExpression(columnName?: any, dataType?: any) {
+function dbExplorerSelectExpression(
+  columnName: string,
+  dataType: string | null,
+): string {
   const column = `"${columnName}"`;
   switch (dataType) {
     case "bigint":
@@ -424,7 +582,7 @@ function dbExplorerSelectExpression(columnName?: any, dataType?: any) {
   }
 }
 
-function assertSqlIdentifier(value?: any) {
+function assertSqlIdentifier(value: unknown): string {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
@@ -443,18 +601,18 @@ function assertSqlIdentifier(value?: any) {
 }
 
 async function bulkInsert(
-  client?: any,
-  table?: any,
-  columns?: any,
-  columnTypes?: any,
-  rows?: any,
+  client: PgClient,
+  table: string,
+  columns: readonly string[],
+  columnTypes: readonly string[],
+  rows: readonly SqlStorageRow[],
   suffix = "",
-) {
+): Promise<void> {
   if (rows.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
-  const quotedColumns = columns.map((col?: any) => `"${col}"`);
+  const quotedColumns = columns.map((col) => `"${col}"`);
   const unnest = columns
-    .map((_?: any, index?: any) => `$${index + 1}::${columnTypes[index]}[]`)
+    .map((_column, index) => `$${index + 1}::${columnTypes[index]}[]`)
     .join(", ");
   const query = `INSERT INTO ${quotedTable} (${quotedColumns.join(", ")})
          SELECT * FROM UNNEST(${unnest}) AS item(${quotedColumns.join(", ")})
@@ -463,8 +621,8 @@ async function bulkInsert(
   // Keep only one column-major parameter batch alive during large restores.
   for (let start = 0; start < rows.length; start += BULK_INSERT_BATCH_ROWS) {
     const end = Math.min(rows.length, start + BULK_INSERT_BATCH_ROWS);
-    const parameters = columns.map((column?: any, columnIndex?: any) => {
-      const values = new Array(end - start);
+    const parameters: SqlParameter[][] = columns.map((column, columnIndex) => {
+      const values: SqlParameter[] = new Array(end - start);
       for (let rowIndex = start; rowIndex < end; rowIndex++) {
         const value = rows[rowIndex][column];
         values[rowIndex - start] =
@@ -480,16 +638,24 @@ async function bulkInsert(
   }
 }
 
+type AuditRevisionOptions = {
+  storageRevision?: number | null;
+  databaseInitialized?: boolean | null;
+  scope: string;
+  action: string;
+  restoredFrom?: number | null;
+};
+
 async function beginAuditRevision(
-  client: any,
+  client: PgClient,
   {
     storageRevision = null,
     databaseInitialized = null,
     scope,
     action,
     restoredFrom = null,
-  }: any,
-) {
+  }: AuditRevisionOptions,
+): Promise<number> {
   const result = await client.query(
     `WITH inserted AS (
             INSERT INTO system.revisions
@@ -506,44 +672,42 @@ async function beginAuditRevision(
 }
 
 function buildUpsertClause(
-  table?: any,
-  pkColumns?: any,
-  valueColumns?: any,
+  table: string,
+  pkColumns: readonly string[],
+  valueColumns: readonly string[],
   updateTimestamp = false,
-) {
+): string {
   if (valueColumns.length === 0) {
-    return `ON CONFLICT (${pkColumns.map((c?: any) => `"${c}"`).join(", ")}) DO NOTHING`;
+    return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(", ")}) DO NOTHING`;
   }
   const quotedTable = assertSqlIdentifier(table);
-  const sets = valueColumns.map((c?: any) => `"${c}" = EXCLUDED."${c}"`);
+  const sets = valueColumns.map((c) => `"${c}" = EXCLUDED."${c}"`);
   if (updateTimestamp) {
     sets.push('"updated_at" = NOW()');
   }
-  const leftCols = valueColumns
-    .map((c?: any) => `${quotedTable}."${c}"`)
-    .join(", ");
-  const rightCols = valueColumns.map((c?: any) => `EXCLUDED."${c}"`).join(", ");
-  return `ON CONFLICT (${pkColumns.map((c?: any) => `"${c}"`).join(", ")}) DO UPDATE SET
+  const leftCols = valueColumns.map((c) => `${quotedTable}."${c}"`).join(", ");
+  const rightCols = valueColumns.map((c) => `EXCLUDED."${c}"`).join(", ");
+  return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(", ")}) DO UPDATE SET
         ${sets.join(", ")}
         WHERE (${leftCols}) IS DISTINCT FROM (${rightCols})`;
 }
 
 async function prunePositionalChildren(
-  client?: any,
-  table?: any,
-  ownerColumn?: any,
-  lengthsByOwner?: any,
-  subKindColumn: any = null,
-) {
+  client: PgClient,
+  table: string,
+  ownerColumn: string,
+  lengthsByOwner: readonly PositionalOwnerLength[],
+  subKindColumn: string | null = null,
+): Promise<void> {
   if (lengthsByOwner.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
   const ownerCol = `"${ownerColumn}"`;
 
   if (subKindColumn) {
     const subKindCol = `"${subKindColumn}"`;
-    const owners = lengthsByOwner.map((item?: any) => item.ownerId);
-    const subKinds = lengthsByOwner.map((item?: any) => item.subKind);
-    const lengths = lengthsByOwner.map((item?: any) => item.length);
+    const owners = lengthsByOwner.map((item) => item.ownerId);
+    const subKinds = lengthsByOwner.map((item) => item.subKind);
+    const lengths = lengthsByOwner.map((item) => item.length);
     await client.query(
       `DELETE FROM ${quotedTable} AS target
              USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(owner_id, sub_kind, target_len)
@@ -553,8 +717,8 @@ async function prunePositionalChildren(
       [owners, subKinds, lengths],
     );
   } else {
-    const owners = lengthsByOwner.map((item?: any) => item.ownerId);
-    const lengths = lengthsByOwner.map((item?: any) => item.length);
+    const owners = lengthsByOwner.map((item) => item.ownerId);
+    const lengths = lengthsByOwner.map((item) => item.length);
     await client.query(
       `DELETE FROM ${quotedTable} AS target
              USING UNNEST($1::text[], $2::integer[]) AS spec(owner_id, target_len)
@@ -566,12 +730,12 @@ async function prunePositionalChildren(
 }
 
 async function pruneKeyedChildren(
-  client?: any,
-  table?: any,
-  ownerColumn?: any,
-  keyColumn?: any,
-  keysByOwner?: any,
-) {
+  client: PgClient,
+  table: string,
+  ownerColumn: string,
+  keyColumn: string,
+  keysByOwner: readonly KeyedOwnerKeys[],
+): Promise<void> {
   if (keysByOwner.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
   const ownerCol = `"${ownerColumn}"`;
@@ -594,10 +758,18 @@ async function pruneKeyedChildren(
 export type PostgresStorageContract = PostgresStorage;
 
 class PostgresStorage extends SqlStorageBase {
-  constructor(options: any = {}) {
+  // The `pg` package ships no type definitions and is loaded lazily.
+  declare pool: PgPool | null;
+  declare connectionString: string;
+  declare poolMax: number;
+  declare postgresSchemaSql: string | null;
+  declare schemaRecoveryPromise: Promise<void> | null;
+  declare startupSettings: ReturnType<typeof readStorageStartupSettings>;
+
+  constructor(options: PostgresStorageOptions = {}) {
     super();
     this.connectionString = options.connectionString || "";
-    this.poolMax = Number.parseInt(options.poolMax || "10", 10);
+    this.poolMax = Number.parseInt(String(options.poolMax ?? "10"), 10);
     this.enabled = Boolean(this.connectionString);
     this.startupSettings = readStorageStartupSettings();
     this.pool = null;
@@ -624,7 +796,10 @@ class PostgresStorage extends SqlStorageBase {
     console.log("[PostgreSQL] Structured storage is ready.");
   }
 
-  runStartupStep(operation?: any, task?: any) {
+  runStartupStep<TOperationResult>(
+    operation: string,
+    task: () => TOperationResult | Promise<TOperationResult>,
+  ): Promise<TOperationResult> {
     return runStartupStage(
       {
         scope: "PostgreSQL startup",
@@ -635,7 +810,7 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async loadPostgresSchemaSql() {
+  async loadPostgresSchemaSql(): Promise<string> {
     if (!this.postgresSchemaSql) {
       this.postgresSchemaSql = await fs.readFile(
         path.join(__dirname, "postgres-schema.sql"),
@@ -645,7 +820,7 @@ class PostgresStorage extends SqlStorageBase {
     return this.postgresSchemaSql;
   }
 
-  async verifyPostgresSchema(query?: any) {
+  async verifyPostgresSchema(query: PgQuery): Promise<void> {
     const result = await query(
       "SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE",
     );
@@ -663,8 +838,8 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async recoverMissingPostgresSchema(query?: any) {
-    if (this.schemaRecoveryPromise) {
+  async recoverMissingPostgresSchema(query: PgQuery): Promise<void> {
+    if (this.schemaRecoveryPromise != null) {
       return this.schemaRecoveryPromise;
     }
     const recovery = (async () => {
@@ -691,7 +866,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async ensureConnectedClientSchema(query?: any) {
+  async ensureConnectedClientSchema(query: PgQuery): Promise<void> {
     const existingMeta = await query(
       "SELECT to_regclass('system.storage_meta') AS table_name",
     );
@@ -702,7 +877,7 @@ class PostgresStorage extends SqlStorageBase {
     await this.verifyPostgresSchema(query);
   }
 
-  async ensureLastMessageTimeInvariant(query?: any) {
+  async ensureLastMessageTimeInvariant(query: PgQuery): Promise<void> {
     const triggerName = "messages_last_message_time_after_insert";
     const existing = await query(
       `SELECT 1 FROM pg_trigger
@@ -730,32 +905,48 @@ class PostgresStorage extends SqlStorageBase {
     await query(triggerSql);
   }
 
-  installPoolSchemaRecovery(pool?: any) {
-    pool.on("error", (error?: any) => {
+  installPoolSchemaRecovery(pool: PgPool): void {
+    pool.on("error", (error: Error) => {
       console.warn(
         "[PostgreSQL] Idle pool connection failed; a later request will reconnect:",
         error.message || error,
       );
     });
-    pool.on("connect", (client?: any) => {
-      const originalQuery = client.query.bind(client);
+    pool.on("connect", (client: PgClient) => {
+      const originalQuery: PgQuery = client.query.bind(client) as PgQuery;
       const schemaReady = this.ensureConnectedClientSchema(originalQuery);
       schemaReady.catch(() => {});
-      client.query = (...args: any[]) => {
+      // `pg` still accepts the legacy callback form for `query`.
+      const queryWithSchema: PgQuery = ((...args: unknown[]) => {
         const callback =
-          typeof args[args.length - 1] === "function" ? args.pop() : null;
+          typeof args[args.length - 1] === "function"
+            ? (args.pop() as PgQueryCallback)
+            : null;
         if (callback) {
           schemaReady
-            .then(() => originalQuery(...args, callback))
-            .catch((error?: any) => callback(error));
-          return;
+            .then(() =>
+              (originalQuery as (...argv: unknown[]) => unknown)(
+                ...args,
+                callback,
+              ),
+            )
+            .catch((error: unknown) => callback(error as Error));
+          return undefined as never;
         }
-        return schemaReady.then(() => originalQuery(...args));
-      };
+        return schemaReady.then(() =>
+          (originalQuery as (...argv: unknown[]) => Promise<PgQueryResult>)(
+            ...args,
+          ),
+        );
+      }) as PgQuery;
+      client.query = queryWithSchema;
     });
   }
 
-  async createInitializedPool(connectionString?: any, poolMax?: any) {
+  async createInitializedPool(
+    connectionString: string,
+    poolMax: number,
+  ): Promise<PgPool> {
     const pool = new (await loadPostgres()).Pool({
       connectionString,
       max: Number.isSafeInteger(poolMax) && poolMax > 0 ? poolMax : 10,
@@ -805,10 +996,10 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async reconfigure(options: any = {}) {
+  async reconfigure(options: PostgresStorageOptions = {}): Promise<void> {
     this.invalidateBootstrapCache();
     const connectionString = options.connectionString || "";
-    const parsedPoolMax = Number.parseInt(options.poolMax || "10", 10);
+    const parsedPoolMax = Number.parseInt(String(options.poolMax ?? "10"), 10);
     const poolMax =
       Number.isSafeInteger(parsedPoolMax) && parsedPoolMax > 0
         ? parsedPoolMax
@@ -840,26 +1031,26 @@ class PostgresStorage extends SqlStorageBase {
     console.log("[PostgreSQL] Storage connection was reconfigured.");
   }
 
-  assertEnabled() {
+  assertEnabled(): asserts this is PostgresStorage & { pool: PgPool } {
     if (!this.enabled || !this.pool) {
       throw new Error("PostgreSQL storage is not enabled");
     }
   }
 
-  async getState() {
+  async getState(): Promise<{ revision: number; initialized: boolean }> {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<StorageMetaRow>(
       "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
     );
     return {
       revision: Number(result.rows[0].revision),
-      initialized: result.rows[0].initialized,
+      initialized: Boolean(result.rows[0].initialized),
     };
   }
 
   async getStorageSyncSummary() {
     this.assertEnabled();
-    const result = await this.pool.query(`
+    const result = await this.pool.query<StorageSyncSummaryRow>(`
       SELECT meta.revision, meta.initialized,
              (SELECT COUNT(*)::bigint FROM system.settings) AS settings_count,
              (SELECT COUNT(*)::bigint FROM character.characters) AS characters_count,
@@ -868,26 +1059,16 @@ class PostgresStorage extends SqlStorageBase {
         FROM system.storage_meta meta
        WHERE meta.singleton = TRUE
     `);
-    const row = result.rows[0] || {};
-    const records = {
-      settings: Number(row.settings_count) || 0,
-      characters: Number(row.characters_count) || 0,
-      chats: Number(row.chats_count) || 0,
-      messages: Number(row.messages_count) || 0,
-    };
-    return {
-      revision: Number(row.revision) || 0,
-      initialized: Boolean(row.initialized),
-      records: {
-        ...records,
-        total: Object.values(records).reduce((a?: any, b?: any) => a + b, 0),
-      },
-    };
+    const row: Partial<StorageSyncSummaryRow> = result.rows[0] ?? {};
+    return summarizeStorageSyncRow(row);
   }
 
-  async isAssetCatalogInitialized(sourceId?: any) {
+  async isAssetCatalogInitialized(sourceId?: string | null): Promise<boolean> {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<{
+      initialized: boolean | null;
+      source_id: string | null;
+    }>(
       "SELECT initialized, source_id FROM system.asset_catalog_state WHERE singleton = TRUE",
     );
     return (
@@ -896,34 +1077,36 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async listAssetCatalog(prefix = "") {
+  async listAssetCatalog(prefix = ""): Promise<string[]> {
     this.assertEnabled();
     const result = prefix
-      ? await this.pool.query(
+      ? await this.pool.query<AssetCatalogKeyRow>(
           "SELECT asset_key FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2 ORDER BY asset_key",
           [prefix.length, prefix],
         )
-      : await this.pool.query(
+      : await this.pool.query<AssetCatalogKeyRow>(
           "SELECT asset_key FROM system.asset_catalog ORDER BY asset_key",
         );
-    return result.rows.map((row?: any) => row.asset_key);
+    return result.rows.map((row) => row.asset_key);
   }
 
-  async listAssetCatalogEntries(prefix = "") {
+  async listAssetCatalogEntries(prefix = ""): Promise<AssetCatalogEntryRow[]> {
     this.assertEnabled();
     const result = prefix
-      ? await this.pool.query(
+      ? await this.pool.query<AssetCatalogRow>(
           "SELECT asset_key, size_bytes, etag, updated_at FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2 ORDER BY asset_key",
           [prefix.length, prefix],
         )
-      : await this.pool.query(
+      : await this.pool.query<AssetCatalogRow>(
           "SELECT asset_key, size_bytes, etag, updated_at FROM system.asset_catalog ORDER BY asset_key",
         );
-    return result.rows.map((row?: any) => ({
+    return result.rows.map((row) => ({
       key: row.asset_key,
       size: row.size_bytes === null ? null : Number(row.size_bytes),
       etag: row.etag ?? null,
-      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+      updatedAt: row.updated_at
+        ? new Date(row.updated_at as string | number | Date).getTime()
+        : null,
     }));
   }
 
@@ -932,18 +1115,17 @@ class PostgresStorage extends SqlStorageBase {
     const result = await this.pool.query(
       "SELECT COUNT(*)::bigint AS total_objects, COALESCE(SUM(size_bytes), 0)::bigint AS total_size FROM system.asset_catalog",
     );
-    return {
-      totalObjects: Number(result.rows[0].total_objects),
-      totalSizeBytes: Number(result.rows[0].total_size),
-    };
+    return mapAssetCatalogStats(result.rows[0] ?? {});
   }
 
-  async upsertAssetCatalog(entries?: any) {
+  async upsertAssetCatalog(
+    entries: readonly AssetCatalogEntry[],
+  ): Promise<number> {
     this.assertEnabled();
     if (!Array.isArray(entries) || entries.length === 0) return 0;
-    const keys = entries.map((entry?: any) => entry.key);
-    const sizes = entries.map((entry?: any) => entry.size ?? null);
-    const etags = entries.map((entry?: any) => entry.etag ?? null);
+    const keys = entries.map((entry) => entry.key);
+    const sizes = entries.map((entry) => entry.size ?? null);
+    const etags = entries.map((entry) => entry.etag ?? null);
     await this.pool.query(
       `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
              SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])
@@ -956,7 +1138,7 @@ class PostgresStorage extends SqlStorageBase {
     return entries.length;
   }
 
-  async removeAssetCatalog(keys?: any) {
+  async removeAssetCatalog(keys: readonly string[]): Promise<number | null> {
     this.assertEnabled();
     if (!Array.isArray(keys) || keys.length === 0) return 0;
     const result = await this.pool.query(
@@ -966,7 +1148,11 @@ class PostgresStorage extends SqlStorageBase {
     return result.rowCount;
   }
 
-  async replaceAssetCatalog(prefix?: any, entries?: any, sourceId?: any) {
+  async replaceAssetCatalog(
+    prefix: string,
+    entries: readonly AssetCatalogEntry[],
+    sourceId: string | null,
+  ): Promise<number> {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
@@ -980,9 +1166,9 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("DELETE FROM system.asset_catalog");
       }
       if (entries.length > 0) {
-        const keys = entries.map((entry?: any) => entry.key);
-        const sizes = entries.map((entry?: any) => entry.size ?? null);
-        const etags = entries.map((entry?: any) => entry.etag ?? null);
+        const keys = entries.map((entry) => entry.key);
+        const sizes = entries.map((entry) => entry.size ?? null);
+        const etags = entries.map((entry) => entry.etag ?? null);
         await client.query(
           `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
                      SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])`,
@@ -1005,7 +1191,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listRevisions(rawLimit: any = null) {
+  async listRevisions(rawLimit: unknown = null) {
     this.assertEnabled();
     let sql = `SELECT revision.id, revision.storage_revision, revision.database_initialized,
                     revision.scope, revision.action, revision.restored_from_revision,
@@ -1014,41 +1200,23 @@ class PostgresStorage extends SqlStorageBase {
              LEFT JOIN system.audit_log AS audit ON audit.revision_id = revision.id
              GROUP BY revision.id
              ORDER BY revision.id DESC`;
-    const params = [];
-    if (
-      rawLimit !== null &&
-      rawLimit !== undefined &&
-      rawLimit !== "" &&
-      rawLimit !== "all" &&
-      rawLimit !== 0 &&
-      rawLimit !== "0"
-    ) {
-      const parsedLimit = Number.parseInt(String(rawLimit), 10);
-      if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
-        sql += " LIMIT $1";
-        params.push(parsedLimit);
-      }
+    const params: SqlParameter[] = [];
+    const parsedLimit = parseRevisionListLimit(rawLimit);
+    if (parsedLimit !== null) {
+      sql += " LIMIT $1";
+      params.push(parsedLimit);
     }
-    const result = await this.pool.query(sql, params);
-    return result.rows.map((row?: any) => ({
-      ...row,
-      id: Number(row.id),
-      storage_revision:
-        row.storage_revision === null ? null : Number(row.storage_revision),
-      restored_from_revision:
-        row.restored_from_revision === null
-          ? null
-          : Number(row.restored_from_revision),
-    }));
+    const result = await this.pool.query<RevisionListRow>(sql, params);
+    return result.rows.map((row) => mapRevisionListRow(row));
   }
 
-  async getRevisionDetails(rawRevisionId?: any) {
+  async getRevisionDetails(rawRevisionId: unknown) {
     this.assertEnabled();
     const revisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(revisionId) || revisionId <= 0) {
       throw new PostgresPayloadError("revisionId must be a positive integer");
     }
-    const revResult = await this.pool.query(
+    const revResult = await this.pool.query<RevisionRow>(
       `SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at
              FROM system.revisions
              WHERE id = $1`,
@@ -1059,66 +1227,18 @@ class PostgresStorage extends SqlStorageBase {
     }
     const revision = revResult.rows[0];
 
-    const auditResult = await this.pool.query(
-      `SELECT sequence, table_name, operation, before_row, after_row, recorded_at
+    const auditResult = await this.pool.query<AuditLogEntryRow>(
+      `SELECT sequence, revision_id, table_name, operation, before_row, after_row, recorded_at
              FROM system.audit_log
              WHERE revision_id = $1
              ORDER BY sequence ASC`,
       [revisionId],
     );
 
-    const tableMap = new Map<any, any>();
-    const auditLogs = auditResult.rows.map((row?: any) => {
-      const table = row.table_name;
-      const op = row.operation;
-      if (!tableMap.has(table)) {
-        tableMap.set(table, {
-          tableName: table,
-          insertCount: 0,
-          updateCount: 0,
-          deleteCount: 0,
-          totalCount: 0,
-        });
-      }
-      const stat = tableMap.get(table);
-      stat.totalCount += 1;
-      if (op === "INSERT") stat.insertCount += 1;
-      else if (op === "UPDATE") stat.updateCount += 1;
-      else if (op === "DELETE") stat.deleteCount += 1;
-
-      return {
-        sequence: Number(row.sequence),
-        tableName: row.table_name,
-        operation: row.operation,
-        beforeRow: row.before_row,
-        afterRow: row.after_row,
-        recordedAt: row.recorded_at,
-      };
-    });
-
-    const tableSummaries = Array.from(tableMap.values());
-
-    return {
-      id: Number(revision.id),
-      storage_revision:
-        revision.storage_revision === null
-          ? null
-          : Number(revision.storage_revision),
-      database_initialized: revision.database_initialized,
-      scope: revision.scope,
-      action: revision.action,
-      restored_from_revision:
-        revision.restored_from_revision === null
-          ? null
-          : Number(revision.restored_from_revision),
-      created_at: revision.created_at,
-      change_count: auditLogs.length,
-      tableSummaries,
-      auditLogs,
-    };
+    return buildRevisionDetails(revision, auditResult.rows);
   }
 
-  async getRevisionDiff(rawBaseId?: any, rawTargetId?: any) {
+  async getRevisionDiff(rawBaseId: unknown, rawTargetId: unknown) {
     this.assertEnabled();
     const baseId = Number(rawBaseId);
     const targetId = Number(rawTargetId);
@@ -1135,7 +1255,7 @@ class PostgresStorage extends SqlStorageBase {
     const minId = Math.min(baseId, targetId);
     const maxId = Math.max(baseId, targetId);
 
-    const auditResult = await this.pool.query(
+    const auditResult = await this.pool.query<AuditLogEntryRow>(
       `SELECT sequence, revision_id, table_name, operation, before_row, after_row, recorded_at
              FROM system.audit_log
              WHERE revision_id > $1 AND revision_id <= $2
@@ -1143,45 +1263,15 @@ class PostgresStorage extends SqlStorageBase {
       [minId, maxId],
     );
 
-    const tableMap = new Map<any, any>();
-    for (const row of auditResult.rows) {
-      const table = row.table_name;
-      const op = row.operation;
-      if (!tableMap.has(table)) {
-        tableMap.set(table, {
-          tableName: table,
-          insertCount: 0,
-          updateCount: 0,
-          deleteCount: 0,
-          totalCount: 0,
-          entries: [],
-        });
-      }
-      const stat = tableMap.get(table);
-      stat.totalCount += 1;
-      if (op === "INSERT") stat.insertCount += 1;
-      else if (op === "UPDATE") stat.updateCount += 1;
-      else if (op === "DELETE") stat.deleteCount += 1;
-      stat.entries.push({
-        sequence: Number(row.sequence),
-        revisionId: Number(row.revision_id),
-        tableName: row.table_name,
-        operation: row.operation,
-        beforeRow: row.before_row,
-        afterRow: row.after_row,
-        recordedAt: row.recorded_at,
-      });
-    }
-
     return {
       baseRevisionId: baseId,
       targetRevisionId: targetId,
       totalChanges: auditResult.rowCount,
-      tables: Array.from(tableMap.values()),
+      tables: buildRevisionDiffTables(auditResult.rows),
     };
   }
 
-  async previewRestore(rawRevisionId?: any) {
+  async previewRestore(rawRevisionId: unknown) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
@@ -1201,7 +1291,7 @@ class PostgresStorage extends SqlStorageBase {
       ? Number(latest.rows[0].id)
       : targetRevisionId;
 
-    const auditResult = await this.pool.query(
+    const auditResult = await this.pool.query<AuditLogEntryRow>(
       `SELECT sequence, table_name, operation, before_row, after_row
              FROM system.audit_log
              WHERE revision_id > $1
@@ -1209,50 +1299,18 @@ class PostgresStorage extends SqlStorageBase {
       [targetRevisionId],
     );
 
-    const tableMap = new Map<any, any>();
-    let restoreInsertCount = 0;
-    let restoreDeleteCount = 0;
-    let restoreUpdateCount = 0;
-
-    for (const event of auditResult.rows) {
-      const table = event.table_name;
-      if (!tableMap.has(table)) {
-        tableMap.set(table, {
-          tableName: table,
-          revertedInserts: 0,
-          revertedUpdates: 0,
-          revertedDeletes: 0,
-          totalChanges: 0,
-        });
-      }
-      const stat = tableMap.get(table);
-      stat.totalChanges += 1;
-      if (event.operation === "INSERT") {
-        stat.revertedInserts += 1;
-        restoreDeleteCount += 1;
-      } else if (event.operation === "DELETE") {
-        stat.revertedDeletes += 1;
-        restoreInsertCount += 1;
-      } else if (event.operation === "UPDATE") {
-        stat.revertedUpdates += 1;
-        restoreUpdateCount += 1;
-      }
-    }
-
     return {
       targetRevisionId,
       currentRevisionId,
       revisionsToRevert: Math.max(0, currentRevisionId - targetRevisionId),
-      totalOperations: auditResult.rowCount,
-      restoreInsertCount,
-      restoreDeleteCount,
-      restoreUpdateCount,
-      affectedTables: Array.from(tableMap.values()),
+      ...buildRestorePreview(auditResult.rows),
     };
   }
 
-  async getRestoreMetadata(client?: any) {
-    const result = await client.query(
+  async getRestoreMetadata(
+    client: PgClient,
+  ): Promise<Map<string, RestoreTable>> {
+    const result = await client.query<RestoreMetadataRow>(
       `SELECT (namespace.nspname || '.' || class.relname) AS table_name,
                     attribute.attname AS column_name,
                     format_type(attribute.atttypid, attribute.atttypmod) AS column_type,
@@ -1274,9 +1332,9 @@ class PostgresStorage extends SqlStorageBase {
              ORDER BY namespace.nspname, class.relname, attribute.attnum`,
       [AUDITED_TABLES],
     );
-    const metadata = new Map<any, any>();
+    const metadata = new Map<string, RestoreTable>();
     for (const row of result.rows) {
-      const table = metadata.get(row.table_name) || {
+      const table: RestoreTable = metadata.get(row.table_name) || {
         columns: [],
         primary: [],
       };
@@ -1291,7 +1349,7 @@ class PostgresStorage extends SqlStorageBase {
     return metadata;
   }
 
-  async restoreRevision(rawRevisionId?: any) {
+  async restoreRevision(rawRevisionId: unknown) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
@@ -1307,11 +1365,13 @@ class PostgresStorage extends SqlStorageBase {
       );
       if (target.rowCount === 0)
         throw new PostgresPayloadError("The requested revision does not exist");
-      const metaResult = await client.query(
+      const metaResult = await client.query<{ revision: number | string }>(
         "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const nextStorageRevision = Number(metaResult.rows[0].revision) + 1;
-      const initializedResult = await client.query(
+      const initializedResult = await client.query<{
+        database_initialized: boolean | null;
+      }>(
         `SELECT database_initialized
                  FROM system.revisions
                  WHERE id <= $1 AND database_initialized IS NOT NULL
@@ -1327,7 +1387,7 @@ class PostgresStorage extends SqlStorageBase {
         action: "restore",
         restoredFrom: targetRevisionId,
       });
-      const auditResult = await client.query(
+      const auditResult = await client.query<AuditLogEntryRow>(
         `SELECT sequence, table_name, operation, before_row, after_row
                  FROM system.audit_log
                  WHERE revision_id > $1 AND revision_id < $2
@@ -1344,40 +1404,40 @@ class PostgresStorage extends SqlStorageBase {
         }
         const quotedTable = assertSqlIdentifier(event.table_name);
         if (event.operation === "INSERT") {
-          const source = event.after_row;
+          const source = isSqlRow(event.after_row) ? event.after_row : {};
           const where = table.primary
-            .map((column?: any, index?: any) => `"${column}" = $${index + 1}`)
+            .map((column, index) => `"${column}" = $${index + 1}`)
             .join(" AND ");
           await client.query(
             `DELETE FROM ${quotedTable} WHERE ${where}`,
-            table.primary.map((column?: any) => source[column]),
+            table.primary.map((column) => source[column]),
           );
           continue;
         }
-        const source = event.before_row;
-        const columns = table.columns.map((column?: any) => column.name);
-        const values = table.columns.map((column?: any) => {
+        const source = isSqlRow(event.before_row) ? event.before_row : {};
+        const columns = table.columns.map((column) => column.name);
+        const values = table.columns.map((column): SqlParameter => {
           const value = source[column.name];
           if (column.type !== "jsonb") return value;
           if (value === null && !column.notNull) return null;
           return JSON.stringify(value);
         });
         const placeholders = table.columns
-          .map((column?: any, index?: any) => `$${index + 1}::${column.type}`)
+          .map((column, index) => `$${index + 1}::${column.type}`)
           .join(", ");
         const updateColumns = columns.filter(
-          (column?: any) => !table.primary.includes(column),
+          (column) => !table.primary.includes(column),
         );
         const conflictAction =
           updateColumns.length === 0
             ? "DO NOTHING"
             : `DO UPDATE SET ${updateColumns
-                .map((column?: any) => `"${column}" = EXCLUDED."${column}"`)
+                .map((column) => `"${column}" = EXCLUDED."${column}"`)
                 .join(", ")}`;
         await client.query(
-          `INSERT INTO ${quotedTable} (${columns.map((c?: any) => `"${c}"`).join(", ")})
+          `INSERT INTO ${quotedTable} (${columns.map((c) => `"${c}"`).join(", ")})
                      VALUES (${placeholders})
-                     ON CONFLICT (${table.primary.map((c?: any) => `"${c}"`).join(", ")}) ${conflictAction}`,
+                     ON CONFLICT (${table.primary.map((c) => `"${c}"`).join(", ")}) ${conflictAction}`,
           values,
         );
       }
@@ -1405,13 +1465,13 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadColdStorage(key?: any) {
+  async loadColdStorage(key: unknown) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const archiveResult = await client.query(
+      const archiveResult = await client.query<ColdArchiveRow>(
         "SELECT * FROM cold.archives WHERE id = $1::uuid",
         [normalizedKey],
       );
@@ -1420,7 +1480,7 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("COMMIT");
         return null;
       }
-      const tableNames = [
+      const tableNames: readonly ColdTableName[] = [
         "cold.archive_attributes",
         "cold.field_presence",
         "cold.character_tags",
@@ -1452,45 +1512,49 @@ class PostgresStorage extends SqlStorageBase {
       await client.query(`SELECT set_config('risu.archive_id', $1, TRUE)`, [
         normalizedKey,
       ]);
-      const loaded = await client.query(
+      const loaded = await queryStatementResults(
+        client,
         tableNames
           .map(
-            (table?: any) =>
+            (table) =>
               `SELECT * FROM ${assertSqlIdentifier(table)}
                  WHERE archive_id = current_setting('risu.archive_id')::uuid ORDER BY 1, 2, 3`,
           )
           .join(";\n"),
       );
+      // Each statement comes from `tableNames` in order, so the positional
+      // results line up with the declared per-table row shapes.
       const rows = Object.fromEntries(
-        tableNames.map((table?: any, index?: any) => [
-          table,
-          loaded[index].rows,
-        ]),
-      );
-      let data;
+        tableNames.map((table, index) => [table, loaded[index].rows]),
+      ) as ColdTableRows;
+      let data: unknown;
       if (archive.kind === "legacy") {
         const legacy = rows["cold.archive_attributes"].find(
-          (item?: any) => item.key === "legacy",
+          (item) => item.key === "legacy",
         );
         data = legacy ? decodePostgresJsonValue(legacy.value) : [];
       } else {
         const presence = (
-          entityType?: any,
-          chatPosition?: any,
-          entityPosition?: any,
-        ) =>
-          new Set<any>(
+          entityType: ColdFieldPresenceRow["entity_type"],
+          chatPosition: number,
+          entityPosition: number,
+        ): Set<unknown> =>
+          new Set<unknown>(
             rows["cold.field_presence"]
               .filter(
-                (item?: any) =>
+                (item) =>
                   item.entity_type === entityType &&
                   item.chat_position === chatPosition &&
                   item.entity_position === entityPosition,
               )
-              .map((item?: any) => item.field_name),
+              .map((item) => item.field_name),
           );
-        const retainPresentFields = (value?: any, fields?: any) => {
+        const retainPresentFields = <TValue extends unknown>(
+          value: TValue,
+          fields: ReadonlySet<unknown>,
+        ): TValue => {
           if (fields.size === 0) return value;
+          if (!isSqlRow(value)) return value;
           for (const field of Object.keys(value))
             if (!fields.has(field)) delete value[field];
           return value;
@@ -1524,31 +1588,40 @@ class PostgresStorage extends SqlStorageBase {
           rows["cold.messages"],
           "chat_position",
         );
-        const messageKey = (chatPosition?: any, messagePosition?: any) =>
+        const messageKey = (chatPosition: number, messagePosition: number) =>
           `${chatPosition}\0${messagePosition}`;
-        const groupColdMessages = (items?: any) =>
-          new Map<any, any>(
-            items.reduce((entries?: any, item?: any) => {
-              const key = messageKey(item.chat_position, item.message_position);
-              const value = entries.find(
-                ([candidate]: any) => candidate === key,
-              );
-              if (value) value[1].push(item);
-              else entries.push([key, [item]]);
-              return entries;
-            }, []),
-          );
+        /** Group cold message relations by their chat and message positions. */
+        const groupColdMessages = <
+          TRow extends { chat_position: number; message_position: number },
+        >(
+          items: readonly TRow[],
+        ): Map<string, TRow[]> => {
+          const grouped = new Map<string, TRow[]>();
+          for (const item of items) {
+            const key = messageKey(item.chat_position, item.message_position);
+            const value = grouped.get(key);
+            if (value) value.push(item);
+            else grouped.set(key, [item]);
+          }
+          return grouped;
+        };
         const messageAttributes = groupColdMessages(
           rows["cold.message_attributes"],
         );
-        const messageGenerations = new Map<any, any>(
-          rows["cold.message_generation"].map((item?: any) => [
+        const messageGenerations = new Map<
+          string,
+          ColdMessageRowOf<MessageGenerationRow>
+        >(
+          rows["cold.message_generation"].map((item) => [
             messageKey(item.chat_position, item.message_position),
             item,
           ]),
         );
-        const messagePromptInfos = new Map<any, any>(
-          rows["cold.message_prompt_info"].map((item?: any) => [
+        const messagePromptInfos = new Map<
+          string,
+          ColdMessageRowOf<MessagePromptInfoRow>
+        >(
+          rows["cold.message_prompt_info"].map((item) => [
             messageKey(item.chat_position, item.message_position),
             item,
           ]),
@@ -1559,9 +1632,9 @@ class PostgresStorage extends SqlStorageBase {
         const messagePromptItems = groupColdMessages(
           rows["cold.message_prompt_items"],
         );
-        const rebuiltChats = rows["cold.chats"].map((chatRow?: any) => {
+        const rebuiltChats = rows["cold.chats"].map((chatRow) => {
           const messages = (messagesByPosition.get(chatRow.position) || []).map(
-            (messageRow?: any) => {
+            (messageRow) => {
               const relationKey = messageKey(
                 messageRow.chat_position,
                 messageRow.position,
@@ -1614,7 +1687,7 @@ class PostgresStorage extends SqlStorageBase {
           const chat = rebuiltChats[0] || { message: [] };
           data = chat;
         } else {
-          const characterRow: Record<string, any> = {
+          const characterRow: SqlStorageRow = {
             id: archive.owner_character_id || normalizedKey,
           };
           for (const [key, value] of Object.entries(archive)) {
@@ -1626,7 +1699,7 @@ class PostgresStorage extends SqlStorageBase {
             character: retainPresentFields(
               rebuildCharacter(characterRow, {
                 attributes: rows["cold.archive_attributes"].filter(
-                  (item?: any) => item.key !== "legacy",
+                  (item) => item.key !== "legacy",
                 ),
                 tags: rows["cold.character_tags"],
                 greetings: rows["cold.character_greetings"],
@@ -1662,9 +1735,9 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listColdStorage() {
+  async listColdStorage(): Promise<ColdStorageSummaryRow[]> {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<ColdStorageSummaryRow>(
       `SELECT id::text AS key, kind, updated_at
              FROM cold.archives
              ORDER BY updated_at DESC, id`,
@@ -1672,7 +1745,7 @@ class PostgresStorage extends SqlStorageBase {
     return result.rows;
   }
 
-  async upsertColdStorage(key?: any, value?: any) {
+  async upsertColdStorage(key: unknown, value: unknown) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const splitValue = splitColdStorageValue(value);
@@ -1698,8 +1771,12 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async upsertColdStorageWithClient(client?: any, key?: any, splitValue?: any) {
-    let character = null;
+  async upsertColdStorageWithClient(
+    client: PgClient,
+    key: string,
+    splitValue: SplitColdStorageRows,
+  ) {
+    let character: CharacterSplit | null = null;
     if (splitValue.kind === "character") {
       const characterData = splitValue.data.character;
       character = splitCharacter({
@@ -1744,7 +1821,7 @@ class PostgresStorage extends SqlStorageBase {
       "character_last_interaction_time",
       "character_trash_time",
     ];
-    const archive = {
+    const archive: SqlStorageRow = {
       id: key,
       kind: splitValue.kind,
       owner_character_id: character?.core.id || null,
@@ -1776,7 +1853,7 @@ class PostgresStorage extends SqlStorageBase {
       [archive],
       `ON CONFLICT (id) DO UPDATE SET ${archiveColumns
         .slice(1)
-        .map((column?: any) => `"${column}" = EXCLUDED."${column}"`)
+        .map((column) => `"${column}" = EXCLUDED."${column}"`)
         .join(", ")},
                 revision = cold.archives.revision + 1, updated_at = NOW()`,
     );
@@ -1804,7 +1881,7 @@ class PostgresStorage extends SqlStorageBase {
       );
     }
 
-    let archiveAttributes = [];
+    let archiveAttributes: (AttributeRow & { archive_id: string })[] = [];
     if (splitValue.kind === "legacy") {
       archiveAttributes = [
         {
@@ -1814,7 +1891,7 @@ class PostgresStorage extends SqlStorageBase {
         },
       ];
     } else if (character) {
-      archiveAttributes = character.attributes.map((item?: any) => ({
+      archiveAttributes = character.attributes.map((item) => ({
         ...item,
         archive_id: key,
       }));
@@ -1827,15 +1904,15 @@ class PostgresStorage extends SqlStorageBase {
       archiveAttributes,
     );
     const presenceRows = [
-      ...(splitValue.characterFields || []).map((fieldName?: any) => ({
+      ...(splitValue.characterFields || []).map((fieldName) => ({
         archive_id: key,
         entity_type: "character",
         chat_position: -1,
         entity_position: -1,
         field_name: fieldName,
       })),
-      ...splitValue.chats.flatMap((chat?: any) =>
-        (chat.fields || []).map((fieldName?: any) => ({
+      ...splitValue.chats.flatMap((chat) =>
+        (chat.fields || []).map((fieldName) => ({
           archive_id: key,
           entity_type: "chat",
           chat_position: chat.position,
@@ -1843,8 +1920,8 @@ class PostgresStorage extends SqlStorageBase {
           field_name: fieldName,
         })),
       ),
-      ...splitValue.messages.flatMap((message?: any) =>
-        (message.fields || []).map((fieldName?: any) => ({
+      ...splitValue.messages.flatMap((message) =>
+        (message.fields || []).map((fieldName) => ({
           archive_id: key,
           entity_type: "message",
           chat_position: message.chatPosition,
@@ -1866,9 +1943,9 @@ class PostgresStorage extends SqlStorageBase {
       ["uuid", "text", "integer", "integer", "text"],
       presenceRows,
     );
-    const mapCharacterRows = (name?: any) =>
-      (character?.[name] || []).map((item?: any) => {
-        const mapped = { ...item, archive_id: key };
+    const mapCharacterRows = (name: CharacterRelationName): SqlStorageRow[] =>
+      [...(character?.[name] || [])].map((item) => {
+        const mapped: SqlStorageRow = { ...item, archive_id: key };
         delete mapped.character_id;
         delete mapped.group_id;
         return mapped;
@@ -2022,7 +2099,7 @@ class PostgresStorage extends SqlStorageBase {
       splitValue.kind === "chat"
         ? [{ position: 0, data: splitValue.data }]
         : splitValue.chats;
-    const splitChats = chatInputs.map((chat?: any) =>
+    const splitChats: ChatSplit[] = chatInputs.map((chat) =>
       splitChat({
         id: chat.data.id || `cold-chat-${chat.position}`,
         characterId: character?.core.id || "",
@@ -2030,7 +2107,7 @@ class PostgresStorage extends SqlStorageBase {
         data: chat.data,
       }),
     );
-    const coldChats = splitChats.map((item?: any, index?: any) => ({
+    const coldChats = splitChats.map((item, index) => ({
       archive_id: key,
       position: item.core.position,
       original_chat_id: chatInputs[index].data.id ?? null,
@@ -2083,10 +2160,10 @@ class PostgresStorage extends SqlStorageBase {
       ],
       coldChats,
     );
-    const mapChatRows = (name?: any) =>
-      splitChats.flatMap((item?: any) =>
-        item[name].map((row?: any) => {
-          const mapped = {
+    const mapChatRows = (name: ChatRelationName): SqlStorageRow[] =>
+      splitChats.flatMap((item) =>
+        [...item[name]].map((row) => {
+          const mapped: SqlStorageRow = {
             ...row,
             archive_id: key,
             chat_position: item.core.position,
@@ -2100,8 +2177,8 @@ class PostgresStorage extends SqlStorageBase {
       "cold.chat_attributes",
       ["archive_id", "chat_position", "key", "value"],
       ["uuid", "integer", "text", "jsonb"],
-      splitChats.flatMap((item?: any) =>
-        item.attributes.map((row?: any) => ({
+      splitChats.flatMap((item) =>
+        item.attributes.map((row) => ({
           ...row,
           archive_id: key,
           chat_position: item.core.position,
@@ -2205,7 +2282,7 @@ class PostgresStorage extends SqlStorageBase {
       mapChatRows("lore"),
     );
 
-    const splitMessages = splitValue.messages.map((message?: any) =>
+    const splitMessages: MessageSplit[] = splitValue.messages.map((message) =>
       splitMessage({
         id: message.data.chatId || `cold-message-${message.position}`,
         chatId: `cold-chat-${message.chatPosition}`,
@@ -2213,7 +2290,7 @@ class PostgresStorage extends SqlStorageBase {
         data: message.data,
       }),
     );
-    const coldMessages = splitMessages.map((item?: any, index?: any) => ({
+    const coldMessages = splitMessages.map((item, index) => ({
       archive_id: key,
       chat_position: splitValue.messages[index].chatPosition,
       position: item.core.position,
@@ -2263,7 +2340,7 @@ class PostgresStorage extends SqlStorageBase {
       ],
       coldMessages,
     );
-    const messageOwner = (item?: any, index?: any) => ({
+    const messageOwner = (item: MessageSplit, index: number) => ({
       archive_id: key,
       chat_position: splitValue.messages[index].chatPosition,
       message_position: item.core.position,
@@ -2273,8 +2350,8 @@ class PostgresStorage extends SqlStorageBase {
       "cold.message_attributes",
       ["archive_id", "chat_position", "message_position", "key", "value"],
       ["uuid", "integer", "integer", "text", "jsonb"],
-      splitMessages.flatMap((item?: any, index?: any) =>
-        item.attributes.map((row?: any) => ({
+      splitMessages.flatMap((item, index) =>
+        item.attributes.map((row) => ({
           ...row,
           ...messageOwner(item, index),
         })),
@@ -2311,7 +2388,7 @@ class PostgresStorage extends SqlStorageBase {
         "double precision",
         "double precision",
       ],
-      splitMessages.flatMap((item?: any, index?: any) =>
+      splitMessages.flatMap((item, index) =>
         item.generation
           ? [{ ...item.generation, ...messageOwner(item, index) }]
           : [],
@@ -2322,7 +2399,7 @@ class PostgresStorage extends SqlStorageBase {
       "cold.message_prompt_info",
       ["archive_id", "chat_position", "message_position", "prompt_name"],
       ["uuid", "integer", "integer", "text"],
-      splitMessages.flatMap((item?: any, index?: any) =>
+      splitMessages.flatMap((item, index) =>
         item.prompt
           ? [{ ...item.prompt.info, ...messageOwner(item, index) }]
           : [],
@@ -2340,8 +2417,8 @@ class PostgresStorage extends SqlStorageBase {
         "toggle_value",
       ],
       ["uuid", "integer", "integer", "integer", "text", "text"],
-      splitMessages.flatMap((item?: any, index?: any) =>
-        (item.prompt?.toggles || []).map((row?: any) => ({
+      splitMessages.flatMap((item, index) =>
+        (item.prompt?.toggles || []).map((row) => ({
           ...row,
           ...messageOwner(item, index),
         })),
@@ -2358,21 +2435,21 @@ class PostgresStorage extends SqlStorageBase {
         "payload",
       ],
       ["uuid", "integer", "integer", "integer", "jsonb"],
-      splitMessages.flatMap((item?: any, index?: any) =>
-        (item.prompt?.items || []).map((row?: any) => ({
+      splitMessages.flatMap((item, index) =>
+        (item.prompt?.items || []).map((row) => ({
           ...row,
           ...messageOwner(item, index),
         })),
       ),
     );
-    const archiveResult = await client.query(
+    const archiveResult = await client.query<ColdStorageSummaryRow>(
       "SELECT id::text AS key, kind, revision, updated_at FROM cold.archives WHERE id = $1::uuid",
       [key],
     );
     return archiveResult.rows[0];
   }
 
-  async deleteColdStorage(rawKeys?: any) {
+  async deleteColdStorage(rawKeys: unknown) {
     this.assertEnabled();
     const keys = validateColdStorageKeys(rawKeys);
     if (keys.length === 0) {
@@ -2399,7 +2476,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async pruneColdStorage(rawRetainedKeys?: any) {
+  async pruneColdStorage(rawRetainedKeys: unknown) {
     this.assertEnabled();
     const retainedKeys = validateColdStorageKeys(
       rawRetainedKeys,
@@ -2426,22 +2503,20 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async migrateLegacyColdStorage(savePath?: any) {
+  async migrateLegacyColdStorage(savePath: string) {
     this.assertEnabled();
     const candidates = await findLegacyColdStorageFiles(savePath);
     if (candidates.length === 0) {
       return { migrated: 0, skipped: 0 };
     }
 
-    const importedResult = await this.pool.query(
+    const importedResult = await this.pool.query<{ key: string }>(
       "SELECT id::text AS key FROM cold.legacy_imports WHERE id = ANY($1::uuid[])",
-      [candidates.map((candidate?: any) => candidate.key)],
+      [candidates.map((candidate) => candidate.key)],
     );
-    const imported = new Set<any>(
-      importedResult.rows.map((row?: any) => row.key),
-    );
+    const imported = new Set<string>(importedResult.rows.map((row) => row.key));
     const pending = candidates.filter(
-      (candidate?: any) => !imported.has(candidate.key),
+      (candidate) => !imported.has(candidate.key),
     );
     if (pending.length === 0) {
       return { migrated: 0, skipped: 0 };
@@ -2505,11 +2580,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async exportColdStorageToLegacy(savePath?: any) {
+  async exportColdStorageToLegacy(savePath: string) {
     this.assertEnabled();
     await fs.mkdir(savePath, { recursive: true });
     const items = await this.listColdStorage();
-    const exportedKeys = new Set<any>();
+    const exportedKeys = new Set<string>();
     let exported = 0;
     for (const item of items) {
       const loaded = await this.loadColdStorage(item.key);
@@ -2532,7 +2607,7 @@ class PostgresStorage extends SqlStorageBase {
     }
 
     const staleFiles = (await findLegacyColdStorageFiles(savePath)).filter(
-      (candidate?: any) => !exportedKeys.has(candidate.key),
+      (candidate) => !exportedKeys.has(candidate.key),
     );
     if (staleFiles.length > 0) {
       const rollbackPath = path.join(
@@ -2557,7 +2632,7 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const metaResult = await client.query(
+      const metaResult = await client.query<StorageMetaRow>(
         "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
       );
       const revision = Number(metaResult.rows[0].revision);
@@ -2577,23 +2652,16 @@ class PostgresStorage extends SqlStorageBase {
         `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
         "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time FROM character.characters ORDER BY position, id",
       ];
-      const [settingsRows, settingValueRows, characterRows] = (
-        await client.query(queries.join(";\n"))
-      ).map((result?: any) => result.rows);
-      const settings = rebuildSettingRows(settingsRows, settingValueRows);
-      const characters = characterRows.map((row?: any) => ({
-        chaId: row.id,
-        type: row.kind || "character",
-        name: row.name || "",
-        image: row.image || "",
-        trashTime: row.trash_time ?? undefined,
-        creationDate: row.creation_time ?? undefined,
-        modificationDate: row.modification_time ?? undefined,
-        lastInteraction: row.last_interaction_time ?? undefined,
-        detailsLoaded: false,
-        chats: [],
-        chatPage: 0,
-      }));
+      const [settingsResult, settingValueResult, characterResult] =
+        await queryStatementResults(client, queries.join(";\n"));
+      const settings = rebuildSettingRows(
+        asRows<SettingScalarRow>(settingsResult.rows),
+        asRows<SettingValueRow>(settingValueResult.rows),
+      );
+      const characters = mapStartupCharacters(
+        asRows<CharacterCoreRow>(characterResult.rows),
+        (value) => (value == null ? undefined : Number(value)),
+      );
       await client.query("COMMIT");
       return {
         status: "ready",
@@ -2648,201 +2716,27 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const metaResult = await client.query(
-        "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
+      const snapshot = await exportDatabaseSnapshotWith(
+        new PostgresDialect(client),
+        {
+          readMeta: async () => {
+            const metaResult = await client.query<StorageMetaRow>(
+              "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE",
+            );
+            return {
+              revision: Number(metaResult.rows[0].revision),
+              initialized: Boolean(metaResult.rows[0].initialized),
+            };
+          },
+          readAuthorNotes: () =>
+            authorNoteSql.exportAuthorNotes(
+              authorNoteDatabase("postgres", client),
+            ),
+          decodeScript: decodePostgresScript,
+        },
       );
-      const revision = Number(metaResult.rows[0].revision);
-      const initialized = metaResult.rows[0].initialized;
-      if (!initialized) {
-        await client.query("COMMIT");
-        return { revision, initialized, database: null };
-      }
-
-      const loadQueries = [
-        `SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY key`,
-        `SELECT * FROM system.setting_values WHERE setting_key NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY setting_key, node_id`,
-        "SELECT * FROM character.characters ORDER BY position, id",
-        "SELECT * FROM character.attributes ORDER BY character_id, key",
-        "SELECT * FROM character.tags ORDER BY character_id, position",
-        "SELECT * FROM character.greetings ORDER BY character_id, greeting_type, position",
-        "SELECT * FROM character.biases ORDER BY character_id, position",
-        "SELECT * FROM character.emotions ORDER BY character_id, position",
-        "SELECT * FROM character.modules ORDER BY character_id, position",
-        "SELECT * FROM character.group_members ORDER BY group_id, position",
-        "SELECT * FROM character.chat_folders ORDER BY character_id, position",
-        "SELECT * FROM character.scripts ORDER BY character_id, script_kind, position",
-        "SELECT * FROM character.sd_data ORDER BY character_id, position",
-        "SELECT * FROM character.assets ORDER BY character_id, position",
-        "SELECT * FROM character.lore_entries ORDER BY character_id, position",
-        "SELECT * FROM chat.chats ORDER BY character_id, position, id",
-        "SELECT * FROM chat.attributes ORDER BY chat_id, key",
-        "SELECT * FROM chat.suggestions ORDER BY chat_id, position",
-        "SELECT * FROM chat.modules ORDER BY chat_id, position",
-        "SELECT * FROM chat.script_state ORDER BY chat_id, key",
-        "SELECT * FROM chat.bookmarks ORDER BY chat_id, position",
-        "SELECT * FROM chat.memory ORDER BY chat_id, memory_type",
-        "SELECT * FROM chat.lore_entries ORDER BY chat_id, position",
-        "SELECT * FROM chat.messages ORDER BY chat_id, position, id",
-        "SELECT * FROM chat.message_attributes ORDER BY chat_id, message_id, key",
-        "SELECT * FROM chat.message_generation",
-        "SELECT * FROM chat.message_prompt_info",
-        "SELECT * FROM chat.message_prompt_toggles ORDER BY chat_id, message_id, position",
-        "SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position",
-        "SELECT module_id, position FROM system.module_records ORDER BY position",
-        "SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id",
-        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records ORDER BY position",
-        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values ORDER BY plugin_id, node_id",
-        "SELECT plugin_id, script FROM system.plugin_scripts ORDER BY plugin_id",
-        "SELECT preset_id, position, name, image, api_type, ai_model, data, content_hash FROM system.bot_presets ORDER BY position",
-      ];
-
-      const results = await client.query(loadQueries.join(";\n"));
-      const rows = results.map((result?: any) => result.rows);
-      const [
-        settings,
-        settingValues,
-        characters,
-        characterAttributes,
-        tags,
-        greetings,
-        biases,
-        emotions,
-        characterModules,
-        groupMembers,
-        chatFolders,
-        scripts,
-        sdData,
-        assets,
-        characterLore,
-        chats,
-        chatAttributes,
-        suggestions,
-        chatModules,
-        scriptState,
-        bookmarks,
-        memory,
-        chatLore,
-        messages,
-        messageAttributes,
-        generations,
-        promptInfos,
-        promptToggles,
-        promptItems,
-        moduleRecords,
-        moduleValues,
-        pluginRecords,
-        pluginValues,
-        pluginScripts,
-        botPresetRows,
-      ] = rows;
-
-      const database = rebuildSettingRows(settings, settingValues);
-      Object.assign(
-        database,
-        await authorNoteSql.exportAuthorNotes(
-          authorNoteDatabase("postgres", client),
-        ),
-      );
-      database.pluginCustomStorage = Object.fromEntries(
-        (
-          await client.query(
-            "SELECT key, value FROM system.plugin_custom_storage ORDER BY key",
-          )
-        ).rows.map((row?: any) => [row.key, row.value]),
-      );
-
-      if (moduleRecords && moduleRecords.length > 0) {
-        const rebuiltModules = rebuildSettings(
-          moduleRecords.map((row?: any) => ({ key: row.module_id })),
-          moduleValues,
-        );
-        database.modules = moduleRecords.map((row?: any) => ({
-          ...rebuiltModules[row.module_id],
-          id: row.module_id,
-        }));
-      } else {
-        database.modules = database.modules || [];
-      }
-
-      const pluginScriptMap = new Map<any, any>(
-        (pluginScripts || []).map((row?: any) => [
-          row.plugin_id,
-          decodePostgresScript(row.script),
-        ]),
-      );
-      database.plugins = rebuildPluginRecords(
-        pluginRecords || [],
-        pluginValues || [],
-      ).map((plugin?: any) => {
-        const { id, position: _position, ...metadata } = plugin;
-        const script = pluginScriptMap.get(id);
-        if (script === undefined) {
-          throw new Error(`Plugin script is missing: ${id}`);
-        }
-        return { ...metadata, script };
-      });
-
-      if (botPresetRows && botPresetRows.length > 0) {
-        database.botPresets = botPresetRows.map((row?: any) => {
-          const data =
-            typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-          const { id: _id, ...rest } = data;
-          return rest;
-        });
-        const activeId = database.activeBotPresetId;
-        database.botPresetsId = Math.max(
-          0,
-          botPresetRows.findIndex((row?: any) => row.preset_id === activeId),
-        );
-      } else {
-        database.botPresets = database.botPresets || [];
-        database.botPresetsId = database.botPresetsId || 0;
-      }
-
-      const characterRelations = createCharacterRelations({
-        attributes: characterAttributes,
-        tags,
-        greetings,
-        biases,
-        emotions,
-        modules: characterModules,
-        groupMembers,
-        chatFolders,
-        scripts,
-        sdData,
-        assets,
-        lore: characterLore,
-      });
-      const chatRelations = createChatRelations({
-        attributes: chatAttributes,
-        suggestions,
-        modules: chatModules,
-        scriptState,
-        bookmarks,
-        memory,
-        lore: chatLore,
-      });
-      const messageRelations = createMessageRelations({
-        attributes: messageAttributes,
-        generations,
-        promptInfos,
-        promptToggles,
-        promptItems,
-      });
-      rebuildDatabaseGraph({
-        database,
-        characters,
-        chats,
-        messages,
-        characterRelations,
-        chatRelations,
-        messageRelations,
-        rebuildCharacter,
-        rebuildChat,
-        rebuildMessage,
-      });
       await client.query("COMMIT");
-      return { revision, initialized, database };
+      return snapshot;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -2851,53 +2745,72 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadCharacter(characterId?: any) {
+  async loadCharacter(characterId: unknown) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const queries = [
+      const charRes = await client.query<CharacterCoreRow>(
         "SELECT * FROM character.characters WHERE id = $1",
-        "SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key",
-        "SELECT * FROM character.tags WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.greetings WHERE character_id = $1 ORDER BY greeting_type, position",
-        "SELECT * FROM character.biases WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.modules WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.group_members WHERE group_id = $1 ORDER BY position",
-        "SELECT * FROM character.chat_folders WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.scripts WHERE character_id = $1 ORDER BY script_kind, position",
-        "SELECT * FROM character.sd_data WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position",
-        "SELECT id, name, note, folder_id, last_message_time FROM chat.chats WHERE character_id = $1 ORDER BY position, id",
-      ];
-      const results = [];
-      for (const query of queries) {
-        results.push(await client.query(query, [characterId]));
-      }
-      const [
-        charRes,
-        attributesRes,
-        tagsRes,
-        greetingsRes,
-        biasesRes,
-        emotionsRes,
-        modulesRes,
-        groupMembersRes,
-        chatFoldersRes,
-        scriptsRes,
-        sdDataRes,
-        assetsRes,
-        loreRes,
-        chatsRes,
-      ] = results;
-
+        [characterId],
+      );
       if (charRes.rows.length === 0) {
         await client.query("COMMIT");
         return null;
       }
+      const attributesRes = await client.query<CharacterAttributeRow>(
+        "SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key",
+        [characterId],
+      );
+      const tagsRes = await client.query<CharacterTagRow>(
+        "SELECT * FROM character.tags WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const greetingsRes = await client.query<CharacterGreetingRow>(
+        "SELECT * FROM character.greetings WHERE character_id = $1 ORDER BY greeting_type, position",
+        [characterId],
+      );
+      const biasesRes = await client.query<CharacterBiasRow>(
+        "SELECT * FROM character.biases WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const emotionsRes = await client.query<CharacterEmotionRow>(
+        "SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const modulesRes = await client.query<CharacterModuleRow>(
+        "SELECT * FROM character.modules WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const groupMembersRes = await client.query<CharacterGroupMemberRow>(
+        "SELECT * FROM character.group_members WHERE group_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const chatFoldersRes = await client.query<CharacterChatFolderRow>(
+        "SELECT * FROM character.chat_folders WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const scriptsRes = await client.query<CharacterScriptRow>(
+        "SELECT * FROM character.scripts WHERE character_id = $1 ORDER BY script_kind, position",
+        [characterId],
+      );
+      const sdDataRes = await client.query<CharacterSdRow>(
+        "SELECT * FROM character.sd_data WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const assetsRes = await client.query<CharacterAssetRow>(
+        "SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const loreRes = await client.query<CharacterLoreRow>(
+        "SELECT * FROM character.lore_entries WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const chatsRes = await client.query<ChatShellRow>(
+        "SELECT id, name, note, folder_id, last_message_time FROM chat.chats WHERE character_id = $1 ORDER BY position, id",
+        [characterId],
+      );
 
       const characterRelations = {
         attributes: attributesRes.rows,
@@ -2931,30 +2844,34 @@ class PostgresStorage extends SqlStorageBase {
   // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
   // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
   // analysis needs these without hydrating lore, scripts or chats.
-  async loadCharacterAssetFields(characterId?: any) {
+  async loadCharacterAssetFields(characterId: unknown) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const assetQueries = [
+      const charRes = await client.query<{ image: string | null }>(
         "SELECT image FROM character.characters WHERE id = $1",
-        "SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key",
-        "SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position",
-        "SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position",
-      ];
-      const assetResults = [];
-      for (const query of assetQueries) {
-        assetResults.push(await client.query(query, [characterId]));
-      }
-      const [charRes, attributesRes, emotionsRes, assetsRes] = assetResults;
-
+        [characterId],
+      );
       if (charRes.rows.length === 0) {
         await client.query("COMMIT");
         return null;
       }
+      const attributesRes = await client.query<CharacterAttributeRow>(
+        "SELECT * FROM character.attributes WHERE character_id = $1 ORDER BY key",
+        [characterId],
+      );
+      const emotionsRes = await client.query<CharacterEmotionRow>(
+        "SELECT * FROM character.emotions WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
+      const assetsRes = await client.query<CharacterAssetRow>(
+        "SELECT * FROM character.assets WHERE character_id = $1 ORDER BY position",
+        [characterId],
+      );
 
-      const assets: Record<string, any> = {};
+      const assets: Record<string, unknown> = {};
       const core = charRes.rows[0];
       if (core.image !== null && core.image !== undefined)
         assets.image = core.image;
@@ -2962,18 +2879,18 @@ class PostgresStorage extends SqlStorageBase {
         assets[row.key] = decodePostgresJsonValue(row.value);
       }
       if (emotionsRes.rows.length) {
-        assets.emotionImages = emotionsRes.rows.map((item?: any) => [
+        assets.emotionImages = emotionsRes.rows.map((item) => [
           item.emotion,
           item.asset,
         ]);
       }
       const additionalAssets = assetsRes.rows
-        .filter((item?: any) => item.asset_source === "additional")
-        .map((item?: any) => [item.name, item.uri, item.extension]);
+        .filter((item) => item.asset_source === "additional")
+        .map((item) => [item.name, item.uri, item.extension]);
       if (additionalAssets.length) assets.additionalAssets = additionalAssets;
       const ccAssets = assetsRes.rows
-        .filter((item?: any) => item.asset_source === "character-card")
-        .map((item?: any) => ({
+        .filter((item) => item.asset_source === "character-card")
+        .map((item) => ({
           type: item.asset_type,
           uri: item.uri,
           name: item.name,
@@ -2991,276 +2908,72 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async _loadLinearMessagesForBranchMigration(client?: any, chatId?: any) {
-    const migrationQueries = [
-      "SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id",
-      "SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key",
-      "SELECT * FROM chat.message_generation WHERE chat_id = $1",
-      "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1",
-      "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 ORDER BY message_id, position",
-      "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 ORDER BY message_id, position",
-    ];
-    const migrationResults = [];
-    for (const query of migrationQueries) {
-      migrationResults.push(await client.query(query, [chatId]));
-    }
-    const [
-      messagesRes,
-      attributesRes,
-      generationsRes,
-      promptInfosRes,
-      promptTogglesRes,
-      promptItemsRes,
-    ] = migrationResults;
-    const relations = {
-      attributes: groupMessageRows(attributesRes.rows),
-      generation: new Map<any, any>(
-        generationsRes.rows.map((row?: any) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+  async _loadLinearMessagesForBranchMigration(
+    client: PgClient,
+    chatId: string,
+  ) {
+    const dialect = new PostgresDialect(client);
+    return rebuildLinearMessages({
+      messages: await dialect.selectByKey("chat.messages", "chat_id", chatId),
+      attributes: await dialect.selectByKey(
+        "chat.message_attributes",
+        "chat_id",
+        chatId,
       ),
-      promptInfo: new Map<any, any>(
-        promptInfosRes.rows.map((row?: any) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+      generations: await dialect.selectByKey(
+        "chat.message_generation",
+        "chat_id",
+        chatId,
       ),
-      promptToggles: groupMessageRows(promptTogglesRes.rows),
-      promptItems: groupMessageRows(promptItemsRes.rows),
-    };
-    return messagesRes.rows.map((row?: any) => {
-      const key = `${row.chat_id}\0${row.id}`;
-      return rebuildMessage(row, {
-        attributes: relations.attributes.get(key),
-        generation: relations.generation.get(key),
-        promptInfo: relations.promptInfo.get(key),
-        promptToggles: relations.promptToggles.get(key),
-        promptItems: relations.promptItems.get(key),
-      });
+      promptInfos: await dialect.selectByKey(
+        "chat.message_prompt_info",
+        "chat_id",
+        chatId,
+      ),
+      promptToggles: await dialect.selectByKey(
+        "chat.message_prompt_toggles",
+        "chat_id",
+        chatId,
+      ),
+      promptItems: await dialect.selectByKey(
+        "chat.message_prompt_items",
+        "chat_id",
+        chatId,
+      ),
     });
   }
 
-  async migrateLegacyBranchState(client?: any, chatId?: any) {
-    const legacyRes = await client.query(
-      `SELECT
+  async migrateLegacyBranchState(client: PgClient, chatId: string) {
+    return migrateLegacyBranchStateWith(new PostgresDialect(client), chatId, {
+      readLegacyState: async () => {
+        const legacyRes = await client.query<LegacyBranchStateRow>(
+          `SELECT
                 (SELECT COUNT(*)::integer FROM chat.branches WHERE chat_id = $1) AS branch_count,
                 (SELECT value FROM chat.attributes WHERE chat_id = $1 AND key = 'branchState') AS branch_state`,
-      [chatId],
-    );
-    const legacyRow = legacyRes.rows[0] || {};
-    if (
-      Number(legacyRow.branch_count ?? 0) > 1 ||
-      legacyRow.branch_state == null
-    )
-      return false;
-    const branchState = decodePostgresJsonValue(legacyRow.branch_state);
-    if (
-      !Array.isArray(branchState?.branches) ||
-      branchState.branches.length <= 1
-    )
-      return false;
-    const messages = await this._loadLinearMessagesForBranchMigration(
-      client,
-      chatId,
-    );
-    const plan = buildLegacyBranchMigrationPlan(
-      { id: chatId, message: messages, branchState },
-      () => crypto.randomUUID(),
-    );
-    if (!plan) return false;
-
-    await client.query("DELETE FROM chat.active_branches WHERE chat_id = $1", [
-      chatId,
-    ]);
-    await client.query(
-      "DELETE FROM chat.message_branch_links WHERE chat_id = $1",
-      [chatId],
-    );
-    await client.query("DELETE FROM chat.branches WHERE chat_id = $1", [
-      chatId,
-    ]);
-
-    const splitMessages = plan.messages.map((message?: any) =>
-      splitMessage({
-        chatId,
-        id: message.id,
-        position: message.position,
-        data: message.data,
-      }),
-    );
-    const messageColumns = [
-      "chat_id",
-      "id",
-      "position",
-      "role",
-      "content_text",
-      "content_binary",
-      "saying_character_id",
-      "sent_time",
-      "sender_name",
-      "other_user",
-      "disabled_scope",
-      "is_comment",
-    ];
-    await bulkInsert(
-      client,
-      "chat.messages",
-      messageColumns,
-      [
-        "text",
-        "text",
-        "integer",
-        "text",
-        "text",
-        "bytea",
-        "text",
-        "bigint",
-        "text",
-        "boolean",
-        "text",
-        "boolean",
-      ],
-      splitMessages.map((item?: any) => item.core),
-      buildUpsertClause(
-        "chat.messages",
-        ["chat_id", "id"],
-        messageColumns.slice(2),
-        true,
-      ),
-    );
-
-    const ids = splitMessages.map((item?: any) => item.core.id);
-    if (ids.length > 0) {
-      for (const table of [
-        "chat.message_attributes",
-        "chat.message_generation",
-        "chat.message_prompt_info",
-        "chat.message_prompt_toggles",
-        "chat.message_prompt_items",
-      ]) {
-        await client.query(
-          `DELETE FROM ${table} WHERE chat_id = $1 AND message_id = ANY($2::text[])`,
-          [chatId, ids],
+          [chatId],
         );
-      }
-    }
-    await bulkInsert(
-      client,
-      "chat.message_attributes",
-      ["chat_id", "message_id", "key", "value"],
-      ["text", "text", "text", "jsonb"],
-      splitMessages.flatMap((item?: any) =>
-        item.attributes.map((row?: any) => ({
-          ...row,
-          chat_id: item.core.chat_id,
-          message_id: item.core.id,
-        })),
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_generation",
-      [
-        "chat_id",
-        "message_id",
-        "model",
-        "generation_id",
-        "input_tokens",
-        "output_tokens",
-        "max_context",
-        "stage1_time",
-        "stage2_time",
-        "stage3_time",
-        "stage4_time",
-      ],
-      [
-        "text",
-        "text",
-        "text",
-        "text",
-        "integer",
-        "integer",
-        "integer",
-        "double precision",
-        "double precision",
-        "double precision",
-        "double precision",
-      ],
-      splitMessages.flatMap((item?: any) =>
-        item.generation ? [item.generation] : [],
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_info",
-      ["chat_id", "message_id", "prompt_name"],
-      ["text", "text", "text"],
-      splitMessages.flatMap((item?: any) =>
-        item.prompt?.info ? [item.prompt.info] : [],
-      ),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_toggles",
-      ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-      ["text", "text", "integer", "text", "text"],
-      splitMessages.flatMap((item?: any) => item.prompt?.toggles || []),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_prompt_items",
-      ["chat_id", "message_id", "position", "payload"],
-      ["text", "text", "integer", "jsonb"],
-      splitMessages.flatMap((item?: any) => item.prompt?.items || []),
-    );
-
-    await bulkInsert(
-      client,
-      "chat.branches",
-      [
-        "chat_id",
-        "id",
-        "parent_branch_id",
-        "fork_message_id",
-        "head_message_id",
-        "reason",
-        "created_at",
-      ],
-      ["text", "text", "text", "text", "text", "text", "bigint"],
-      plan.branches.map((branch?: any) => ({
-        chat_id: chatId,
-        id: branch.id,
-        parent_branch_id: branch.parentBranchId ?? null,
-        fork_message_id: branch.forkMessageId ?? null,
-        head_message_id: branch.headMessageId ?? null,
-        reason: branch.reason,
-        created_at: branch.createdAt,
-      })),
-    );
-    await bulkInsert(
-      client,
-      "chat.message_branch_links",
-      ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
-      ["text", "text", "text", "text"],
-      plan.links.map((link?: any) => ({
-        chat_id: chatId,
-        message_id: link.messageId,
-        parent_message_id: link.parentMessageId ?? null,
-        origin_branch_id: link.originBranchId,
-      })),
-    );
-    await client.query(
-      "INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)",
-      [chatId, plan.activeBranchId],
-    );
-    // Keep branchState stored as archival input until per-branch runtime state
-    // also has a persistent table. Runtime loaders ignore it after migration.
-    return true;
+        const legacyRow: Partial<LegacyBranchStateRow> =
+          legacyRes.rows[0] ?? {};
+        return {
+          branchCount: Number(legacyRow.branch_count ?? 0),
+          branchState: legacyRow.branch_state,
+        };
+      },
+      readLinearMessages: () =>
+        this._loadLinearMessagesForBranchMigration(client, chatId),
+      decodeState: decodePostgresJsonValue,
+      newId: () => crypto.randomUUID(),
+    });
   }
 
-  async ensureChatBranchGraphs(client?: any, chatIds?: any) {
-    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
+  async ensureChatBranchGraphs(client: PgClient, chatIds: readonly unknown[]) {
+    const ids = [
+      ...new Set<string>(
+        (chatIds || []).filter(
+          (chatId): chatId is string => typeof chatId === "string" && !!chatId,
+        ),
+      ),
+    ];
     if (ids.length === 0) return;
     await client.query(
       `INSERT INTO chat.branches
@@ -3313,15 +3026,18 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async ensureChatBranchGraph(client?: any, chatId?: any) {
+  async ensureChatBranchGraph(
+    client: PgClient,
+    chatId: string,
+  ): Promise<string | null> {
     await this.migrateLegacyBranchState(client, chatId);
-    let result = await client.query(
+    let result = await client.query<{ branch_id: string | null }>(
       "SELECT branch_id FROM chat.active_branches WHERE chat_id = $1",
       [chatId],
     );
     if (result.rows[0]?.branch_id) return result.rows[0].branch_id;
     await this.ensureChatBranchGraphs(client, [chatId]);
-    result = await client.query(
+    result = await client.query<{ branch_id: string | null }>(
       "SELECT branch_id FROM chat.active_branches WHERE chat_id = $1",
       [chatId],
     );
@@ -3329,13 +3045,13 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async linkIncomingMessagesToActiveBranches(
-    client?: any,
-    splitMessages?: any,
-  ) {
+    client: PgClient,
+    splitMessages: readonly MessageSplit[],
+  ): Promise<void> {
     if (!splitMessages || splitMessages.length === 0) return;
-    const chatIds = splitMessages.map((item?: any) => item.core.chat_id);
-    const messageIds = splitMessages.map((item?: any) => item.core.id);
-    const positions = splitMessages.map((item?: any) => item.core.position);
+    const chatIds = splitMessages.map((item) => item.core.chat_id);
+    const messageIds = splitMessages.map((item) => item.core.id);
+    const positions = splitMessages.map((item) => item.core.position);
     const inserted = await client.query(
       `WITH incoming(chat_id, message_id, position) AS (
                  SELECT * FROM UNNEST($1::text[], $2::text[], $3::integer[])
@@ -3367,13 +3083,13 @@ class PostgresStorage extends SqlStorageBase {
       [chatIds, messageIds, positions],
     );
     if (inserted.rows.length === 0) return;
-    const positionByKey = new Map<any, any>(
-      splitMessages.map((item?: any) => [
+    const positionByKey = new Map<unknown, number>(
+      splitMessages.map((item) => [
         `${item.core.chat_id}\0${item.core.id}`,
-        Number(item.core.position) || 0,
+        item.core.position,
       ]),
     );
-    const heads = new Map<any, any>();
+    const heads = new Map<string, BranchHead>();
     for (const row of inserted.rows) {
       const key = `${row.chat_id}\0${row.origin_branch_id}`;
       const position =
@@ -3381,9 +3097,9 @@ class PostgresStorage extends SqlStorageBase {
       const previous = heads.get(key);
       if (!previous || position >= previous.position) {
         heads.set(key, {
-          chatId: row.chat_id,
-          branchId: row.origin_branch_id,
-          messageId: row.message_id,
+          chatId: String(row.chat_id),
+          branchId: String(row.origin_branch_id),
+          messageId: String(row.message_id),
           position,
         });
       }
@@ -3396,7 +3112,10 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async detachMessagesFromBranchGraph(client?: any, deletions?: any) {
+  async detachMessagesFromBranchGraph(
+    client: PgClient,
+    deletions: readonly MessageDeletion[],
+  ): Promise<void> {
     for (const deletion of deletions || []) {
       for (const messageId of deletion.ids || []) {
         await client.query(
@@ -3432,12 +3151,12 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async _loadBranchPageWithClient(
-    client?: any,
-    chatId?: any,
-    branchId?: any,
-    options: any = {},
+    client: PgClient,
+    chatId: string,
+    branchId: string,
+    options: BranchPageOptions = {},
   ) {
-    const countRes = await client.query(
+    const countRes = await client.query<{ total: number | string }>(
       `WITH RECURSIVE branch_path(message_id) AS (
                  SELECT head_message_id FROM chat.branches WHERE chat_id = $1 AND id = $2
                  UNION ALL
@@ -3483,50 +3202,50 @@ class PostgresStorage extends SqlStorageBase {
               OFFSET $3 LIMIT $4`,
       [chatId, branchId, offset, pageSize],
     );
-    const ids = messagesRes.rows.map((row?: any) => row.id);
+    const ids = messagesRes.rows.map((row) => row.id);
     if (ids.length === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
     }
-    let attributes = [];
-    let generations = [];
-    let promptInfos = [];
-    let promptToggles = [];
-    let promptItems = [];
+    let attributes: MessageAttributeRow[] = [];
+    let generations: MessageGenerationRow[] = [];
+    let promptInfos: MessagePromptInfoRow[] = [];
+    let promptToggles: MessagePromptToggleRow[] = [];
+    let promptItems: MessagePromptItemRow[] = [];
     if (options.mode === "graph") {
       generations = (
-        await client.query(
+        await client.query<MessageGenerationRow>(
           "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
           [chatId, ids],
         )
       ).rows;
     } else {
       attributes = (
-        await client.query(
+        await client.query<MessageAttributeRow>(
           "SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key",
           [chatId, ids],
         )
       ).rows;
       if (options.mode !== "generation") {
         generations = (
-          await client.query(
+          await client.query<MessageGenerationRow>(
             "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
             [chatId, ids],
           )
         ).rows;
         promptInfos = (
-          await client.query(
+          await client.query<MessagePromptInfoRow>(
             "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])",
             [chatId, ids],
           )
         ).rows;
         promptToggles = (
-          await client.query(
+          await client.query<MessagePromptToggleRow>(
             "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
             [chatId, ids],
           )
         ).rows;
         promptItems = (
-          await client.query(
+          await client.query<MessagePromptItemRow>(
             "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
             [chatId, ids],
           )
@@ -3535,22 +3254,16 @@ class PostgresStorage extends SqlStorageBase {
     }
     const relations = {
       attributes: groupMessageRows(attributes),
-      generation: new Map<any, any>(
-        generations.map((row?: any) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+      generation: new Map<string, MessageGenerationRow>(
+        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
       ),
-      promptInfo: new Map<any, any>(
-        promptInfos.map((row?: any) => [
-          `${row.chat_id}\0${row.message_id}`,
-          row,
-        ]),
+      promptInfo: new Map<string, MessagePromptInfoRow>(
+        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
       ),
       promptToggles: groupMessageRows(promptToggles),
       promptItems: groupMessageRows(promptItems),
     };
-    const messages = messagesRes.rows.map((row?: any) => {
+    const messages = messagesRes.rows.map((row) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key),
@@ -3563,11 +3276,14 @@ class PostgresStorage extends SqlStorageBase {
     return { messages, offset, total, hasMore: offset > 0 };
   }
 
-  async _activeBranchIdWithClient(client?: any, chatId?: any) {
+  async _activeBranchIdWithClient(
+    client: PgClient,
+    chatId: string,
+  ): Promise<string | null> {
     return await this.ensureChatBranchGraph(client, chatId);
   }
 
-  async loadChat(chatId?: any, options: any = {}) {
+  async loadChat(chatId: unknown, options: LoadChatOptions = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3577,30 +3293,38 @@ class PostgresStorage extends SqlStorageBase {
         client,
         chatId,
       );
-      const queries = [
+      const chatRes = await client.query<ChatCoreRow>(
         "SELECT * FROM chat.chats WHERE id = $1",
+        [chatId],
+      );
+      const attributesRes = await client.query<ChatAttributeRow>(
         "SELECT * FROM chat.attributes WHERE chat_id = $1 ORDER BY key",
+        [chatId],
+      );
+      const suggestionsRes = await client.query<ChatSuggestionRow>(
         "SELECT * FROM chat.suggestions WHERE chat_id = $1 ORDER BY position",
+        [chatId],
+      );
+      const modulesRes = await client.query<ChatModuleRow>(
         "SELECT * FROM chat.modules WHERE chat_id = $1 ORDER BY position",
+        [chatId],
+      );
+      const scriptStateRes = await client.query<ChatScriptStateRow>(
         "SELECT * FROM chat.script_state WHERE chat_id = $1 ORDER BY key",
+        [chatId],
+      );
+      const bookmarksRes = await client.query<ChatBookmarkRow>(
         "SELECT * FROM chat.bookmarks WHERE chat_id = $1 ORDER BY position",
+        [chatId],
+      );
+      const memoryRes = await client.query<ChatMemoryRow>(
         "SELECT * FROM chat.memory WHERE chat_id = $1 ORDER BY memory_type",
+        [chatId],
+      );
+      const loreRes = await client.query<ChatLoreRow>(
         "SELECT * FROM chat.lore_entries WHERE chat_id = $1 ORDER BY position",
-      ];
-      const chatResults = [];
-      for (const query of queries) {
-        chatResults.push(await client.query(query, [chatId]));
-      }
-      const [
-        chatRes,
-        attributesRes,
-        suggestionsRes,
-        modulesRes,
-        scriptStateRes,
-        bookmarksRes,
-        memoryRes,
-        loreRes,
-      ] = chatResults;
+        [chatId],
+      );
       if (chatRes.rows.length === 0 || !activeBranchId) {
         await client.query("COMMIT");
         return null;
@@ -3641,7 +3365,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessages(chatId?: any, options: any = {}) {
+  async loadChatMessages(chatId: unknown, options: LoadChatOptions = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3668,7 +3392,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessagePage(chatId?: any, before?: any, limit?: any) {
+  async loadChatMessagePage(chatId: unknown, before: unknown, limit: unknown) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3692,28 +3416,20 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listChatBranches(chatId?: any) {
+  async listChatBranches(chatId: unknown) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.ensureChatBranchGraph(client, chatId);
-      const result = await client.query(
+      const result = await client.query<BranchRow>(
         `SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
                    FROM chat.branches WHERE chat_id = $1 ORDER BY created_at, id`,
         [chatId],
       );
       await client.query("COMMIT");
-      return result.rows.map((row?: any) => ({
-        id: row.id,
-        chatId: row.chat_id,
-        parentBranchId: row.parent_branch_id ?? undefined,
-        forkMessageId: row.fork_message_id ?? undefined,
-        headMessageId: row.head_message_id ?? undefined,
-        reason: row.reason,
-        createdAt: Number(row.created_at) || 0,
-      }));
+      return result.rows.map(mapBranchRow);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -3722,7 +3438,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraphPage(chatId?: any, rawOffset?: any, rawLimit?: any) {
+  async loadChatBranchGraphPage(
+    chatId: unknown,
+    rawOffset: unknown,
+    rawLimit: unknown,
+  ) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
@@ -3734,7 +3454,7 @@ class PostgresStorage extends SqlStorageBase {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await this.ensureChatBranchGraph(client, chatId);
-      const branchResult = await client.query(
+      const branchResult = await client.query<BranchRow>(
         `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
                 branch.head_message_id, branch.reason, branch.created_at,
                 active.branch_id AS active_branch_id
@@ -3744,7 +3464,7 @@ class PostgresStorage extends SqlStorageBase {
        ORDER BY branch.created_at, branch.id`,
         [chatId],
       );
-      const countResult = await client.query(
+      const countResult = await client.query<{ total: number | string }>(
         "SELECT COUNT(*)::bigint AS total FROM chat.message_branch_links WHERE chat_id = $1",
         [chatId],
       );
@@ -3759,39 +3479,39 @@ class PostgresStorage extends SqlStorageBase {
          OFFSET $2 LIMIT $3`,
         [chatId, offset, limit],
       );
-      const ids = messagesRes.rows.map((row?: any) => row.id);
-      let attributes = [];
-      let generations = [];
-      let promptInfos = [];
-      let promptToggles = [];
-      let promptItems = [];
+      const ids = messagesRes.rows.map((row) => row.id);
+      let attributes: MessageAttributeRow[] = [];
+      let generations: MessageGenerationRow[] = [];
+      let promptInfos: MessagePromptInfoRow[] = [];
+      let promptToggles: MessagePromptToggleRow[] = [];
+      let promptItems: MessagePromptItemRow[] = [];
       if (ids.length > 0) {
         attributes = (
-          await client.query(
+          await client.query<MessageAttributeRow>(
             "SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key",
             [chatId, ids],
           )
         ).rows;
         generations = (
-          await client.query(
+          await client.query<MessageGenerationRow>(
             "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
             [chatId, ids],
           )
         ).rows;
         promptInfos = (
-          await client.query(
+          await client.query<MessagePromptInfoRow>(
             "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])",
             [chatId, ids],
           )
         ).rows;
         promptToggles = (
-          await client.query(
+          await client.query<MessagePromptToggleRow>(
             "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
             [chatId, ids],
           )
         ).rows;
         promptItems = (
-          await client.query(
+          await client.query<MessagePromptItemRow>(
             "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
             [chatId, ids],
           )
@@ -3799,22 +3519,16 @@ class PostgresStorage extends SqlStorageBase {
       }
       const relations = {
         attributes: groupMessageRows(attributes),
-        generation: new Map<any, any>(
-          generations.map((row?: any) => [
-            `${row.chat_id}\0${row.message_id}`,
-            row,
-          ]),
+        generation: new Map<string, MessageGenerationRow>(
+          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
         ),
-        promptInfo: new Map<any, any>(
-          promptInfos.map((row?: any) => [
-            `${row.chat_id}\0${row.message_id}`,
-            row,
-          ]),
+        promptInfo: new Map<string, MessagePromptInfoRow>(
+          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
         ),
         promptToggles: groupMessageRows(promptToggles),
         promptItems: groupMessageRows(promptItems),
       };
-      const messages = messagesRes.rows.map((row?: any) => {
+      const messages = messagesRes.rows.map((row) => {
         const key = `${row.chat_id}\0${row.id}`;
         return rebuildMessage(row, {
           attributes: relations.attributes.get(key),
@@ -3824,17 +3538,9 @@ class PostgresStorage extends SqlStorageBase {
           promptItems: relations.promptItems.get(key),
         });
       });
-      const branches = branchResult.rows.map((row?: any) => ({
-        id: row.id,
-        chatId: row.chat_id,
-        parentBranchId: row.parent_branch_id ?? undefined,
-        forkMessageId: row.fork_message_id ?? undefined,
-        headMessageId: row.head_message_id ?? undefined,
-        reason: row.reason,
-        createdAt: Number(row.created_at) || 0,
-      }));
-      const links = messagesRes.rows.map((row?: any) => ({
-        messageId: row.id,
+      const branches = branchResult.rows.map(mapBranchRow);
+      const links = messagesRes.rows.map((row) => ({
+        messageId: String(row.id),
         position: Number(row.position) || 0,
         parentMessageId: row.parent_message_id ?? undefined,
         originBranchId: row.origin_branch_id,
@@ -3857,14 +3563,14 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraph(chatId?: any) {
+  async loadChatBranchGraph(chatId: unknown) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.ensureChatBranchGraph(client, chatId);
-      const branchResult = await client.query(
+      const branchResult = await client.query<BranchRow>(
         `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
                         branch.head_message_id, branch.reason, branch.created_at,
                         active.branch_id AS active_branch_id
@@ -3887,33 +3593,7 @@ class PostgresStorage extends SqlStorageBase {
         [chatId],
       );
       await client.query("COMMIT");
-      const branches = branchResult.rows.map((row?: any) => ({
-        id: row.id,
-        chatId: row.chat_id,
-        parentBranchId: row.parent_branch_id ?? undefined,
-        forkMessageId: row.fork_message_id ?? undefined,
-        headMessageId: row.head_message_id ?? undefined,
-        reason: row.reason,
-        createdAt: Number(row.created_at) || 0,
-      }));
-      const messages = graphRows.rows.map((row?: any) => {
-        const message = rebuildMessage(row);
-        if (row.graph_generation_model != null) {
-          message.generationInfo = { model: row.graph_generation_model };
-        }
-        return message;
-      });
-      const links = graphRows.rows.map((row?: any) => ({
-        messageId: row.id,
-        parentMessageId: row.parent_message_id ?? undefined,
-        originBranchId: row.origin_branch_id,
-      }));
-      return {
-        branches,
-        activeBranchId: branchResult.rows[0]?.active_branch_id ?? undefined,
-        messages,
-        links,
-      };
+      return buildChatBranchGraph(branchResult.rows, graphRows.rows);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -3922,7 +3602,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadBranchMessages(chatId?: any, branchId?: any, options: any = {}) {
+  async loadBranchMessages(
+    chatId: unknown,
+    branchId: unknown,
+    options: LoadChatOptions = {},
+  ) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -3949,7 +3633,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async createChatBranch(input?: any) {
+  async createChatBranch(input: CreateChatBranchInput) {
     this.assertEnabled();
     assertId(input?.chatId, "chatId");
     assertId(input?.id, "branchId");
@@ -3960,7 +3644,7 @@ class PostgresStorage extends SqlStorageBase {
     const parentBranchIdInput = input.parentBranchId ?? null;
     const forkMessageId = input.forkMessageId ?? null;
     const reason = input?.reason;
-    if (!["root", "manual", "reroll"].includes(reason))
+    if (!reason || !["root", "manual", "reroll"].includes(reason))
       throw new PostgresPayloadError("Invalid chat branch reason");
     const createdAt = Number.isFinite(Number(input?.createdAt))
       ? Math.trunc(Number(input.createdAt))
@@ -3994,22 +3678,14 @@ class PostgresStorage extends SqlStorageBase {
                  ON CONFLICT (chat_id) DO UPDATE SET branch_id = EXCLUDED.branch_id`,
         [chatId, branchId],
       );
-      const result = await client.query(
+      const result = await client.query<BranchRow>(
         `SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
                    FROM chat.branches WHERE chat_id = $1 AND id = $2`,
         [chatId, branchId],
       );
       await client.query("COMMIT");
       const row = result.rows[0];
-      return {
-        id: row.id,
-        chatId: row.chat_id,
-        parentBranchId: row.parent_branch_id ?? undefined,
-        forkMessageId: row.fork_message_id ?? undefined,
-        headMessageId: row.head_message_id ?? undefined,
-        reason: row.reason,
-        createdAt: Number(row.created_at) || 0,
-      };
+      return mapBranchRow(row);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4018,7 +3694,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async activateChatBranch(chatId?: any, branchId?: any) {
+  async activateChatBranch(chatId: unknown, branchId: unknown) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -4045,7 +3721,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPlugins(options: any = {}) {
+  async loadPlugins(options: LoadPluginsOptions = {}) {
     this.assertEnabled();
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
@@ -4060,13 +3736,13 @@ class PostgresStorage extends SqlStorageBase {
       const params = pluginId ? [pluginId] : [];
       const where = pluginId ? " WHERE plugin_id = $1" : "";
       const records = (
-        await client.query(
+        await client.query<PluginRecordRow>(
           `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records${where} ORDER BY position`,
           params,
         )
       ).rows;
       const values = (
-        await client.query(
+        await client.query<SettingValueRow>(
           `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values${where} ORDER BY plugin_id, node_id`,
           params,
         )
@@ -4087,10 +3763,10 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginScript(pluginId?: any) {
+  async loadPluginScript(pluginId: unknown) {
     this.assertEnabled();
     assertId(pluginId, "pluginId");
-    const result = await this.pool.query(
+    const result = await this.pool.query<{ script: unknown }>(
       "SELECT script FROM system.plugin_scripts WHERE plugin_id = $1",
       [pluginId],
     );
@@ -4113,7 +3789,7 @@ class PostgresStorage extends SqlStorageBase {
       ).rows;
       await client.query("COMMIT");
       const pluginCustomStorage = Object.fromEntries(
-        rows.map((row?: any) => [row.key, row.value]),
+        rows.map((row) => [String(row.key), row.value]),
       );
       const serialized = JSON.stringify(pluginCustomStorage);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
@@ -4137,11 +3813,11 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const result = await client.query(
+      const result = await client.query<{ key: string }>(
         "SELECT key FROM system.plugin_custom_storage ORDER BY key",
       );
       await client.query("COMMIT");
-      return result.rows.map((row?: any) => row.key);
+      return result.rows.map((row) => row.key);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4150,12 +3826,12 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginCustomStorageKey(storageKey?: any) {
+  async loadPluginCustomStorageKey(storageKey: unknown) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const result = await client.query(
+      const result = await client.query<{ value: unknown }>(
         "SELECT value FROM system.plugin_custom_storage WHERE key = $1",
         [storageKey],
       );
@@ -4188,24 +3864,24 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listSettingKeys() {
+  async listSettingKeys(): Promise<string[]> {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<{ key: string }>(
       "SELECT key FROM system.settings ORDER BY key",
     );
-    return result.rows.map((row?: any) => row.key);
+    return result.rows.map((row) => row.key);
   }
 
-  async loadSettingKeys(keys?: any) {
+  async loadSettingKeys(keys: readonly string[]) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const settingsResult = await client.query(
+      const settingsResult = await client.query<SettingScalarRow>(
         "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = ANY($1::text[]) ORDER BY key",
         [keys],
       );
-      const valuesResult = await client.query(
+      const valuesResult = await client.query<SettingValueRow>(
         "SELECT * FROM system.setting_values WHERE setting_key = ANY($1::text[]) ORDER BY setting_key, node_id",
         [keys],
       );
@@ -4216,12 +3892,12 @@ class PostgresStorage extends SqlStorageBase {
       );
       if (keys.includes("pluginCustomStorage")) {
         const pluginRows = (
-          await client.query(
+          await client.query<{ key: string; value: unknown }>(
             "SELECT key, value FROM system.plugin_custom_storage ORDER BY key",
           )
         ).rows;
         rebuilt.pluginCustomStorage = Object.fromEntries(
-          pluginRows.map((row?: any) => [row.key, row.value]),
+          pluginRows.map((row) => [String(row.key), row.value]),
         );
       }
       const serialized = JSON.stringify(rebuilt);
@@ -4244,32 +3920,17 @@ class PostgresStorage extends SqlStorageBase {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const modules = (
-        await client.query(
+        await client.query<ModuleRecordRow>(
           "SELECT module_id, position FROM system.module_records ORDER BY position",
         )
       ).rows;
       const values = (
-        await client.query(
+        await client.query<SettingValueRow>(
           "SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id",
         )
       ).rows;
       await client.query("COMMIT");
-      if (modules.length === 0) return null;
-      const rebuilt = rebuildSettings(
-        modules.map((row?: any) => ({ key: row.module_id })),
-        values,
-      );
-      const result = modules.map((row?: any) => ({
-        ...rebuilt[row.module_id],
-        id: row.module_id,
-      }));
-      return {
-        modules: result,
-        hash: crypto
-          .createHash("sha256")
-          .update(JSON.stringify(result))
-          .digest("hex"),
-      };
+      return buildModuleRecordsSnapshot(modules, values);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4281,23 +3942,11 @@ class PostgresStorage extends SqlStorageBase {
   async listBotPresets() {
     this.assertEnabled();
     const started = process.hrtime.bigint();
-    const result = await this.pool.query(
+    const result = await this.pool.query<BotPresetListRow>(
       `SELECT preset_id, position, name, image, api_type, ai_model, content_hash
              FROM system.bot_presets ORDER BY position`,
     );
-    const presets = result.rows.map((row?: any) => ({
-      id: row.preset_id,
-      position: Number(row.position),
-      name: row.name || "",
-      image: row.image || "",
-      apiType: row.api_type || "",
-      aiModel: row.ai_model || "",
-      hash: row.content_hash,
-    }));
-    const hash = crypto
-      .createHash("sha256")
-      .update(JSON.stringify(presets))
-      .digest("hex");
+    const { presets, hash } = buildBotPresetList(result.rows);
     return {
       presets,
       hash,
@@ -4305,28 +3954,35 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async loadBotPreset(id?: any) {
+  async loadBotPreset(id: unknown) {
     this.assertEnabled();
     const started = process.hrtime.bigint();
-    const result = await this.pool.query(
+    const result = await this.pool.query<{
+      data: unknown;
+      content_hash: string;
+    }>(
       "SELECT data, content_hash FROM system.bot_presets WHERE preset_id = $1",
       [id],
     );
     if (result.rowCount === 0) return null;
-    const data = result.rows[0].data;
+    const data = decodePresetData(result.rows[0].data);
     return {
-      preset: { ...(typeof data === "string" ? JSON.parse(data) : data), id },
+      preset: { ...data, id },
       hash: result.rows[0].content_hash,
       queryMs: Number(process.hrtime.bigint() - started) / 1e6,
     };
   }
 
-  async executeRevision(action?: any, scope = "database", callback?: any) {
+  async executeRevision(
+    action: string,
+    scope = "database",
+    callback: RevisionCallback,
+  ) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const metaResult = await client.query(
+      const metaResult = await client.query<{ revision: number | string }>(
         "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const currentRevision = Number(metaResult.rows[0].revision);
@@ -4347,7 +4003,12 @@ class PostgresStorage extends SqlStorageBase {
         [nextRevision],
       );
       await client.query("COMMIT");
-      return { success: true, revision: nextRevision, revisionId, ...result };
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId,
+        ...(isSqlRow(result) ? result : {}),
+      };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4357,11 +4018,15 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async runStorageSyncFinalizeTransaction(
-    expectedRevision?: any,
-    callback?: any,
+    expectedRevision: unknown,
+    callback: StorageSyncFinalizeCallback,
   ) {
     this.assertEnabled();
-    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    const expectedRevisionNumber = Number(expectedRevision);
+    if (
+      !Number.isSafeInteger(expectedRevisionNumber) ||
+      expectedRevisionNumber < 0
+    ) {
       throw new PostgresPayloadError(
         "Storage sync finalize revision must be a non-negative integer",
       );
@@ -4374,14 +4039,19 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const metaResult = await client.query(
+      const metaResult = await client.query<{
+        revision: number | string;
+        initialized: boolean | null;
+      }>(
         "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const currentRevision = Number(metaResult.rows[0].revision);
-      if (currentRevision !== expectedRevision) {
+      if (currentRevision !== expectedRevisionNumber) {
         throw new PostgresRevisionConflictError(currentRevision);
       }
-      const previousRevisionResult = await client.query(
+      const previousRevisionResult = await client.query<{
+        id: number | string;
+      }>(
         "SELECT id FROM system.revisions WHERE storage_revision = $1 ORDER BY id DESC LIMIT 1",
         [currentRevision],
       );
@@ -4415,7 +4085,7 @@ class PostgresStorage extends SqlStorageBase {
         success: true,
         revision: nextRevision,
         revisionId,
-        ...(result || {}),
+        ...(isSqlRow(result) ? result : {}),
       };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
@@ -4425,11 +4095,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async updateSetting(key?: any, value?: any) {
+  async updateSetting(key: string, value: unknown) {
     return await this.executeRevision(
       `setting:update (${key})`,
       "database",
-      async (client?: any) => {
+      async (client) => {
         const mapped = mapSettingValueToColumns(value);
         await client.query(
           `INSERT INTO system.settings (key, text_val, num_val, bool_val, updated_at)
@@ -4464,11 +4134,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteSetting(key?: any) {
+  async deleteSetting(key: string) {
     return await this.executeRevision(
       `setting:delete (${key})`,
       "database",
-      async (client?: any) => {
+      async (client) => {
         await client.query("DELETE FROM system.settings WHERE key = $1", [key]);
         this.invalidateBootstrapCache([key]);
         return { key };
@@ -4476,11 +4146,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveBotPreset(preset?: any, position = 0) {
+  async saveBotPreset(preset: BotPresetRecord, position = 0) {
     return await this.executeRevision(
       `preset:save (${preset.name || position})`,
       "database",
-      async (client?: any) => {
+      async (client) => {
         const id = preset.id || crypto.randomUUID();
         const data = { ...preset };
         delete data.id;
@@ -4512,48 +4182,53 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveModule(moduleData?: any) {
+  async saveModule(moduleData: ModuleRecord) {
     return await this.executeRevision(
       `module:save (${moduleData.name || moduleData.id})`,
       "database",
-      async (client?: any) => {
+      async (client) => {
         const id = moduleData.id;
         const records = (
-          await client.query(
+          await client.query<ModuleRecordRow>(
             "SELECT module_id, position FROM system.module_records ORDER BY position",
           )
         ).rows;
         const nextPosition =
           records.reduce(
-            (max?: any, row?: any) => Math.max(max, Number(row.position)),
+            (max, row) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
-        let entries = [
+        let entries: ModuleEntry[] = [
           {
             id,
-            position:
-              records.find((row?: any) => row.module_id === id)?.position ??
-              nextPosition,
+            position: Number(
+              records.find((row) => row.module_id === id)?.position ??
+                nextPosition,
+            ),
             data: moduleData,
           },
         ];
         if (records.length === 0) {
           const settings = (
-            await client.query(
+            await client.query<SettingScalarRow>(
               "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'",
             )
           ).rows;
           const values = (
-            await client.query(
+            await client.query<SettingValueRow>(
               "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id",
             )
           ).rows;
-          const legacy = rebuildSettingRows(settings, values).modules;
-          if (Array.isArray(legacy)) {
-            const merged = legacy.filter((module?: any) => module?.id !== id);
+          const legacy = asUnknownArray(
+            rebuildSettingRows(settings, values).modules,
+          );
+          if (legacy) {
+            const merged = legacy.filter(
+              (module) => !isSqlRow(module) || module.id !== id,
+            );
             merged.push(moduleData);
-            entries = merged.map((data?: any, position?: any) => ({
-              id: data.id,
+            entries = merged.map((data, position) => ({
+              id: legacyModuleId(data),
               position,
               data,
             }));
@@ -4574,33 +4249,35 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteModule(moduleId?: any) {
+  async deleteModule(moduleId: string) {
     return await this.executeRevision(
       `module:delete (${moduleId})`,
       "database",
-      async (client?: any) => {
+      async (client) => {
         const records = (
-          await client.query(
+          await client.query<{ module_id: string }>(
             "SELECT module_id FROM system.module_records LIMIT 1",
           )
         ).rows;
         if (records.length === 0) {
           const settings = (
-            await client.query(
+            await client.query<SettingScalarRow>(
               "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'",
             )
           ).rows;
           const values = (
-            await client.query(
+            await client.query<SettingValueRow>(
               "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id",
             )
           ).rows;
-          const legacy = rebuildSettingRows(settings, values).modules;
-          if (Array.isArray(legacy)) {
-            const entries = legacy
-              .filter((module?: any) => module?.id !== moduleId)
-              .map((data?: any, position?: any) => ({
-                id: data.id,
+          const legacy = asUnknownArray(
+            rebuildSettingRows(settings, values).modules,
+          );
+          if (legacy) {
+            const entries: ModuleEntry[] = legacy
+              .filter((module) => !isSqlRow(module) || module.id !== moduleId)
+              .map((data, position) => ({
+                id: legacyModuleId(data),
                 position,
                 data,
               }));
@@ -4623,12 +4300,12 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveMessage(chatId?: any, message?: any) {
+  async saveMessage(chatId: string, message: MessageSaveInput) {
     return await this.executeRevision(
       "message:save",
       "database",
-      async (client?: any) => {
-        const split = splitMessage({
+      async (client) => {
+        const split: MessageSplit = splitMessage({
           id: message.chatId || message.id,
           chatId,
           position: message.position ?? 0,
@@ -4680,7 +4357,7 @@ class PostgresStorage extends SqlStorageBase {
             "chat.message_attributes",
             ["chat_id", "message_id", "key", "value"],
             ["text", "text", "text", "jsonb"],
-            split.attributes.map((r?: any) => ({
+            split.attributes.map((r) => ({
               ...r,
               chat_id: chatId,
               message_id: split.core.id,
@@ -4697,7 +4374,12 @@ class PostgresStorage extends SqlStorageBase {
           "chat.message_attributes",
           "chat_id",
           "key",
-          [{ ownerId: chatId, keys: split.attributes.map((r?: any) => r.key) }],
+          [
+            {
+              ownerId: chatId,
+              keys: split.attributes.map((r) => String(r.key)),
+            },
+          ],
         );
 
         if (split.generation) {
@@ -4774,7 +4456,7 @@ class PostgresStorage extends SqlStorageBase {
           );
         }
 
-        if (split.prompt?.toggles?.length > 0) {
+        if (split.prompt && split.prompt.toggles.length > 0) {
           await bulkInsert(
             client,
             "chat.message_prompt_toggles",
@@ -4793,7 +4475,7 @@ class PostgresStorage extends SqlStorageBase {
           [chatId, split.core.id, (split.prompt?.toggles || []).length],
         );
 
-        if (split.prompt?.items?.length > 0) {
+        if (split.prompt && split.prompt.items.length > 0) {
           await bulkInsert(
             client,
             "chat.message_prompt_items",
@@ -4817,11 +4499,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteMessage(chatId?: any, messageId?: any) {
+  async deleteMessage(chatId: string, messageId: string) {
     return await this.executeRevision(
       "message:delete",
       "database",
-      async (client?: any) => {
+      async (client) => {
         await this.detachMessagesFromBranchGraph(client, [
           { chatId, ids: [messageId] },
         ]);
@@ -4834,14 +4516,14 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async clearStorageSyncColdStorage(client?: any) {
+  async clearStorageSyncColdStorage(client: PgClient) {
     await client.query("DELETE FROM cold.archives");
   }
 
   async applyStorageSyncColdStorageRecord(
-    client?: any,
-    key?: any,
-    value?: any,
+    client: PgClient,
+    key: unknown,
+    value: unknown,
   ) {
     const normalizedKey = normalizeColdStorageKey(key);
     const splitValue = splitColdStorageValue(value);
@@ -4853,25 +4535,26 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async applyStorageSyncBranchRecords(
-    client?: any,
-    branches?: any,
-    activeBranches?: any,
+    client: PgClient,
+    branches: readonly StorageSyncBranchRecord[],
+    activeBranches: readonly StorageSyncActiveBranchRecord[],
   ) {
-    const branchRows = (branches || []).map((record?: any) => {
+    const branchRows: ChatBranchInsertRow[] = (branches || []).map((record) => {
       assertId(record.chatId, "branch.chatId");
-      assertId(record.data?.id, "branch.id");
-      const reason = record.data?.reason;
+      const data = record.data;
+      assertId(data?.id, "branch.id");
+      const reason = data.reason;
       if (!["root", "manual", "reroll"].includes(reason)) {
         throw new PostgresPayloadError("Invalid chat branch reason");
       }
       return {
         chat_id: record.chatId,
-        id: record.data.id,
-        parent_branch_id: record.data.parentBranchId ?? null,
-        fork_message_id: record.data.forkMessageId ?? null,
-        head_message_id: record.data.headMessageId ?? null,
+        id: data.id,
+        parent_branch_id: data.parentBranchId ?? null,
+        fork_message_id: data.forkMessageId ?? null,
+        head_message_id: data.headMessageId ?? null,
         reason,
-        created_at: Number(record.data.createdAt) || 0,
+        created_at: Number(data.createdAt) || 0,
       };
     });
     await bulkInsert(
@@ -4911,8 +4594,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async applyStorageSyncMessageLinks(client?: any, records?: any) {
-    const rows = (records || []).map((record?: any) => ({
+  async applyStorageSyncMessageLinks(
+    client: PgClient,
+    records: readonly StorageSyncMessageRecord[],
+  ) {
+    const rows = (records || []).map((record) => ({
       chat_id: record.chatId,
       message_id: record.id,
       parent_message_id: record.parentMessageId ?? null,
@@ -4932,29 +4618,29 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async sync(rawPayload?: any, options: any = {}) {
+  async sync(rawPayload: unknown, options: SyncOptions = {}) {
     this.assertEnabled();
-    const onProgress =
-      typeof options === "function" ? options : options?.onProgress;
+    const onProgress = readSyncProgress(options);
     const payload = validateSyncPayload(rawPayload);
     // Report the compact commit impact to the internal realtime channel right
     // after validation; it is never serialized into the sync result.
     // 검증 직후 압축 커밋 영향을 내부 실시간 채널로 보고하며, sync 결과에는
     // 절대 직렬화되지 않습니다.
     captureSyncCommitImpact(options, payload);
-    const external =
-      typeof options === "object" && options !== null
-        ? options.externalTransaction
-        : null;
-    const client = external?.client || (await this.pool.connect());
+    const external = readExternalTransaction<PgClient>(options);
+    const ownedClient = external ? null : await this.pool.connect();
+    const client: PgClient = external?.client ?? ownedClient!;
     const ownsTransaction = !external;
     try {
-      let currentRevision;
-      let nextRevision;
+      let currentRevision: number;
+      let nextRevision: number;
       if (ownsTransaction) {
         onProgress?.({ stage: "start", message: "Starting transaction" });
         await client.query("BEGIN");
-        const metaResult = await client.query(
+        const metaResult = await client.query<{
+          revision: number | string;
+          initialized: boolean | null;
+        }>(
           "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
         );
         currentRevision = Number(metaResult.rows[0].revision);
@@ -5009,74 +4695,25 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       if (payload.modules) {
-        const existing = (
-          await client.query(
-            "SELECT module_id, position FROM system.module_records ORDER BY position",
-          )
-        ).rows;
-        if (
-          !payload.replaceAll &&
-          existing.length === 0 &&
-          !external?.storageSyncImport
-        ) {
-          const legacySettings = (
-            await client.query(
-              "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'",
-            )
-          ).rows;
-          const legacyValues = (
-            await client.query(
-              "SELECT * FROM system.setting_values WHERE setting_key = 'modules' ORDER BY node_id",
-            )
-          ).rows;
-          const legacy = rebuildSettingRows(
-            legacySettings,
-            legacyValues,
-          ).modules;
-          mergeLegacyModulesIntoPayload(payload, legacy);
-        }
-        if (payload.modules.deletes.length) {
-          await client.query(
-            "DELETE FROM system.module_records WHERE module_id = ANY($1::text[])",
-            [payload.modules.deletes],
-          );
-        }
-        if (payload.modules.order) {
-          await client.query(
-            "UPDATE system.module_records SET position = position + 1000000000",
-          );
-        }
-        const positions = new Map<any, any>(
-          existing.map((row?: any) => [row.module_id, Number(row.position)]),
+        await syncModuleRecords(
+          new PostgresDialect(client),
+          payload.modules,
+          {
+            replaceAll: Boolean(payload.replaceAll),
+            legacyMergeAllowed: !external?.storageSyncImport,
+          },
+          payload,
         );
-        for (const entry of payload.modules.upserts) {
-          const position = entry.position ?? positions.get(entry.id) ?? 0;
-          await client.query(
-            `INSERT INTO system.module_records (module_id, position, updated_at)
-                         VALUES ($1, $2, NOW()) ON CONFLICT (module_id) DO UPDATE SET
-                         position=EXCLUDED.position, updated_at=NOW()`,
-            [entry.id, position],
-          );
-        }
-        await replaceModuleValueRows(client, payload.modules.upserts);
-        if (payload.modules.order) {
-          for (const [position, id] of payload.modules.order.entries()) {
-            await client.query(
-              "UPDATE system.module_records SET position = $1 WHERE module_id = $2",
-              [position, id],
-            );
-          }
-        }
       }
 
       if (payload.plugins) {
         const existing = (
-          await client.query(
+          await client.query<{ plugin_id: string; position: number | string }>(
             "SELECT plugin_id, position FROM system.plugin_records ORDER BY position",
           )
         ).rows;
-        const positions = new Map<any, any>(
-          existing.map((row?: any) => [row.plugin_id, Number(row.position)]),
+        const positions = new Map<string, number>(
+          existing.map((row) => [row.plugin_id, Number(row.position)]),
         );
 
         if (payload.plugins.deletes.length) {
@@ -5092,11 +4729,11 @@ class PostgresStorage extends SqlStorageBase {
         }
         let nextPosition =
           existing.reduce(
-            (max?: any, row?: any) => Math.max(max, Number(row.position)),
+            (max, row) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
         for (const entry of payload.plugins.upserts) {
-          const data = entry.data || {};
+          const data = isSqlRow(entry.data) ? entry.data : {};
           if (typeof data.name !== "string" || data.name.length === 0) {
             throw new PostgresPayloadError(
               `Plugin ${entry.id} must have a non-empty name`,
@@ -5155,18 +4792,21 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       if (payload.presets) {
-        const existingResult = await client.query(
+        const existingResult = await client.query<{
+          preset_id: string;
+          position: number | string;
+        }>(
           "SELECT preset_id, position FROM system.bot_presets ORDER BY position",
         );
-        const currentActiveResult = await client.query(
+        const currentActiveResult = await client.query<{
+          text_val: string | null;
+        }>(
           "SELECT text_val FROM system.settings WHERE key = 'activeBotPresetId'",
         );
         const currentActiveId = currentActiveResult.rows[0]?.text_val;
-        const originalIds = existingResult.rows.map(
-          (row?: any) => row.preset_id,
-        );
-        const ids = new Set<any>(
-          existingResult.rows.map((row?: any) => row.preset_id),
+        const originalIds = existingResult.rows.map((row) => row.preset_id);
+        const ids = new Set<string>(
+          existingResult.rows.map((row) => row.preset_id),
         );
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
@@ -5175,8 +4815,8 @@ class PostgresStorage extends SqlStorageBase {
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
-            new Set<any>(payload.presets.order).size !== ids.size ||
-            payload.presets.order.some((id?: any) => !ids.has(id)))
+            new Set<string>(payload.presets.order).size !== ids.size ||
+            payload.presets.order.some((id) => !ids.has(id)))
         ) {
           throw new PostgresPayloadError(
             "Preset order must contain every preset ID exactly once",
@@ -5196,11 +4836,11 @@ class PostgresStorage extends SqlStorageBase {
         }
         let nextPosition =
           existingResult.rows.reduce(
-            (max?: any, row?: any) => Math.max(max, Number(row.position)),
+            (max, row) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
-        const existingPositions = new Map<any, any>(
-          existingResult.rows.map((row?: any) => [
+        const existingPositions = new Map<string, number>(
+          existingResult.rows.map((row) => [
             row.preset_id,
             Number(row.position),
           ]),
@@ -5245,18 +4885,18 @@ class PostgresStorage extends SqlStorageBase {
             );
           }
         }
-        let activeId = payload.presets.activeId;
+        let activeId: string | undefined = payload.presets.activeId;
         if (activeId === undefined && !external?.storageSyncImport) {
           if (!currentActiveId || !ids.has(currentActiveId)) {
-            const deletedIndex = originalIds.indexOf(currentActiveId);
+            const deletedIndex = currentActiveId
+              ? originalIds.indexOf(currentActiveId)
+              : -1;
             activeId =
-              originalIds
-                .slice(deletedIndex + 1)
-                .find((id?: any) => ids.has(id)) ||
+              originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
                 .reverse()
-                .find((id?: any) => ids.has(id)) ||
+                .find((id) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }
@@ -5274,10 +4914,10 @@ class PostgresStorage extends SqlStorageBase {
       });
       dedupeRootUpserts(payload);
       const rootSettingUpserts = payload.rootUpserts.filter(
-        (row?: any) => row.key !== "pluginCustomStorage",
+        (row) => row.key !== "pluginCustomStorage",
       );
       if (rootSettingUpserts.length > 0) {
-        const settingRows = rootSettingUpserts.map((row?: any) => {
+        const settingRows = rootSettingUpserts.map((row) => {
           const mapped = mapSettingValueToColumns(row.value);
           return { key: row.key, ...mapped };
         });
@@ -5296,14 +4936,12 @@ class PostgresStorage extends SqlStorageBase {
         );
         await replaceSettingValueRows(client, rootSettingUpserts);
       }
-      const changedSettingKeys = rootSettingUpserts.map(
-        (item?: any) => item.key,
-      );
+      const changedSettingKeys = rootSettingUpserts.map((item) => item.key);
       const projectedSettings = projectSettings(rootSettingUpserts);
       if (changedSettingKeys.length > 0) {
-        const changedSettingKeySet = new Set<any>(changedSettingKeys);
+        const changedSettingKeySet = new Set<string>(changedSettingKeys);
         for (const definition of SETTING_RELATION_DEFINITIONS) {
-          const projectedKeys = definition.settingKeys.filter((key?: any) =>
+          const projectedKeys = definition.settingKeys.filter((key) =>
             changedSettingKeySet.has(key),
           );
           if (projectedKeys.length === 0) continue;
@@ -5371,7 +5009,8 @@ class PostgresStorage extends SqlStorageBase {
         message: `Syncing characters (${payload.characters.length})`,
         count: payload.characters.length,
       });
-      const splitCharacters = payload.characters.map(splitCharacter);
+      const splitCharacters: CharacterSplit[] =
+        payload.characters.map(splitCharacter);
       const characterColumns = [
         "id",
         "position",
@@ -5432,7 +5071,7 @@ class PostgresStorage extends SqlStorageBase {
           "bigint",
           "bigint",
         ],
-        splitCharacters.map((item?: any) => item.core),
+        splitCharacters.map((item) => item.core),
         buildUpsertClause(
           "character.characters",
           ["id"],
@@ -5441,15 +5080,18 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
 
-      const characterRows = (name?: any) =>
-        splitCharacters.flatMap((item?: any) => item[name]);
+      // Relation rows are homogeneous per name, so flattening widens them to
+      // the plain column maps the bulk writer consumes.
+      const characterRows = (name: CharacterRelationName): SqlStorageRow[] =>
+        splitCharacters.flatMap((item) => [...item[name]]);
 
       // 1. attributes (PK: character_id, key)
-      const charAttrRows = splitCharacters.flatMap((item?: any) =>
-        item.attributes.map((row?: any) => ({
-          ...row,
-          character_id: item.core.id,
-        })),
+      const charAttrRows: CharacterAttributeRow[] = splitCharacters.flatMap(
+        (item) =>
+          item.attributes.map((row) => ({
+            ...row,
+            character_id: item.core.id,
+          })),
       );
       await bulkInsert(
         client,
@@ -5468,9 +5110,9 @@ class PostgresStorage extends SqlStorageBase {
         "character.attributes",
         "character_id",
         "key",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
-          keys: (c.attributes || []).map((a?: any) => a.key),
+          keys: (c.attributes || []).map((a) => a.key),
         })),
       );
 
@@ -5491,7 +5133,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.tags",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.tags || []).length,
         })),
@@ -5514,19 +5156,19 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.greetings",
         "character_id",
-        splitCharacters.flatMap((c?: any) => [
+        splitCharacters.flatMap((c) => [
           {
             ownerId: c.core.id,
             subKind: "alternate",
             length: (c.greetings || []).filter(
-              (g?: any) => g.greeting_type === "alternate",
+              (g) => g.greeting_type === "alternate",
             ).length,
           },
           {
             ownerId: c.core.id,
             subKind: "group-only",
             length: (c.greetings || []).filter(
-              (g?: any) => g.greeting_type === "group-only",
+              (g) => g.greeting_type === "group-only",
             ).length,
           },
         ]),
@@ -5550,7 +5192,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.biases",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.biases || []).length,
         })),
@@ -5573,7 +5215,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.emotions",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.emotions || []).length,
         })),
@@ -5596,7 +5238,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.modules",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.modules || []).length,
         })),
@@ -5619,7 +5261,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.group_members",
         "group_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.groupMembers || []).length,
         })),
@@ -5642,7 +5284,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.chat_folders",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.chatFolders || []).length,
         })),
@@ -5695,20 +5337,18 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.scripts",
         "character_id",
-        splitCharacters.flatMap((c?: any) => [
+        splitCharacters.flatMap((c) => [
           {
             ownerId: c.core.id,
             subKind: "custom",
-            length: (c.scripts || []).filter(
-              (s?: any) => s.script_kind === "custom",
-            ).length,
+            length: (c.scripts || []).filter((s) => s.script_kind === "custom")
+              .length,
           },
           {
             ownerId: c.core.id,
             subKind: "trigger",
-            length: (c.scripts || []).filter(
-              (s?: any) => s.script_kind === "trigger",
-            ).length,
+            length: (c.scripts || []).filter((s) => s.script_kind === "trigger")
+              .length,
           },
         ]),
         "script_kind",
@@ -5731,7 +5371,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.sd_data",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.sdData || []).length,
         })),
@@ -5770,7 +5410,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.assets",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.assets || []).length,
         })),
@@ -5845,7 +5485,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.lore_entries",
         "character_id",
-        splitCharacters.map((c?: any) => ({
+        splitCharacters.map((c) => ({
           ownerId: c.core.id,
           length: (c.lore || []).length,
         })),
@@ -5867,7 +5507,7 @@ class PostgresStorage extends SqlStorageBase {
         message: `Syncing chats (${payload.chats.length})`,
         count: payload.chats.length,
       });
-      const splitChats = payload.chats.map(splitChat);
+      const splitChats: ChatSplit[] = payload.chats.map(splitChat);
       const chatColumns = [
         "id",
         "character_id",
@@ -5902,16 +5542,16 @@ class PostgresStorage extends SqlStorageBase {
           "integer",
           "text",
         ],
-        splitChats.map((item?: any) => item.core),
+        splitChats.map((item) => item.core),
         buildUpsertClause("chat.chats", ["id"], chatColumns.slice(1), true),
       );
 
-      const chatRows = (name?: any) =>
-        splitChats.flatMap((item?: any) => item[name]);
+      const chatRows = (name: ChatRelationName): SqlStorageRow[] =>
+        splitChats.flatMap((item) => [...item[name]]);
 
       // 1. attributes (PK: chat_id, key)
-      const chatAttrRows = splitChats.flatMap((item?: any) =>
-        item.attributes.map((row?: any) => ({ ...row, chat_id: item.core.id })),
+      const chatAttrRows: ChatAttributeRow[] = splitChats.flatMap((item) =>
+        item.attributes.map((row) => ({ ...row, chat_id: item.core.id })),
       );
       await bulkInsert(
         client,
@@ -5926,9 +5566,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.attributes",
         "chat_id",
         "key",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
-          keys: (c.attributes || []).map((a?: any) => a.key),
+          keys: (c.attributes || []).map((a) => a.key),
         })),
       );
 
@@ -5949,7 +5589,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.suggestions",
         "chat_id",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
           length: (c.suggestions || []).length,
         })),
@@ -5972,7 +5612,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.modules",
         "chat_id",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
           length: (c.modules || []).length,
         })),
@@ -6003,9 +5643,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.script_state",
         "chat_id",
         "key",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
-          keys: (c.scriptState || []).map((s?: any) => s.key),
+          keys: (c.scriptState || []).map((state) => state.key),
         })),
       );
 
@@ -6026,7 +5666,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.bookmarks",
         "chat_id",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
           length: (c.bookmarks || []).length,
         })),
@@ -6050,9 +5690,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.memory",
         "chat_id",
         "memory_type",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
-          keys: (c.memory || []).map((m?: any) => m.memory_type),
+          keys: (c.memory || []).map((entry) => entry.memory_type),
         })),
       );
 
@@ -6125,7 +5765,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.lore_entries",
         "chat_id",
-        splitChats.map((c?: any) => ({
+        splitChats.map((c) => ({
           ownerId: c.core.id,
           length: (c.lore || []).length,
         })),
@@ -6136,14 +5776,11 @@ class PostgresStorage extends SqlStorageBase {
         message: `Syncing messages (${payload.messages.length})`,
         count: payload.messages.length,
       });
-      const splitMessages = payload.messages.map(splitMessage);
-      const affectedMessageChatIds = new Set<any>([
-        ...splitMessages.map((item?: any) => item.core.chat_id),
-        ...(payload.messageDeletes || []).map((item?: any) => item.chatId),
-      ]);
+      const splitMessages: MessageSplit[] = payload.messages.map(splitMessage);
+      const affectedMessageChatIds = collectAffectedMessageChatIds(payload);
       await this.ensureChatBranchGraphs(
         client,
-        splitMessages.map((item?: any) => item.core.chat_id),
+        splitMessages.map((item) => item.core.chat_id),
       );
       const messageColumns = [
         "chat_id",
@@ -6177,7 +5814,7 @@ class PostgresStorage extends SqlStorageBase {
           "text",
           "boolean",
         ],
-        splitMessages.map((item?: any) => item.core),
+        splitMessages.map((item) => item.core),
         buildUpsertClause(
           "chat.messages",
           ["chat_id", "id"],
@@ -6190,8 +5827,8 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       // 1. message_attributes
-      const msgAttrRows = splitMessages.flatMap((item?: any) =>
-        item.attributes.map((row?: any) => ({
+      const msgAttrRows: MessageAttributeRow[] = splitMessages.flatMap((item) =>
+        item.attributes.map((row) => ({
           ...row,
           chat_id: item.core.chat_id,
           message_id: item.core.id,
@@ -6210,7 +5847,7 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
       for (const item of splitMessages) {
-        const keys = (item.attributes || []).map((a?: any) => a.key);
+        const keys = (item.attributes || []).map((attribute) => attribute.key);
         if (keys.length === 0) {
           await client.query(
             "DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2",
@@ -6225,7 +5862,7 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       // 2. message_generation
-      const genRows = splitMessages.flatMap((item?: any) =>
+      const genRows = splitMessages.flatMap((item) =>
         item.generation ? [item.generation] : [],
       );
       await bulkInsert(
@@ -6274,21 +5911,21 @@ class PostgresStorage extends SqlStorageBase {
           ],
         ),
       );
-      const msgsWithoutGen = splitMessages.filter((m?: any) => !m.generation);
+      const msgsWithoutGen = splitMessages.filter((m) => !m.generation);
       if (msgsWithoutGen.length > 0) {
         await client.query(
           `DELETE FROM chat.message_generation AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
           [
-            msgsWithoutGen.map((m?: any) => m.core.chat_id),
-            msgsWithoutGen.map((m?: any) => m.core.id),
+            msgsWithoutGen.map((m) => m.core.chat_id),
+            msgsWithoutGen.map((m) => m.core.id),
           ],
         );
       }
 
       // 3. message_prompt_info
-      const promptInfoRows = splitMessages.flatMap((item?: any) =>
+      const promptInfoRows = splitMessages.flatMap((item) =>
         item.prompt ? [item.prompt.info] : [],
       );
       await bulkInsert(
@@ -6303,24 +5940,22 @@ class PostgresStorage extends SqlStorageBase {
           ["prompt_name"],
         ),
       );
-      const msgsWithoutPrompt = splitMessages.filter(
-        (m?: any) => !m.prompt?.info,
-      );
+      const msgsWithoutPrompt = splitMessages.filter((m) => !m.prompt?.info);
       if (msgsWithoutPrompt.length > 0) {
         await client.query(
           `DELETE FROM chat.message_prompt_info AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
           [
-            msgsWithoutPrompt.map((m?: any) => m.core.chat_id),
-            msgsWithoutPrompt.map((m?: any) => m.core.id),
+            msgsWithoutPrompt.map((m) => m.core.chat_id),
+            msgsWithoutPrompt.map((m) => m.core.id),
           ],
         );
       }
 
       // 4. message_prompt_toggles
       const toggleRows = splitMessages.flatMap(
-        (item?: any) => item.prompt?.toggles || [],
+        (item) => item.prompt?.toggles || [],
       );
       await bulkInsert(
         client,
@@ -6340,16 +5975,16 @@ class PostgresStorage extends SqlStorageBase {
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
           [
-            splitMessages.map((m?: any) => m.core.chat_id),
-            splitMessages.map((m?: any) => m.core.id),
-            splitMessages.map((m?: any) => (m.prompt?.toggles || []).length),
+            splitMessages.map((m) => m.core.chat_id),
+            splitMessages.map((m) => m.core.id),
+            splitMessages.map((m) => (m.prompt?.toggles || []).length),
           ],
         );
       }
 
       // 5. message_prompt_items
       const promptItemRows = splitMessages.flatMap(
-        (item?: any) => item.prompt?.items || [],
+        (item) => item.prompt?.items || [],
       );
       await bulkInsert(
         client,
@@ -6369,9 +6004,9 @@ class PostgresStorage extends SqlStorageBase {
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
           [
-            splitMessages.map((m?: any) => m.core.chat_id),
-            splitMessages.map((m?: any) => m.core.id),
-            splitMessages.map((m?: any) => (m.prompt?.items || []).length),
+            splitMessages.map((m) => m.core.chat_id),
+            splitMessages.map((m) => m.core.id),
+            splitMessages.map((m) => (m.prompt?.items || []).length),
           ],
         );
       }
@@ -6431,62 +6066,31 @@ class PostgresStorage extends SqlStorageBase {
         );
         await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
           revision: nextRevision,
-          authorNotes: authorNotes.map(
-            ({ id, contentHash, updatedAt }: any) => ({
-              id,
-              contentHash,
-              updatedAt,
-            }),
-          ),
+          authorNotes: summarizeAuthorNotes(authorNotes),
         });
         await client.query("COMMIT");
       }
-      if (
-        payload.plugins ||
-        changedSettingKeys.includes("plugins") ||
-        payload.rootDeletes.includes("plugins")
-      ) {
-        this.pluginsCache = null;
-      }
-      if (
-        changedSettingKeys.includes("pluginCustomStorage") ||
-        payload.rootDeletes.includes("pluginCustomStorage")
-      ) {
-        this.pluginCustomStorageCache = null;
-      }
-      this.invalidateBootstrapCache([
-        ...changedSettingKeys,
-        ...payload.rootDeletes,
-      ]);
-      return {
+      invalidateSyncCaches(this, payload);
+      return buildSyncResult({
+        payload,
         revision: nextRevision,
-        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }: any) => ({
-          id,
-          contentHash,
-          updatedAt,
-        })),
-        changed: {
-          root: payload.rootUpserts.length + payload.rootDeletes.length,
-          characters: payload.characters.length,
-          chats: payload.chats.length,
-          messages: payload.messages.length,
-        },
-      };
+        authorNotes,
+      });
     } catch (error) {
       if (ownsTransaction) await client.query("ROLLBACK").catch(() => {});
       throw error;
     } finally {
-      if (ownsTransaction) client.release();
+      ownedClient?.release();
     }
   }
 
-  async listRecentChats(rawLimit?: any, activeChatId: any = null) {
+  async listRecentChats(rawLimit: unknown, activeChatId: unknown = null) {
     this.assertEnabled();
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 100)
       : 50;
-    const result = await this.pool.query(
+    const result = await this.pool.query<RecentChatRow>(
       `SELECT ch.character_id,
                     c.name AS character_name,
                     c.image AS character_image,
@@ -6514,22 +6118,10 @@ class PostgresStorage extends SqlStorageBase {
               LIMIT $1`,
       [limit, activeChatId],
     );
-    return result.rows.map((row?: any) => ({
-      characterId: row.character_id,
-      characterName: row.character_name || "",
-      characterImage: row.character_image || null,
-      characterType: row.character_kind === "group" ? "group" : "character",
-      chatId: row.chat_id,
-      chatPosition: Number(row.chat_position) || 0,
-      chatName: row.chat_name || "",
-      folderId: row.folder_id || null,
-      lastDate:
-        row.last_message_time == null ? null : Number(row.last_message_time),
-      lastMessage: row.last_message_text || "",
-    }));
+    return result.rows.map((row) => mapRecentChatRow(row));
   }
 
-  async searchMessages(rawQuery?: any, rawScope = "all", rawLimit = 50) {
+  async searchMessages(rawQuery: unknown, rawScope = "all", rawLimit = 50) {
     this.assertEnabled();
     const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
     if (!query) {
@@ -6547,7 +6139,7 @@ class PostgresStorage extends SqlStorageBase {
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 50;
 
-    const result = await this.pool.query(
+    const result = await this.pool.query<MessageSearchRow>(
       `SELECT
                  m.storage_state,
                  m.archive_id,
@@ -6576,7 +6168,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $3`,
       [query, scope, limit],
     );
-    return result.rows.map((row?: any) => ({
+    return result.rows.map((row) => ({
       storageState: row.storage_state,
       archiveId: row.archive_id,
       characterId: row.character_id,
@@ -6594,7 +6186,7 @@ class PostgresStorage extends SqlStorageBase {
 
   async getTokenUsage() {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<TokenUsageRow>(
       `SELECT model,
                     COUNT(*)::integer AS message_count,
                     COALESCE(SUM(input_tokens), 0)::bigint AS total_input_tokens,
@@ -6608,17 +6200,12 @@ class PostgresStorage extends SqlStorageBase {
              GROUP BY model
              ORDER BY total_output_tokens DESC, total_input_tokens DESC`,
     );
-    return result.rows.map((row?: any) => ({
-      model: row.model,
-      messageCount: row.message_count,
-      totalInputTokens: Number(row.total_input_tokens),
-      totalOutputTokens: Number(row.total_output_tokens),
-    }));
+    return result.rows.map((row) => mapTokenUsageRow(row));
   }
 
   async getBotChatStats() {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<BotChatStatsRow>(
       `WITH session_counts AS (
                 SELECT
                     ch.character_id,
@@ -6661,32 +6248,10 @@ class PostgresStorage extends SqlStorageBase {
             GROUP BY c.id, c.name, c.image, c.kind, c.position, c.last_interaction_time, cms.total_messages, cms.user_messages, cms.bot_messages, cms.avg_bot_len, cms.avg_user_len
             ORDER BY c.position ASC`,
     );
-    return result.rows.map((row?: any) => {
-      const totalSessions = Number(row.total_sessions || 0);
-      const totalMessages = Number(row.total_messages || 0);
-      return {
-        id: row.id,
-        name: row.name || (row.kind === "group" ? "Group" : "Character"),
-        avatarKey: row.image || undefined,
-        image: row.image || undefined,
-        isGroup: row.kind === "group",
-        totalSessions,
-        totalMessages,
-        userMessages: Number(row.user_messages || 0),
-        botMessages: Number(row.bot_messages || 0),
-        longestSessionMessages: Number(row.longest_session_messages || 0),
-        lastActiveDate:
-          row.last_active_date != null ? Number(row.last_active_date) : null,
-        avgBotMessageLen: Number(row.avg_bot_message_len || 0),
-        avgUserMessageLen: Number(row.avg_user_message_len || 0),
-        avgMessagesPerSession: Number(
-          totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0,
-        ),
-      };
-    });
+    return result.rows.map((row) => mapBotChatStatsRow(row));
   }
 
-  async searchCharactersByTag(rawTag?: any, rawLimit = 100) {
+  async searchCharactersByTag(rawTag: unknown, rawLimit = 100) {
     this.assertEnabled();
     const tag = typeof rawTag === "string" ? rawTag.trim() : "";
     if (!tag) {
@@ -6699,7 +6264,7 @@ class PostgresStorage extends SqlStorageBase {
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
-    const result = await this.pool.query(
+    const result = await this.pool.query<CharacterSummaryRow>(
       `SELECT c.id, c.name, c.image, c.kind
              FROM character.tags AS t
              JOIN character.characters AS c ON c.id = t.character_id
@@ -6708,7 +6273,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $2`,
       [tag, limit],
     );
-    return result.rows.map((row?: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       name: row.name,
       image: row.image,
@@ -6716,7 +6281,7 @@ class PostgresStorage extends SqlStorageBase {
     }));
   }
 
-  async searchCharactersByName(rawName?: any, rawLimit = 100) {
+  async searchCharactersByName(rawName: unknown, rawLimit = 100) {
     this.assertEnabled();
     const name = typeof rawName === "string" ? rawName.trim() : "";
     if (!name) {
@@ -6729,7 +6294,7 @@ class PostgresStorage extends SqlStorageBase {
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
-    const result = await this.pool.query(
+    const result = await this.pool.query<CharacterSummaryRow>(
       `SELECT id, name, image, kind
              FROM character.characters
              WHERE LOWER(name) LIKE '%' || LOWER($1) || '%'
@@ -6737,7 +6302,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $2`,
       [name, limit],
     );
-    return result.rows.map((row?: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       name: row.name,
       image: row.image,
@@ -6747,36 +6312,39 @@ class PostgresStorage extends SqlStorageBase {
 
   async listDbExplorerTables() {
     this.assertEnabled();
-    const result = await this.pool.query(
+    const result = await this.pool.query<{ table_name: string }>(
       `SELECT (table_schema || '.' || table_name) AS table_name
              FROM information_schema.tables
              WHERE table_schema IN ('system', 'character', 'chat', 'cold') AND table_type = 'BASE TABLE'
              ORDER BY table_schema, table_name`,
     );
-    const tables = result.rows.map((row?: any) =>
+    const tables = result.rows.map((row) =>
       assertDbExplorerIdentifier(row.table_name, "table name"),
     );
-    const counts = new Map<any, any>();
+    const counts = new Map<string, unknown>();
     for (let i = 0; i < tables.length; i += 25) {
       const union = tables
         .slice(i, i + 25)
         .map(
-          (name?: any) =>
+          (name) =>
             `SELECT '${name}' AS table_name, COUNT(*)::text AS row_count FROM ${assertSqlIdentifier(name)}`,
         )
         .join(" UNION ALL ");
-      const countResult = await this.pool.query(union);
+      const countResult = await this.pool.query<{
+        table_name: string;
+        row_count: string | number;
+      }>(union);
       for (const row of countResult.rows) {
         counts.set(row.table_name, row.row_count);
       }
     }
-    return tables.map((name?: any) => ({
+    return tables.map((name) => ({
       name,
       rowCount: Number(counts.get(name) ?? "0"),
     }));
   }
 
-  async getDbExplorerTableColumns(table?: any) {
+  async getDbExplorerTableColumns(table: unknown): Promise<ExplorerColumn[]> {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
     const parts = validated.split(".");
@@ -6792,14 +6360,14 @@ class PostgresStorage extends SqlStorageBase {
     if (exists.rows.length === 0) {
       throw new PostgresPayloadError("table was not found");
     }
-    const columns = await this.pool.query(
+    const columns = await this.pool.query<ExplorerColumnRow>(
       `SELECT column_name, data_type, is_nullable
              FROM information_schema.columns
              WHERE table_schema = $1 AND table_name = $2
              ORDER BY ordinal_position`,
       [schemaName, tableName],
     );
-    const primaryKeyResult = await this.pool.query(
+    const primaryKeyResult = await this.pool.query<{ column_name: string }>(
       `SELECT a.attname AS column_name
              FROM pg_index AS i
              JOIN pg_class AS c ON c.oid = i.indrelid
@@ -6809,10 +6377,10 @@ class PostgresStorage extends SqlStorageBase {
              WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary`,
       [schemaName, tableName],
     );
-    const primaryKeys = new Set<any>(
-      primaryKeyResult.rows.map((row?: any) => row.column_name),
+    const primaryKeys = new Set<string>(
+      primaryKeyResult.rows.map((row) => row.column_name),
     );
-    return columns.rows.map((row?: any) => ({
+    return columns.rows.map((row) => ({
       name: assertDbExplorerIdentifier(row.column_name, "column name"),
       dataType: row.data_type,
       nullable: row.is_nullable === "YES",
@@ -6821,13 +6389,13 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async getDbExplorerTableRows(
-    table?: any,
+    table: unknown,
     rawOffset = 0,
     rawLimit = 50,
-    rawSortColumn: any = null,
+    rawSortColumn: unknown = null,
     rawSortOrder = "asc",
     rawSearch = "",
-    rawColumns: any = null,
+    rawColumns: unknown = null,
   ) {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
@@ -6842,12 +6410,10 @@ class PostgresStorage extends SqlStorageBase {
       if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
         throw new PostgresPayloadError("column list must not be empty");
       }
-      const visibleNames = [];
+      const visibleNames: string[] = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
-        const match = columns.find(
-          (column?: any) => column.name === validatedCol,
-        );
+        const match = columns.find((column) => column.name === validatedCol);
         if (!match) {
           throw new PostgresPayloadError("column was not found in the table");
         }
@@ -6855,7 +6421,7 @@ class PostgresStorage extends SqlStorageBase {
           visibleNames.push(validatedCol);
         }
       }
-      visibleColumns = columns.filter((column?: any) =>
+      visibleColumns = columns.filter((column) =>
         visibleNames.includes(column.name),
       );
     }
@@ -6874,9 +6440,7 @@ class PostgresStorage extends SqlStorageBase {
 
     let sortColumn = columns[0].name;
     if (typeof rawSortColumn === "string" && rawSortColumn.length > 0) {
-      const match = columns.find(
-        (column?: any) => column.name === rawSortColumn,
-      );
+      const match = columns.find((column) => column.name === rawSortColumn);
       if (!match) {
         throw new PostgresPayloadError(
           "sort column was not found in the table",
@@ -6887,17 +6451,15 @@ class PostgresStorage extends SqlStorageBase {
     const sortOrder = rawSortOrder === "desc" ? "DESC" : "ASC";
 
     const selectList = visibleColumns
-      .map((column?: any) =>
-        dbExplorerSelectExpression(column.name, column.dataType),
-      )
+      .map((column) => dbExplorerSelectExpression(column.name, column.dataType))
       .join(", ");
 
-    const searchTerms = [];
+    const searchTerms: SqlParameter[] = [];
     let whereClause = "";
     if (searchTerm.length > 0) {
       const escaped = searchTerm.replace(/([%_\\])/g, "\\$1");
       const conditions = visibleColumns
-        .map((column?: any) => `("${column.name}")::text ILIKE $1`)
+        .map((column) => `("${column.name}")::text ILIKE $1`)
         .join(" OR ");
       whereClause = ` WHERE (${conditions})`;
       searchTerms.push(`%${escaped}%`);
@@ -6910,7 +6472,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $${rowParams.length - 1} OFFSET $${rowParams.length}`,
       rowParams,
     );
-    const count = await this.pool.query(
+    const count = await this.pool.query<{ total: string | number }>(
       `SELECT COUNT(*)::text AS total FROM ${quotedTable}${whereClause}`,
       searchTerms,
     );
@@ -6925,6 +6487,8 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 }
+
+export type { SqlStorageRow };
 
 export {
   DEFERRED_SETTING_KEYS,

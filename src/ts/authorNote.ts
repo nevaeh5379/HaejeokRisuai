@@ -18,13 +18,16 @@ class NoteSourceService {
       : { mode: "global", noteId: chat.globalAuthorNoteId || NO_AUTHOR_NOTE };
   }
   async set(target: ChatTarget, source: NoteSelection): Promise<void> {
-    requireChatTarget(target);
     if (
       source.mode === "global" &&
       !(await globalAuthorNoteStore.get(source.noteId))
     )
       throw new AuthorNoteError("missing", source.noteId);
-    const { chat } = requireChatTarget(target);
+
+    
+    // const { chat } = requireChatTarget(target);
+
+    const chat = characterStore.getById(target.characterId)!.chats.find(chat => chat.id === target.chatId);
     if (source.mode === "local") delete chat.globalAuthorNoteId;
     else chat.globalAuthorNoteId = source.noteId;
     characterStore.markChatDirty(target.chatId);
@@ -48,7 +51,6 @@ export function resolveNote(raw: string, templateDefault: string): string {
 }
 export async function materializeChatNote(chat: Chat): Promise<Chat> {
   const note = await readNote(chat);
-  const exported = { ...chat, note };
-  delete exported.globalAuthorNoteId;
-  return exported;
+  const { globalAuthorNoteId: _removed, ...exported } = chat;
+  return { ...exported, note };
 }

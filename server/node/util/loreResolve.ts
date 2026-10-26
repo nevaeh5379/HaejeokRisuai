@@ -25,30 +25,38 @@ function resolveLoreEntries(
 
       let activated: any = entry.activated !== false;
       if (activated && entry.forceState === "none" && !entry.alwaysActive) {
-        for (const query of entry.searchQueries || []) {
-          const result: any = matchLoreRequest(
-            messages,
-            {
-              keys: query.keys,
-              searchDepth: entry.scanDepth,
-              regex: entry.regex === true,
-              fullWordMatching: entry.fullWordMatching === true,
-              all: query.all,
-              dontSearchWhenRecursive: entry.dontSearchWhenRecursive === true,
-            },
-            {
-              username: options.username,
-              charName: options.charName,
-              recursivePrompts,
-            },
-          );
-          logs.push(...result.logs);
-          if (
-            (query.negative && result.matched) ||
-            (!query.negative && !result.matched)
-          ) {
-            activated = false;
-            break;
+        const searchQueries = entry.searchQueries;
+        if (Array.isArray(searchQueries)) {
+          for (let q = 0; q < searchQueries.length; q++) {
+            const query = searchQueries[q];
+            const result: any = matchLoreRequest(
+              messages,
+              {
+                keys: query.keys,
+                searchDepth: entry.scanDepth,
+                regex: entry.regex === true,
+                fullWordMatching: entry.fullWordMatching === true,
+                all: query.all,
+                dontSearchWhenRecursive: entry.dontSearchWhenRecursive === true,
+              },
+              {
+                username: options.username,
+                charName: options.charName,
+                recursivePrompts,
+              },
+            );
+            if (Array.isArray(result.logs)) {
+              for (let l = 0; l < result.logs.length; l++) {
+                logs.push(result.logs[l]);
+              }
+            }
+            if (
+              (query.negative && result.matched) ||
+              (!query.negative && !result.matched)
+            ) {
+              activated = false;
+              break;
+            }
           }
         }
       }

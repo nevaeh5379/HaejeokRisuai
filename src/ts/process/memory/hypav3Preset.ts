@@ -56,7 +56,9 @@ export function createHypaV3Preset(
     typeof existingSettings === "object" &&
     !Array.isArray(existingSettings)
   ) {
-    for (const [key, value] of Object.entries(existingSettings)) {
+    const existing = existingSettings as Record<string, unknown>;
+    for (const key of Object.keys(existing)) {
+      const value = existing[key];
       const settingKey = key as keyof HypaV3Settings;
       if (
         settingKey in settings &&

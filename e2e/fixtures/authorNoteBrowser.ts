@@ -19,6 +19,8 @@ export async function probeAuthorNoteBrowser() {
     readGlobalAuthorNote: async () => {
       throw failure;
     },
+    // Required by ISqlStorage; the metadata cache is keyed by storage revision.
+    getRevision: () => 0,
   } as unknown as ISqlStorage);
   const chat = {
     note: "local retained",

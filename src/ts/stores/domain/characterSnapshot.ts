@@ -10,10 +10,25 @@ import {
 // Store owns target resolution, cloning, loading, validation, and commits.
 export const snapshotEqual = isEqual;
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function diffSnapshotIds(ids: string[], oldIds: string[]) {
-  if (snapshotEqual(ids, oldIds)) return null;
+  if (arraysEqual(ids, oldIds)) return null;
   const retained = new Set(ids);
-  return { ids, removed: oldIds.filter((id) => !retained.has(id)) };
+  const removed: string[] = [];
+  for (let i = 0; i < oldIds.length; i++) {
+    const id = oldIds[i];
+    if (!retained.has(id)) {
+      removed.push(id);
+    }
+  }
+  return { ids, removed };
 }
 
 export function appendChatSnapshotChanges(
@@ -32,16 +47,32 @@ export function appendChatSnapshotChanges(
     position,
     data: sqlChatData(next),
   });
-  for (const [index, message] of next.message.entries()) {
+
+  const nextMessages = next.message;
+  const ids = new Array<string>(nextMessages.length);
+  for (let index = 0; index < nextMessages.length; index++) {
+    const message = nextMessages[index];
+    const msgId = message.chatId!;
+    ids[index] = msgId;
     commit.messages.push({
-      id: message.chatId!,
+      id: msgId,
       chatId: next.id!,
       position: index,
       data: sqlMessageData(message),
     });
   }
-  const ids = next.message.map((message) => message.chatId!);
-  const oldIds = old?.message.map((message) => message.chatId!) ?? [];
+
+  const oldMessages = old?.message;
+  let oldIds: string[];
+  if (oldMessages && oldMessages.length > 0) {
+    oldIds = new Array<string>(oldMessages.length);
+    for (let i = 0; i < oldMessages.length; i++) {
+      oldIds[i] = oldMessages[i].chatId!;
+    }
+  } else {
+    oldIds = [];
+  }
+
   const changes = diffSnapshotIds(ids, oldIds);
   if (changes) {
     commit.messageManifests.push({ chatId: next.id!, ids: changes.ids });

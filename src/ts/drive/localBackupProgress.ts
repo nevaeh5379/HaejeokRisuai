@@ -265,7 +265,10 @@ export function createNodeLocalBackupRestoreProgressReporter(
         );
         if (ratio !== null) {
           restoreRatio = Math.max(restoreRatio, 0.55 + ratio * 0.4);
-          restoreDetail = `${Math.max(0, progress.current ?? 0)} / ${Math.max(0, progress.total ?? 0)}`;
+          const count = `${Math.max(0, progress.current ?? 0)} / ${Math.max(0, progress.total ?? 0)}`;
+          restoreDetail = progress.detail
+            ? `${count} · ${progress.detail}`
+            : count;
         }
       } else if (progress.stage === "finalizing") {
         message = language.localBackupRestoreFinalizing;

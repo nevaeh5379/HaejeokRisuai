@@ -262,8 +262,9 @@ export class RemoteComputeClient {
   ): Promise<number[]> {
     if (texts.length === 0) return [];
 
-    const counts: number[] = [];
+    const counts: number[] = new Array(texts.length);
     const auth = await this.getCachedAuth();
+    let currentIdx = 0;
     for (let offset = 0; offset < texts.length; offset += 1024) {
       const response = await this.apiClient.request("/api/tokenize-count", {
         method: "POST",
@@ -286,7 +287,9 @@ export class RemoteComputeClient {
       if (!Array.isArray(data.counts)) {
         throw new Error("Server tokenization returned an invalid response");
       }
-      counts.push(...data.counts);
+      for (let i = 0; i < data.counts.length; i++) {
+        counts[currentIdx++] = data.counts[i];
+      }
     }
     return counts;
   }

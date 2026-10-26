@@ -28,10 +28,16 @@ function assertNonNegativeInteger(value: number, label: string): void {
   }
 }
 
+const HEX_TABLE: string[] = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(2, "0"),
+);
+
 function digestToHex(value: Uint8Array): string {
-  return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  let hex = "";
+  for (let i = 0; i < value.length; i++) {
+    hex += HEX_TABLE[value[i]];
+  }
+  return hex;
 }
 
 export function createStorageSyncAssetReader(
@@ -123,7 +129,11 @@ export async function summarizeStorageSyncAssets(
       sizeBytes += size;
     }
   };
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const workers = new Array(workerCount);
+  for (let i = 0; i < workerCount; i++) {
+    workers[i] = worker();
+  }
+  await Promise.all(workers);
   return { count: keys.length, sizeBytes };
 }
 
@@ -145,11 +155,11 @@ export async function buildStorageSyncAssetManifest(
       manifest[index] = await hashStorageSyncAsset(reader, keys[index]);
     }
   };
-  await Promise.all(
-    Array.from(
-      { length: Math.min(STORAGE_SYNC_ASSET_MAX_CONCURRENCY, keys.length) },
-      () => worker(),
-    ),
-  );
+  const workerCount = Math.min(STORAGE_SYNC_ASSET_MAX_CONCURRENCY, keys.length);
+  const workers = new Array(workerCount);
+  for (let i = 0; i < workerCount; i++) {
+    workers[i] = worker();
+  }
+  await Promise.all(workers);
   return manifest;
 }

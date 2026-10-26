@@ -139,19 +139,22 @@ export function buildBackupImportPlan(
   }
 
   fragments.sort((a, b) => a.index - b.index);
+  const streamFragments = new Array<StagedBackupEntry>(fragments.length);
   for (let position = 0; position < fragments.length; position++) {
     const expected = position + 1;
-    if (fragments[position].index !== expected) {
+    const fragment = fragments[position];
+    if (fragment.index !== expected) {
       throw new BackupImportPlanError(
-        `Streaming backup fragment order is incomplete; expected ${expected}, got ${fragments[position].index}`,
+        `Streaming backup fragment order is incomplete; expected ${expected}, got ${fragment.index}`,
         "invalid_stream_fragment_order",
       );
     }
+    streamFragments[position] = fragment.entry;
   }
 
   return {
     databaseMode: "stream",
-    streamFragments: fragments.map(({ entry }) => entry),
+    streamFragments,
     streamManifest: manifests[0],
     coldStorage,
     assets,

@@ -4,6 +4,16 @@
  */
 const CONFIDENCE_EPSILON = 0.001;
 
+const TYPOMAP: Record<string, string> = {
+  "\u2018": "'", // '
+  "\u2019": "'", // '
+  "\u201C": '"', // "
+  "\u201D": '"', // "
+  "\u2013": "-", // –
+  "\u2014": "-", // —
+  "\u3000": " ",
+};
+
 export interface RangeResult {
   start: number;
   end: number;
@@ -134,16 +144,6 @@ function normalizeText(
   let i = 0;
   const len = text.length;
 
-  const typomap: Record<string, string> = {
-    "\u2018": "'", // '
-    "\u2019": "'", // '
-    "\u201C": '"', // "
-    "\u201D": '"', // "
-    "\u2013": "-", // –
-    "\u2014": "-", // —
-    "\u3000": " ",
-  };
-
   while (i < len) {
     const ch = text[i];
 
@@ -167,8 +167,9 @@ function normalizeText(
       continue;
     }
 
-    if (typomap[ch]) {
-      out.push(typomap[ch]);
+    const typo = TYPOMAP[ch];
+    if (typo) {
+      out.push(typo);
       map.push(sourceMap[i]);
       i++;
       continue;
@@ -198,16 +199,23 @@ function normalizeText(
     i++;
   }
 
-  while (out.length && out[0] === " ") {
-    out.shift();
-    map.shift();
+  let startIdx = 0;
+  while (startIdx < out.length && out[startIdx] === " ") {
+    startIdx++;
   }
-  while (out.length && out[out.length - 1] === " ") {
-    out.pop();
-    map.pop();
+  let endIdx = out.length;
+  while (endIdx > startIdx && out[endIdx - 1] === " ") {
+    endIdx--;
   }
 
-  return { norm: out.join(""), map };
+  const norm =
+    startIdx === 0 && endIdx === out.length
+      ? out.join("")
+      : out.slice(startIdx, endIdx).join("");
+  const finalMap =
+    startIdx === 0 && endIdx === map.length ? map : map.slice(startIdx, endIdx);
+
+  return { norm, map: finalMap };
 }
 
 /**
@@ -314,16 +322,27 @@ function prefixSuffixScore(a: string, b: string): number {
 const PS_WEIGHT = 0.4;
 const DICE_WEIGHT = 0.6;
 
-function bigramSimilarity(a: string, b: string): number {
+function bigramSimilarityWithProfile(
+  a: string,
+  profileA: BigramProfile,
+  b: string,
+): number {
   if (a === b) return 1;
   if (!a.length || !b.length) return 0;
 
   const ps = prefixSuffixScore(a, b);
-  const profileA = buildBigramProfile(a);
   const profileB = buildBigramProfile(b);
   const dice = diceFromProfiles(profileA, profileB);
 
   return PS_WEIGHT * ps + DICE_WEIGHT * dice;
+}
+
+function bigramSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (!a.length || !b.length) return 0;
+
+  const profileA = buildBigramProfile(a);
+  return bigramSimilarityWithProfile(a, profileA, b);
 }
 
 /**
@@ -390,13 +409,18 @@ export function findAllOriginalRangesFromText(
   ): RangeResultWithContext[] {
     // Keep only highest confidence match per line
     const byLine = new Map<number, RangeResultWithContext>();
-    for (const match of matches) {
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
       const existing = byLine.get(match.lineNumber);
       if (!existing || match.confidence > existing.confidence) {
         byLine.set(match.lineNumber, match);
       }
     }
-    return Array.from(byLine.values());
+    const deduplicated: RangeResultWithContext[] = [];
+    for (const match of byLine.values()) {
+      deduplicated.push(match);
+    }
+    return deduplicated;
   }
 
   const results: RangeResultWithContext[] = [];
@@ -484,7 +508,9 @@ export function findAllOriginalRangesFromText(
     }
 
     const refinedPositions = new Set<number>();
-    for (const [candPos, candDist] of Array.from(uniqueCandidates.entries())) {
+    const initialCandidates = Array.from(uniqueCandidates.keys());
+    for (let c = 0; c < initialCandidates.length; c++) {
+      const candPos = initialCandidates[c];
       const refineStart = Math.max(0, candPos - Math.floor(step / 2));
       const refineEnd = Math.min(
         mdN.length - plN.length,
@@ -506,17 +532,21 @@ export function findAllOriginalRangesFromText(
       }
     }
 
-    const sortedCandidates = Array.from(uniqueCandidates.entries())
-      .map(([pos, dist]) => ({
-        pos,
-        dist,
-        confidence: Math.max(0, 1 - dist / threshold),
-      }))
-      .filter((c) => c.confidence >= MIN_CONFIDENCE)
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, MAX_RESULTS);
+    const sortedCandidates: Array<{
+      pos: number;
+      dist: number;
+      confidence: number;
+    }> = [];
+    for (const [pos, dist] of uniqueCandidates) {
+      const confidence = Math.max(0, 1 - dist / threshold);
+      if (confidence >= MIN_CONFIDENCE) {
+        sortedCandidates.push({ pos, dist, confidence });
+      }
+    }
+    sortedCandidates.sort((a, b) => b.confidence - a.confidence);
+    const topCandidates = sortedCandidates.slice(0, MAX_RESULTS);
 
-    for (const { pos, confidence } of sortedCandidates) {
+    for (const { pos, confidence } of topCandidates) {
       let nStart = pos;
       let nEnd = pos + plN.length;
 
@@ -570,10 +600,11 @@ export function findAllOriginalRangesFromText(
   if (plN.length > FUZZY_MAX || plN.length <= BIGRAM_MAX) {
     const step = Math.max(1, Math.floor(plN.length / 10));
     const uniqueCandidates = new Map<number, number>();
+    const plProfile = buildBigramProfile(plN);
 
     for (let i = 0; i + plN.length <= mdN.length; i += step) {
       const seg = mdN.slice(i, i + plN.length);
-      const score = bigramSimilarity(plN, seg);
+      const score = bigramSimilarityWithProfile(plN, plProfile, seg);
       if (score >= BIGRAM_THRESHOLD) {
         uniqueCandidates.set(i, score);
 
@@ -584,7 +615,9 @@ export function findAllOriginalRangesFromText(
     }
 
     const refinedPositions = new Set<number>();
-    for (const [candPos] of Array.from(uniqueCandidates.entries())) {
+    const initialCandidates = Array.from(uniqueCandidates.keys());
+    for (let c = 0; c < initialCandidates.length; c++) {
+      const candPos = initialCandidates[c];
       const refineStart = Math.max(0, candPos - Math.floor(step / 2));
       const refineEnd = Math.min(
         mdN.length - plN.length,
@@ -596,7 +629,7 @@ export function findAllOriginalRangesFromText(
         refinedPositions.add(i);
 
         const seg = mdN.slice(i, i + plN.length);
-        const score = bigramSimilarity(plN, seg);
+        const score = bigramSimilarityWithProfile(plN, plProfile, seg);
         if (score >= BIGRAM_THRESHOLD) {
           const existing = uniqueCandidates.get(i);
           if (!existing || score > existing) {
@@ -606,13 +639,16 @@ export function findAllOriginalRangesFromText(
       }
     }
 
-    const sortedCandidates = Array.from(uniqueCandidates.entries())
-      .map(([pos, score]) => ({ pos, score }))
-      .filter((c) => c.score >= MIN_CONFIDENCE)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_RESULTS);
+    const sortedCandidates: Array<{ pos: number; score: number }> = [];
+    for (const [pos, score] of uniqueCandidates) {
+      if (score >= MIN_CONFIDENCE) {
+        sortedCandidates.push({ pos, score });
+      }
+    }
+    sortedCandidates.sort((a, b) => b.score - a.score);
+    const topCandidates = sortedCandidates.slice(0, MAX_RESULTS);
 
-    for (const { pos, score } of sortedCandidates) {
+    for (const { pos, score } of topCandidates) {
       let nStart = pos;
       let nEnd = pos + plN.length;
 

@@ -422,20 +422,22 @@ function isMenuAvailable(menuIndex: number): boolean {
     return false;
   return true;
 }
-function flattenVisible(
+function collectVisible(
   items: SettingItem[],
   ctx: SettingContext,
-): SettingItem[] {
-  const result: SettingItem[] = [];
-  for (const item of items) {
+  result: SettingItem[],
+): void {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     if (!checkCondition(item, ctx)) continue;
     if (item.type === "accordion") {
-      result.push(...flattenVisible(item.options?.children ?? [], ctx));
+      if (item.options?.children) {
+        collectVisible(item.options.children, ctx, result);
+      }
     } else if (item.type !== "header") {
       result.push(item);
     }
   }
-  return result;
 }
 
 function englishLabel(item: SettingItem): string {
@@ -454,40 +456,85 @@ function englishHelp(item: SettingItem): string {
 }
 function rankMatch(
   query: string,
-  labels: string[],
-  keywords: string[],
-  helps: string[],
+  terms: string[],
+  primaryLabel: string,
+  secondaryLabel: string,
+  keywords: string[] | undefined,
+  primaryHelp: string,
+  secondaryHelp: string,
 ): number {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const labelText = labels.join(" ").toLowerCase();
-  const keywordText = keywords.join(" ").toLowerCase();
-  const helpText = helps.join(" ").toLowerCase();
+  const labelText = secondaryLabel
+    ? `${primaryLabel} ${secondaryLabel}`.toLowerCase()
+    : primaryLabel.toLowerCase();
+  const keywordText =
+    keywords && keywords.length > 0 ? keywords.join(" ").toLowerCase() : "";
+  const helpText = secondaryHelp
+    ? `${primaryHelp} ${secondaryHelp}`.toLowerCase()
+    : primaryHelp.toLowerCase();
   const allText = `${labelText} ${keywordText} ${helpText}`;
-  if (!terms.every((term) => allText.includes(term))) return -1;
-  if (labels.some((label) => label.toLowerCase() === query)) return 0;
-  if (labels.some((label) => label.toLowerCase().startsWith(query))) return 1;
-  if (terms.every((term) => labelText.includes(term))) return 2;
-  if (terms.every((term) => keywordText.includes(term))) return 3;
+
+  for (let i = 0; i < terms.length; i++) {
+    if (!allText.includes(terms[i])) return -1;
+  }
+  if (
+    primaryLabel.toLowerCase() === query ||
+    (secondaryLabel && secondaryLabel.toLowerCase() === query)
+  )
+    return 0;
+  if (
+    primaryLabel.toLowerCase().startsWith(query) ||
+    (secondaryLabel && secondaryLabel.toLowerCase().startsWith(query))
+  )
+    return 1;
+
+  let allInLabel = true;
+  for (let i = 0; i < terms.length; i++) {
+    if (!labelText.includes(terms[i])) {
+      allInLabel = false;
+      break;
+    }
+  }
+  if (allInLabel) return 2;
+
+  if (keywordText) {
+    let allInKeywords = true;
+    for (let i = 0; i < terms.length; i++) {
+      if (!keywordText.includes(terms[i])) {
+        allInKeywords = false;
+        break;
+      }
+    }
+    if (allInKeywords) return 3;
+  }
   return 4;
 }
 
 export function searchSettings(rawQuery: string): SettingSearchResult[] {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return [];
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
   const ctx = currentContext();
   const results: SettingSearchResult[] = [];
+  const visibleItems: SettingItem[] = [];
 
   for (const source of sources) {
     if (!isMenuAvailable(source.menuIndex)) continue;
-    for (const item of flattenVisible(source.items, ctx)) {
+    visibleItems.length = 0;
+    collectVisible(source.items, ctx, visibleItems);
+    for (let i = 0; i < visibleItems.length; i++) {
+      const item = visibleItems[i];
       const label = getLabel(item);
       if (!label) continue;
       const help = itemHelp(item);
       const rank = rankMatch(
         query,
-        [label, englishLabel(item)],
-        item.keywords ?? [],
-        [help, englishHelp(item)],
+        terms,
+        label,
+        englishLabel(item),
+        item.keywords,
+        help,
+        englishHelp(item),
       );
       if (rank < 0) continue;
       results.push({
@@ -521,7 +568,7 @@ export function searchSettings(rawQuery: string): SettingSearchResult[] {
     )
       continue;
     const label = entry.label();
-    const rank = rankMatch(query, [label], entry.keywords, []);
+    const rank = rankMatch(query, terms, label, "", entry.keywords, "", "");
     if (rank < 0) continue;
     results.push({
       key: entry.id,

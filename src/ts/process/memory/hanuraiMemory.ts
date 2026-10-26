@@ -6,6 +6,7 @@ import { language } from "src/lang";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 
 const maxRecentChatQuery = 4;
+const DOCUMENT_PREFIX = "search_document: ";
 export async function hanuraiMemory(
   chats: OpenAIChat[],
   arg: {
@@ -24,26 +25,28 @@ export async function hanuraiMemory(
   );
   let addTexts: string[] = [];
   const queryStartIndex = chats.length - maxRecentChatQuery;
-  console.log(chats.length, maxRecentChatQuery, queryStartIndex);
-  chats.map((chat, index) => {
+  for (let index = 0; index < chats.length; index++) {
     if (queryStartIndex < index) {
-      return;
+      continue;
     }
-    if (!chat?.content?.trim()) {
-      return;
+    const chat = chats[index];
+    const content = chat?.content?.trim();
+    if (!content) {
+      continue;
     }
     if (db.hanuraiSplit) {
-      const splited = chat.content.split("\n\n");
-      for (const split of splited) {
-        if (!split.trim()) {
+      const splited = content.split("\n\n");
+      for (let s = 0; s < splited.length; s++) {
+        const trimmedSplit = splited[s].trim();
+        if (!trimmedSplit) {
           continue;
         }
-        addTexts.push(`search_document: ${split.trim()}`);
+        addTexts.push(DOCUMENT_PREFIX + trimmedSplit);
       }
     } else {
-      addTexts.push(`search_document: ${chat.content?.trim()}`);
+      addTexts.push(DOCUMENT_PREFIX + content);
     }
-  });
+  }
   if (!(await processer.prepareServerTextIndex(addTexts))) {
     await processer.addText(addTexts);
   }
@@ -54,17 +57,15 @@ export async function hanuraiMemory(
     if (!chat?.content) {
       continue;
     }
-    const scoredArray = (
-      await processer.similaritySearchScored("search_query: " + chat.content)
-    ).map((result) => {
-      return [result[0], result[1] / i] as [string, number];
-    });
-    for (const scored of scoredArray) {
-      if (scoredResults[scored[0]]) {
-        scoredResults[scored[0]] += scored[1];
-      } else {
-        scoredResults[scored[0]] = scored[1];
-      }
+    const scoredArray = await processer.similaritySearchScored(
+      "search_query: " + chat.content,
+    );
+    const weight = 1 / i;
+    for (let s = 0; s < scoredArray.length; s++) {
+      const result = scoredArray[s];
+      const key = result[0];
+      const weightedScore = result[1] * weight;
+      scoredResults[key] = (scoredResults[key] || 0) + weightedScore;
     }
   }
   const vectorResult = Object.entries(scoredResults).sort(
@@ -91,15 +92,31 @@ export async function hanuraiMemory(
 
   tokens -= db.hanuraiTokens;
 
-  const existingContents = new Set(chats.map((chat) => chat.content));
-  const candidateTexts = vectorResult
-    .map((vector) => vector[0].substring(16))
-    .filter((content) => !existingContents.has(content));
-  const candidateChats = candidateTexts.map((content) => ({
-    role: "system" as const,
-    memo: "supaMemory",
-    content,
-  }));
+  const existingContents = new Set<string>();
+  for (let i = 0; i < chats.length; i++) {
+    const content = chats[i]?.content?.trim();
+    if (content) {
+      existingContents.add(content);
+    }
+  }
+
+  const candidateTexts: string[] = [];
+  const candidateChats: OpenAIChat[] = [];
+  for (let i = 0; i < vectorResult.length; i++) {
+    const rawKey = vectorResult[i][0];
+    // the index stores "search_document: <text>"; compare the bare text.
+    const content = rawKey.startsWith(DOCUMENT_PREFIX)
+      ? rawKey.slice(DOCUMENT_PREFIX.length)
+      : rawKey;
+    if (content && !existingContents.has(content)) {
+      candidateTexts.push(content);
+      candidateChats.push({
+        role: "system" as const,
+        memo: "supaMemory",
+        content,
+      });
+    }
+  }
   const candidateTokenCounts =
     await tokenizer.tokenizeChatsDetailed(candidateChats);
   let resultTexts: string[] = [];

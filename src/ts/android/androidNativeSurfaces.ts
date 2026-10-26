@@ -47,8 +47,8 @@ async function loadWidgetArtwork(
   imageLocation: string | null,
 ): Promise<string | null> {
   if (!imageLocation || typeof document === "undefined") return null;
-  if (widgetArtworkCache.has(imageLocation)) {
-    const cached = widgetArtworkCache.get(imageLocation) ?? null;
+  const cached = widgetArtworkCache.get(imageLocation);
+  if (cached !== undefined) {
     return rememberWidgetArtwork(imageLocation, cached);
   }
   try {
@@ -111,7 +111,9 @@ function localRecentChats(limit: number): SqlRecentChatMetadata[] {
     for (let index = 0; index < (character.chats?.length ?? 0); index++) {
       const chat = character.chats[index];
       if (!chat?.id) continue;
-      const lastMessage = chat.message?.at(-1);
+      const lastMessage = chat.message?.length
+        ? chat.message[chat.message.length - 1]
+        : undefined;
       const ownLastDate = chat.lastDate ?? lastMessage?.time ?? null;
       const lastDate =
         chat.id === activeTarget?.chatId
@@ -182,14 +184,18 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
         iconData: await loadWidgetArtwork(chat.characterImage),
       })),
     );
+    const shortcutCount = Math.min(recent.length, SHORTCUT_LIMIT);
+    const shortcuts = new Array(shortcutCount);
+    for (let i = 0; i < shortcutCount; i++) {
+      const chat = recent[i];
+      shortcuts[i] = {
+        characterId: chat.characterId,
+        chatId: chat.chatId,
+        label: chat.characterName || chat.chatName || "RisuAI",
+      };
+    }
     await Promise.all([
-      updateAndroidShortcuts(
-        recent.slice(0, SHORTCUT_LIMIT).map((chat) => ({
-          characterId: chat.characterId,
-          chatId: chat.chatId,
-          label: chat.characterName || chat.chatName || "RisuAI",
-        })),
-      ),
+      updateAndroidShortcuts(shortcuts),
       updateAndroidRecentChatWidget(widgetItems),
     ]);
   })().finally(() => {

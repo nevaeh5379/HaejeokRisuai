@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
+import { flushSync, mount, unmount } from "svelte";
+import GenerationStatsFloat from "../../../lib/ChatScreens/GenerationStatsFloat.svelte";
 import {
   calculateChatGenerationMetrics,
   cancelChatGenerationStats,
@@ -11,6 +13,13 @@ import {
   updateChatGenerationModel,
 } from "./generationStats";
 
+vi.mock("../../stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: { generationStatsPosition: "bottom-right" } },
+}));
+vi.mock("../../tokenizer", () => ({
+  tokenize: async (text: string) => text.length,
+}));
+
 afterEach(() => {
   for (const generationId of get(chatGenerationStats).keys()) {
     cancelChatGenerationStats(generationId);
@@ -19,6 +28,41 @@ afterEach(() => {
 });
 
 describe("chat generation stats", () => {
+  it("refreshes the displayed model and token count while streaming", async () => {
+    vi.useFakeTimers();
+    startChatGenerationStats({
+      generationId: "visible",
+      selectedChar: 0,
+      selectedChat: 0,
+      model: "initial-model",
+    });
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const component = mount(GenerationStatsFloat, {
+      target,
+      props: { selectedChar: 0, selectedChat: 0 },
+    });
+    try {
+      flushSync();
+      await vi.advanceTimersByTimeAsync(300);
+      updateChatGenerationModel("visible", "updated-model");
+      recordChatGenerationText("visible", "hello");
+      flushSync();
+      await vi.advanceTimersByTimeAsync(300);
+      flushSync();
+      expect.soft(target.textContent).toContain("updated-model");
+      expect.soft(target.textContent).toMatch(/5\s+Tokens/i);
+      recordChatGenerationText("visible", "hello world");
+      flushSync();
+      await vi.advanceTimersByTimeAsync(300);
+      flushSync();
+      expect(target.textContent).toMatch(/11\s+Tokens/i);
+    } finally {
+      await unmount(component);
+      target.remove();
+    }
+  });
+
   it("tracks model, first token, completion, and displayed throughput", () => {
     startChatGenerationStats({
       generationId: "generation-a",

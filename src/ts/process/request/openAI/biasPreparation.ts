@@ -5,9 +5,12 @@ export async function prepareOpenAILogitBias(
   initialBias: Record<number, number>,
 ): Promise<Record<number, number>> {
   let bias = initialBias;
-  for (const [text, value] of biasStrings) {
+  for (let i = 0; i < biasStrings.length; i++) {
+    const entry = biasStrings[i];
+    const text = entry[0];
+    const value = entry[1];
     if (text.startsWith("[[") && text.endsWith("]]")) {
-      const tokenId = parseInt(text.slice(2, -2));
+      const tokenId = parseInt(text.slice(2, -2), 10);
       bias[tokenId] = value;
       continue;
     }
@@ -18,8 +21,8 @@ export async function prepareOpenAILogitBias(
     }
 
     const tokens = await tokenizeNum(text);
-    for (const token of tokens) {
-      bias[token] = value;
+    for (let j = 0; j < tokens.length; j++) {
+      bias[tokens[j]] = value;
     }
   }
   return bias;

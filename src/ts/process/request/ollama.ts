@@ -86,7 +86,7 @@ async function ollamaCloudFetch(
   return normalizeOllamaStreamResponse(response);
 }
 
-function normalizeOllamaStreamResponse(response: Response): Response {
+export function normalizeOllamaStreamResponse(response: Response): Response {
   if (!response.body) {
     return response;
   }
@@ -101,10 +101,12 @@ function normalizeOllamaStreamResponse(response: Response): Response {
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         let out = "";
+        let lastFlush = 0;
         const text = decoder.decode(chunk, { stream: true });
+        const len = text.length;
 
-        for (const char of text) {
-          out += char;
+        for (let i = 0; i < len; i++) {
+          const char = text[i];
 
           if (escaped) {
             escaped = false;
@@ -128,9 +130,14 @@ function normalizeOllamaStreamResponse(response: Response): Response {
           if (char === "}") {
             depth = Math.max(0, depth - 1);
             if (depth === 0) {
-              out += "\n";
+              out += text.slice(lastFlush, i + 1) + "\n";
+              lastFlush = i + 1;
             }
           }
+        }
+
+        if (lastFlush < len) {
+          out += text.slice(lastFlush);
         }
 
         if (out) {
