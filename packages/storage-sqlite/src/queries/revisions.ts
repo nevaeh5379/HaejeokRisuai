@@ -52,7 +52,11 @@ export async function list(
     sql,
     normalizedLimit !== undefined ? [normalizedLimit] : [],
   );
-  return rows.map(mapRevision);
+  const result = new Array<NodePostgresRevision>(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    result[i] = mapRevision(rows[i]);
+  }
+  return result;
 }
 
 export async function getDetails(

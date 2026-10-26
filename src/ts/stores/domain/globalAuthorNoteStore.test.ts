@@ -39,7 +39,27 @@ describe.each([
     await store.init(harness.storage);
     return { ...harness, store };
   }
-  it("queries metadata without content, never caches, and waits for committed writes", async () => {
+  function blockMetadataRead(storage: ISqlStorage) {
+    const readMetadata = storage.getGlobalAuthorNote.bind(storage);
+    let finishRead!: () => void;
+    let readStarted!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      finishRead = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      readStarted = resolve;
+    });
+    vi.spyOn(storage, "getGlobalAuthorNote").mockImplementationOnce(
+      async (id) => {
+        const metadata = await readMetadata(id);
+        readStarted();
+        await blocked;
+        return metadata;
+      },
+    );
+    return { started, finishRead };
+  }
+  it("queries metadata without content, keeps content uncached, and waits for committed writes", async () => {
     const { store, storage, queryLog: log } = await setup();
     const note = await store.create("same", " \n\ud55c\uae00\ud83d\ude80\n ");
     await store.create("same");
@@ -62,6 +82,98 @@ describe.each([
     expect(await note.getContent()).toBe("persisted");
     expect("content" in loaded).toBe(false);
   });
+  it("sees metadata renamed or deleted by another client", async () => {
+    const { store, storage } = await setup();
+    const other = new SqlGlobalAuthorNoteStore();
+    await other.init(storage);
+    const note = await store.create("before", "content");
+    const reads = vi.spyOn(storage, "getGlobalAuthorNote");
+    const [first, second] = await Promise.all([
+      store.get(note.id),
+      store.get(note.id),
+    ]);
+    expect(first?.name).toBe("before");
+    expect(second).not.toBe(first);
+    expect((await store.get(note.id))?.name).toBe("before");
+    expect(reads).toHaveBeenCalledTimes(1);
+
+    await other.rename(note.id, "after");
+    expect((await store.get(note.id))?.name).toBe("after");
+    expect(reads).toHaveBeenCalledTimes(2);
+
+    await other.remove(note.id);
+    expect(await store.get(note.id)).toBeNull();
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
+  it.each(["rename", "remove"])(
+    "discards an old in-flight result after another client's %s",
+    async (operation) => {
+      const { store, storage } = await setup();
+      const other = new SqlGlobalAuthorNoteStore();
+      await other.init(storage);
+      const note = await store.create("before");
+      const { started, finishRead } = blockMetadataRead(storage);
+      const pending = store.get(note.id);
+      await started;
+      if (operation === "rename") {
+        await other.rename(note.id, "after");
+      } else {
+        await other.remove(note.id);
+      }
+      const current = await store.get(note.id);
+      finishRead();
+      const late = await pending;
+      if (operation === "rename") {
+        expect(current?.name).toBe("after");
+        expect(late?.name).toBe("after");
+        expect((await store.get(note.id))?.name).toBe("after");
+      } else {
+        expect(current).toBeNull();
+        expect(late).toBeNull();
+        expect(await store.get(note.id)).toBeNull();
+      }
+    },
+  );
+  it("finishes in-flight reads when concurrent misses exceed cache capacity", async () => {
+    const { store, storage } = await setup();
+    const note = await store.create("keep reading");
+    const { started, finishRead } = blockMetadataRead(storage);
+    const pending = store.get(note.id);
+    await started;
+    const misses = await Promise.all(
+      Array.from({ length: 256 }, (_, index) => store.get(`missing-${index}`)),
+    );
+    finishRead();
+    expect((await pending)?.name).toBe("keep reading");
+    expect(misses.every((note) => note === null)).toBe(true);
+  });
+  it.each(["reinitialization", "disposal"])(
+    "rejects metadata reads that finish after storage %s",
+    async (transition) => {
+      const { store, storage } = await setup();
+      const note = await store.create("old database");
+      const { started, finishRead } = blockMetadataRead(storage);
+      const pending = expect(store.get(note.id)).rejects.toMatchObject({
+        code: "disposed",
+      });
+      await started;
+      if (transition === "reinitialization") {
+        const next = makeHarness<ISqlStorage>(make, schema);
+        await store.init(next.storage);
+      } else {
+        await store.dispose();
+      }
+      finishRead();
+      await pending;
+      if (transition === "reinitialization") {
+        expect(await store.get(note.id)).toBeNull();
+      } else {
+        await expect(store.get(note.id)).rejects.toMatchObject({
+          code: "disposed",
+        });
+      }
+    },
+  );
   it("rejects unread writes, conflicts, deleted writes and protected None, while allowing explicit overwrite", async () => {
     const { store } = await setup();
     const initial = await store.create("note", "old");

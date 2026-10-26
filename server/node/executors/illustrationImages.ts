@@ -135,7 +135,7 @@ export function createIllustrationImages(
             (error, result) => (error ? reject(error) : resolve(result)),
           ),
       );
-      const image = Object.values(files)[0];
+      const image = files[Object.keys(files)[0]];
       if (!image) throw new Error("No image found in ZIP file");
       return `data:image/png;base64,${Buffer.from(image).toString("base64")}`;
     },

@@ -43,7 +43,8 @@ export async function requestHorde(
     chatTarget: arg.triggerTarget,
   });
 
-  const realModel = aiModel.split(":::")[1];
+  const colonIndex = aiModel.indexOf(":::");
+  const realModel = colonIndex !== -1 ? aiModel.slice(colonIndex + 3) : aiModel;
 
   const argument = {
     prompt: prompt,

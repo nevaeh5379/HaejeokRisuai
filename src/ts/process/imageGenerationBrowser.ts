@@ -13,6 +13,8 @@ import { fetchNative, globalFetch, readImage } from "../globalApi.svelte";
 import { processZip } from "./processzip";
 import { safeStructuredClone } from "../polyfill";
 
+const PRESET_KEYS_SET = new Set<string>(PRESET_STORE_SETTING_KEYS);
+
 /**
  * Copies only image-provider settings from their owning global or preset stores.
  *
@@ -21,19 +23,18 @@ import { safeStructuredClone } from "../polyfill";
  * @returns A detached settings snapshot for one generation request. / 생성 요청 하나에 사용할 독립 설정 사본.
  */
 export function getImageGenerationSettings(): ImageGenerationSettings {
-  const presetKeys = new Set<string>(PRESET_STORE_SETTING_KEYS);
-  return Object.fromEntries(
-    IMAGE_GENERATION_SETTING_KEYS.map((key) => [
-      key,
-      safeStructuredClone(
-        key === "comfyConfig"
-          ? getComfyGenerationConfig(settingsStore.state.comfyConfig)
-          : presetKeys.has(key)
-            ? presetStore.state[key]
-            : settingsStore.state[key],
-      ),
-    ]),
-  ) as unknown as ImageGenerationSettings;
+  const result: Record<string, unknown> = {};
+  for (let i = 0; i < IMAGE_GENERATION_SETTING_KEYS.length; i++) {
+    const key = IMAGE_GENERATION_SETTING_KEYS[i];
+    const sourceValue =
+      key === "comfyConfig"
+        ? getComfyGenerationConfig(settingsStore.state.comfyConfig)
+        : PRESET_KEYS_SET.has(key)
+          ? presetStore.state[key]
+          : settingsStore.state[key];
+    result[key] = safeStructuredClone(sourceValue);
+  }
+  return result as unknown as ImageGenerationSettings;
 }
 
 /**
@@ -94,7 +95,9 @@ export const browserImageRuntime: ImageGenerationRuntime = {
         width,
         height,
       );
-      return canvas.toDataURL("image/png").split(",")[1];
+      const dataUrl = canvas.toDataURL("image/png");
+      const commaIndex = dataUrl.indexOf(",");
+      return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
     } finally {
       img.src = "";
       canvas.width = canvas.height = 0;

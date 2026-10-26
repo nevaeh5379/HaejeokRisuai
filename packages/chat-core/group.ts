@@ -24,14 +24,21 @@ const defaultRandomSource: any = {
     const result: any = [...items];
     for (let index: any = result.length - 1; index > 0; index--) {
       const target: any = Math.floor(Math.random() * (index + 1));
-      [result[index], result[target]] = [result[target], result[index]];
+      const temp = result[index];
+      result[index] = result[target];
+      result[target] = temp;
     }
     return result;
   },
 };
 
+const WORD_SPLIT_REGEX = /\n| /g;
+
 function words(data?: any): any {
-  return data.split(/\n| /g).map((word?: any) => word.toLocaleLowerCase());
+  if (!data) return [];
+  return data
+    .split(WORD_SPLIT_REGEX)
+    .map((word?: any) => word.toLocaleLowerCase());
 }
 
 function orderGroupSpeakers(
@@ -45,14 +52,19 @@ function orderGroupSpeakers(
   randomSource: any = defaultRandomSource,
 ): any {
   const order: any = [];
-  const ids: any = [];
+  const selectedIds = new Set<string>();
 
   if (input) {
+    const candidateWordSets = new Map<any, Set<string>>();
+    for (const candidate of candidates) {
+      candidateWordSets.set(candidate, new Set(words(candidate.name)));
+    }
+
     for (const word of words(input)) {
       for (const candidate of candidates) {
-        if (words(candidate.name).includes(word)) {
+        if (candidateWordSets.get(candidate)?.has(word)) {
           order.push(candidate);
-          ids.push(candidate.id);
+          selectedIds.add(candidate.id);
           break;
         }
       }
@@ -60,10 +72,10 @@ function orderGroupSpeakers(
   }
 
   for (const candidate of randomSource.shuffle(candidates)) {
-    if (ids.includes(candidate.id)) continue;
+    if (selectedIds.has(candidate.id)) continue;
     if ((candidate.talkness ?? 0.5) >= randomSource.random()) {
       order.push(candidate);
-      ids.push(candidate.id);
+      selectedIds.add(candidate.id);
     }
   }
 

@@ -62,7 +62,7 @@ const coreScalarDefaults = {
 };
 
 export type CoreValidatedDefaults = Required<
-  Pick<Database, keyof typeof coreScalarDefaults>
+  Pick<Database, keyof typeof coreScalarDefaults | "characterOrder">
 >;
 
 export function normalizeCoreDatabaseSettings(data: Database): void {
@@ -70,6 +70,7 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
     typeof data.autoHideAndroidNavigationBarInSidebar === "boolean";
   const legacyNavigationBarSetting = data.autoHideAndroidNavigationBar;
   Object.assign(data, parseDefaults(coreScalarDefaults, data));
+  data.characterOrder ??= [];
   if (!hadSidebarNavigationBarSetting && legacyNavigationBarSetting === true) {
     data.autoHideAndroidNavigationBarInSidebar = true;
   }

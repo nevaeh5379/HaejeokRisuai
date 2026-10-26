@@ -6,6 +6,7 @@ import type { character } from "./storage/database/schema";
 import { alertStore } from "./alert";
 import { asBuffer } from "./util";
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
 let pong = false;
 
 window.addEventListener("message", (event) => {
@@ -20,14 +21,12 @@ export async function shareRealmCardData(): Promise<{
   name: ArrayBuffer;
   data: ArrayBuffer;
 }> {
-  const char = safeStructuredClone(
-    characterStore.getCharacterByIndex(characterStore.selectedId, {
-      snapshot: true,
-    }),
-  ) as character;
-  const trimedName = char.name.replace(/[^a-zA-Z0-9]/g, "") || "character";
+  const char = (characterStore.getCharacterByIndex(characterStore.selectedId, {
+    snapshot: true,
+  }) ?? {}) as character;
+  const trimedName = char.name?.replace(/[^a-zA-Z0-9]/g, "") || "character";
   const writer = new VirtualWriter();
-  const namebuf = new TextEncoder().encode(trimedName + ".png");
+  const namebuf = SHARED_TEXT_ENCODER.encode(trimedName + ".png");
   await exportCharacterCard(char, "png", { writer: writer, spec: "v3" });
   alertStore.set({
     type: "none",

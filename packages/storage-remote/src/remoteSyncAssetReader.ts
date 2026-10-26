@@ -6,10 +6,18 @@ import {
 import type { NodeApiClient } from "./nodeApiClient";
 import type { NodeS3Storage } from "./nodeS3Storage";
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
+const HEX_TABLE: string[] = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(2, "0"),
+);
+
 function utf8ToHex(value: string): string {
-  return Array.from(new TextEncoder().encode(value), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const bytes = SHARED_TEXT_ENCODER.encode(value);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += HEX_TABLE[bytes[i]];
+  }
+  return hex;
 }
 
 export class RemoteSyncAssetReader {

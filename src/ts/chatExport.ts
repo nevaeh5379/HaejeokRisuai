@@ -1,15 +1,16 @@
-import { safeStructuredClone } from "./polyfill";
 import type { Chat } from "./storage/database/schema";
 import type { SqlChatBranchGraphData } from "./storage/sql/ISqlStorage";
 
 export type ChatJsonExportMode = "compatible" | "native";
 
 function cleanChatForExport(chat: Chat): Chat {
-  const exported = safeStructuredClone(chat);
-  delete exported.branch;
-  delete exported.branchState;
-  delete exported.activeBranchId;
-  return exported;
+  const {
+    branch: _branch,
+    branchState: _branchState,
+    activeBranchId: _activeBranchId,
+    ...exported
+  } = chat;
+  return exported as Chat;
 }
 
 export function buildChatJsonExportPayload(
@@ -30,15 +31,15 @@ export function buildChatJsonExportPayload(
       ver: 1 as const,
       data: {
         chat: exportedChat,
-        branchGraph: safeStructuredClone(graph),
+        branchGraph: graph,
       },
-      folders: safeStructuredClone(folders),
+      folders,
     };
   }
   return {
     type: "risuChat" as const,
     ver: 2 as const,
     data: exportedChat,
-    folders: safeStructuredClone(folders),
+    folders,
   };
 }

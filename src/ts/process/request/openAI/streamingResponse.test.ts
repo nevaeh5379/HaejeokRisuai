@@ -102,4 +102,28 @@ describe("OpenAI streaming response parser", () => {
       },
     });
   });
+
+  it("handles byte chunk fragmentation across SSE line boundaries", async () => {
+    // Deliberately split line in the middle of data: and JSON payload
+    const outputs = await runChunks([
+      "da",
+      'ta: {"choices":[{"index":0,"del',
+      'ta":{"content":"Frag"}}]}\n',
+      'data: {"choices":[{"index":0,"delta":{"content":"mented"}}]}\n',
+      "data: [DONE]\n",
+    ]);
+    expect(outputs.at(-1)?.["0"]).toBe("Fragmented");
+  });
+
+  it("supports multiGen with multiple choice indices", async () => {
+    const outputs = await runChunks(
+      [
+        'data: {"choices":[{"index":0,"delta":{"content":"Option A"}},{"index":1,"delta":{"content":"Option B"}}]}\n',
+        "data: [DONE]\n",
+      ],
+      makeArg({ multiGen: true }),
+    );
+    expect(outputs.at(-1)?.["0"]).toBe("Option A");
+    expect(outputs.at(-1)?.["1"]).toBe("Option B");
+  });
 });

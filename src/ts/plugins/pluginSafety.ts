@@ -1,5 +1,7 @@
 import { hasher } from "../hash";
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
+
 export interface CheckResult {
   isSafe: boolean;
   errors: PluginSafetyErrors[];
@@ -64,7 +66,7 @@ const checkerVersion = 3;
 export async function checkCodeSafety(code: string): Promise<CheckResult> {
   const errors: PluginSafetyErrors[] = [];
 
-  const hashedCode = await hasher(new TextEncoder().encode(code));
+  const hashedCode = await hasher(SHARED_TEXT_ENCODER.encode(code));
   const cacheKey = `safety-${hashedCode}`;
   try {
     const cachedResult = localStorage.getItem(cacheKey);

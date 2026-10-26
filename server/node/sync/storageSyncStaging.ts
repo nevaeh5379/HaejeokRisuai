@@ -106,24 +106,39 @@ async function hashActiveAsset(storage?: any, asset?: any): Promise<any> {
 }
 
 function serializeAssetPlan(session?: any): any {
-  const assets: any = Object.values(session.assets || {});
-  const status: any = assets.every(
-    (asset?: any) => asset.state === "skipped" || asset.state === "ready",
-  )
-    ? "assets-ready"
-    : "receiving-assets";
+  const assetsObj = session.assets || {};
+  const keys = Object.keys(assetsObj);
+  const assets: any[] = new Array(keys.length);
+  let allReadyOrSkipped = true;
+  let skippedCount = 0;
+  let missingCount = 0;
+  let totalBytes = 0;
+  let remainingBytes = 0;
+
+  for (let i = 0; i < keys.length; i++) {
+    const asset = assetsObj[keys[i]];
+    assets[i] = asset;
+    if (asset.state === "skipped") {
+      skippedCount++;
+    } else {
+      missingCount++;
+      if (asset.state !== "ready") {
+        allReadyOrSkipped = false;
+      }
+    }
+    const size = asset.size || 0;
+    const offset = asset.offset || 0;
+    totalBytes += size;
+    remainingBytes += Math.max(0, size - offset);
+  }
+
   return {
-    status,
+    status: allReadyOrSkipped ? "assets-ready" : "receiving-assets",
     assets,
-    skippedCount: assets.filter((asset?: any) => asset.state === "skipped")
-      .length,
-    missingCount: assets.filter((asset?: any) => asset.state !== "skipped")
-      .length,
-    totalBytes: assets.reduce((sum?: any, asset?: any) => sum + asset.size, 0),
-    remainingBytes: assets.reduce(
-      (sum?: any, asset?: any) => sum + Math.max(0, asset.size - asset.offset),
-      0,
-    ),
+    skippedCount,
+    missingCount,
+    totalBytes,
+    remainingBytes,
   };
 }
 
@@ -204,7 +219,10 @@ class StorageSyncStagingStore {
         },
       );
       await Promise.all(workers);
-      for (const asset of Object.values(plannedAssets) as any[]) {
+      const plannedKeys = Object.keys(plannedAssets);
+      let allReadyOrSkipped = true;
+      for (let i = 0; i < plannedKeys.length; i++) {
+        const asset: any = plannedAssets[plannedKeys[i]];
         if (asset.state === "pending" && asset.size === 0) {
           const emptyHash: any = crypto.createHash("sha256").digest("hex");
           if (asset.sha256 !== emptyHash) {
@@ -219,14 +237,13 @@ class StorageSyncStagingStore {
           );
           asset.state = "ready";
         }
+        if (asset.state !== "skipped" && asset.state !== "ready") {
+          allReadyOrSkipped = false;
+        }
       }
       session.assets = plannedAssets;
       session.activeUploads = 0;
-      session.status = Object.values(plannedAssets).every(
-        (asset?: any) => asset.state === "skipped" || asset.state === "ready",
-      )
-        ? "assets-ready"
-        : "receiving-assets";
+      session.status = allReadyOrSkipped ? "assets-ready" : "receiving-assets";
       this.persistPlan(session);
       return serializeAssetPlan(session);
     } catch (error: any) {
@@ -333,11 +350,16 @@ class StorageSyncStagingStore {
         }
         asset.state = "ready";
       }
-      session.status = Object.values(session.assets).every(
-        (item?: any) => item.state === "skipped" || item.state === "ready",
-      )
-        ? "assets-ready"
-        : "receiving-assets";
+      let allReadyOrSkipped = true;
+      const sessAssetKeys = Object.keys(session.assets);
+      for (let i = 0; i < sessAssetKeys.length; i++) {
+        const itemState = session.assets[sessAssetKeys[i]]?.state;
+        if (itemState !== "skipped" && itemState !== "ready") {
+          allReadyOrSkipped = false;
+          break;
+        }
+      }
+      session.status = allReadyOrSkipped ? "assets-ready" : "receiving-assets";
       return asset;
     } finally {
       asset.uploading = false;
@@ -418,9 +440,16 @@ class StorageSyncStagingStore {
     }
     session.assets = hydrated;
     session.activeUploads = 0;
-    session.status = Object.values(hydrated).every(
-      (asset?: any) => asset.state === "skipped" || asset.state === "ready",
-    )
+    let allHydratedReadyOrSkipped = true;
+    const hydratedKeys = Object.keys(hydrated);
+    for (let i = 0; i < hydratedKeys.length; i++) {
+      const itemState = hydrated[hydratedKeys[i]]?.state;
+      if (itemState !== "skipped" && itemState !== "ready") {
+        allHydratedReadyOrSkipped = false;
+        break;
+      }
+    }
+    session.status = allHydratedReadyOrSkipped
       ? "assets-ready"
       : "receiving-assets";
     return true;
@@ -430,9 +459,14 @@ class StorageSyncStagingStore {
     if (session.role !== "target" || !session.assets) {
       throw new StorageSyncAssetError("Storage sync assets are not planned");
     }
-    const assets: any = Object.values(session.assets).filter(
-      (asset?: any) => asset.state === "ready",
-    );
+    const assets: any[] = [];
+    const sessionAssetKeys = Object.keys(session.assets);
+    for (let i = 0; i < sessionAssetKeys.length; i++) {
+      const asset = session.assets[sessionAssetKeys[i]];
+      if (asset?.state === "ready") {
+        assets.push(asset);
+      }
+    }
     if (assets.length === 0) return { applied: 0 };
     if (typeof activeStorage?.createWriteStream !== "function") {
       throw new StorageSyncAssetError(
@@ -486,9 +520,14 @@ class StorageSyncStagingStore {
         "Storage sync asset manifest has not been planned",
       );
     }
-    const skipped: any = Object.values(session.assets).filter(
-      (asset?: any) => asset.state === "skipped",
-    );
+    const skipped: any[] = [];
+    const sessionAssetKeys = Object.keys(session.assets);
+    for (let i = 0; i < sessionAssetKeys.length; i++) {
+      const asset = session.assets[sessionAssetKeys[i]];
+      if (asset?.state === "skipped") {
+        skipped.push(asset);
+      }
+    }
     let cursor: any = 0;
     const workers: any = Array.from(
       { length: Math.min(STORAGE_SYNC_MAX_CONCURRENCY, skipped.length) },
