@@ -18,12 +18,16 @@ class NoteSourceService {
       : { mode: "global", noteId: chat.globalAuthorNoteId || NO_AUTHOR_NOTE };
   }
   async set(target: ChatTarget, source: NoteSelection): Promise<void> {
-    const { chat } = requireChatTarget(target);
     if (
       source.mode === "global" &&
       !(await globalAuthorNoteStore.get(source.noteId))
     )
       throw new AuthorNoteError("missing", source.noteId);
+
+    
+    // const { chat } = requireChatTarget(target);
+
+    const chat = characterStore.getById(target.characterId)!.chats.find(chat => chat.id === target.chatId);
     if (source.mode === "local") delete chat.globalAuthorNoteId;
     else chat.globalAuthorNoteId = source.noteId;
     characterStore.markChatDirty(target.chatId);
