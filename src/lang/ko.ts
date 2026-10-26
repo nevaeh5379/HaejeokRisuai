@@ -1,4 +1,23 @@
 export const languageKorean = {
+  googleSafetySettings: {
+    title: "Gemini 세이프티 설정",
+    categories: {
+      HARM_CATEGORY_SEXUALLY_EXPLICIT: "성적으로 노골적인 콘텐츠",
+      HARM_CATEGORY_HATE_SPEECH: "혐오 표현",
+      HARM_CATEGORY_HARASSMENT: "괴롭힘",
+      HARM_CATEGORY_DANGEROUS_CONTENT: "위험한 콘텐츠",
+      HARM_CATEGORY_CIVIC_INTEGRITY: "시민 무결성",
+      HARM_CATEGORY_JAILBREAK: "탈옥 감지",
+    },
+    thresholds: {
+      OFF: "끄기",
+      BLOCK_NONE: "차단 안 함",
+      BLOCK_ONLY_HIGH: "높은 확률만 차단",
+      BLOCK_MEDIUM_AND_ABOVE: "중간 확률 이상 차단",
+      BLOCK_LOW_AND_ABOVE: "낮은 확률 이상 차단",
+      HARM_BLOCK_THRESHOLD_UNSPECIFIED: "API 기본값",
+    },
+  },
   androidDiagnosticsShare: "Android 종료 진단 공유",
   androidDiagnosticsShareFailed: "Android 진단을 공유하지 못했습니다.",
   comfyWorkflows: {

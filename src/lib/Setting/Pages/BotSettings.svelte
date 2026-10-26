@@ -45,6 +45,7 @@
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
+    import GoogleSafetySettings from "./GoogleSafetySettings.svelte";
 
     let modelTab = $state<'main' | 'sub' | 'provider'>('main');
     let providerModelRole = $state<'main' | 'sub' | 'memory' | 'translate' | 'emotion' | 'otherAx'>('main');
@@ -545,6 +546,7 @@
                             <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
                                 <span class="text-xs text-textcolor2">API Key</span>
                                 <TextInput marginBottom={false} size={"sm"} placeholder="AIza..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken} />
+                                <GoogleSafetySettings />
                             </div>
                         {/if}
                     </div>
@@ -585,6 +587,7 @@
                                     <OptionInput value={'us-central1'}>us-central1</OptionInput>
                                     <OptionInput value={'us-west1'}>us-west1</OptionInput>
                                 </SelectInput>
+                                <GoogleSafetySettings />
                             </div>
                         {/if}
                     </div>

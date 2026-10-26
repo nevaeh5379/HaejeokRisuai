@@ -1,4 +1,23 @@
 export const languageEnglish = {
+  googleSafetySettings: {
+    title: "Gemini safety settings",
+    categories: {
+      HARM_CATEGORY_SEXUALLY_EXPLICIT: "Sexually explicit content",
+      HARM_CATEGORY_HATE_SPEECH: "Hate speech",
+      HARM_CATEGORY_HARASSMENT: "Harassment",
+      HARM_CATEGORY_DANGEROUS_CONTENT: "Dangerous content",
+      HARM_CATEGORY_CIVIC_INTEGRITY: "Civic integrity",
+      HARM_CATEGORY_JAILBREAK: "Jailbreak detection",
+    },
+    thresholds: {
+      OFF: "Off",
+      BLOCK_NONE: "Block none",
+      BLOCK_ONLY_HIGH: "Block high probability only",
+      BLOCK_MEDIUM_AND_ABOVE: "Block medium probability and above",
+      BLOCK_LOW_AND_ABOVE: "Block low probability and above",
+      HARM_BLOCK_THRESHOLD_UNSPECIFIED: "API default",
+    },
+  },
   androidDiagnosticsShare: "Share Android exit diagnostics",
   androidDiagnosticsShareFailed: "Could not share Android diagnostics.",
   comfyWorkflows: {
