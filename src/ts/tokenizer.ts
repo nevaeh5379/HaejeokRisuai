@@ -167,8 +167,10 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
       }
     }
     if (!counts) {
-      counts = [];
-      for (const text of missingTexts) counts.push((await encode(text)).length);
+      counts = new Array<number>(missingTexts.length);
+      for (let i = 0; i < missingTexts.length; i++) {
+        counts[i] = (await encode(missingTexts[i])).length;
+      }
     }
     for (let i = 0; i < missingIndexes.length; i++) {
       const index = missingIndexes[i];
@@ -279,9 +281,9 @@ async function tokenizeGoogleCloud(text: string) {
   const model = getModelInfo(presetStore.state.aiModel);
   const cacheKey = text + model.internalID;
 
-  if (googleCloudTokenizedCache.has(cacheKey)) {
-    const count = googleCloudTokenizedCache.get(cacheKey) ?? 0;
-    return new Uint32Array(count);
+  const cachedCount = googleCloudTokenizedCache.get(cacheKey);
+  if (cachedCount !== undefined) {
+    return new Uint32Array(cachedCount);
   }
 
   const res = await fetch(
@@ -476,7 +478,11 @@ export class ChatTokenizer {
     args: { countThoughts?: boolean } = {},
   ) {
     const counts = await this.tokenizeChatsDetailed(data, args);
-    return counts.reduce((total, count) => total + count, 0);
+    let total = 0;
+    for (let i = 0; i < counts.length; i++) {
+      total += counts[i];
+    }
+    return total;
   }
 
   tokenizeMultiModal(data: MultiModal) {
@@ -494,11 +500,19 @@ export async function tokenizeNum(data: string) {
 
 export async function strongBan(data: string, bias: { [key: number]: number }) {
   if (localStorage.getItem("strongBan_" + data)) {
-    return JSON.parse(localStorage.getItem("strongBan_" + data));
+    return JSON.parse(localStorage.getItem("strongBan_" + data)!);
   }
-  const performace = performance.now();
-  const length = Object.keys(bias).length;
-  let charAlt = [
+  const banChars = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~“”‘’«»「」…–―※";
+  const unbanChars = new Set<number>();
+
+  for (let i = 0; i < banChars.length; i++) {
+    const encoded = await tokenizeNum(banChars[i]);
+    if (encoded.length > 0) {
+      unbanChars.add(encoded[0]);
+    }
+  }
+
+  const charAlt = [
     data,
     data.trim(),
     data.toLocaleUpperCase(),
@@ -507,34 +521,21 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
     data[0].toLocaleLowerCase() + data.slice(1),
   ];
 
-  let banChars = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~“”‘’«»「」…–―※";
-  let unbanChars: number[] = [];
-
-  for (const char of banChars) {
-    unbanChars.push((await tokenizeNum(char))[0]);
-  }
-
-  for (const char of banChars) {
+  for (let i = 0; i < banChars.length; i++) {
+    const char = banChars[i];
     const encoded = await tokenizeNum(char);
-    if (encoded.length > 0) {
-      if (!unbanChars.includes(encoded[0])) {
-        bias[encoded[0]] = -100;
-      }
+    if (encoded.length > 0 && !unbanChars.has(encoded[0])) {
+      bias[encoded[0]] = -100;
     }
-    for (const alt of charAlt) {
-      let fchar = char;
-
-      const encoded = await tokenizeNum(alt + fchar);
-      if (encoded.length > 0) {
-        if (!unbanChars.includes(encoded[0])) {
-          bias[encoded[0]] = -100;
-        }
+    for (let j = 0; j < charAlt.length; j++) {
+      const alt = charAlt[j];
+      const encoded1 = await tokenizeNum(alt + char);
+      if (encoded1.length > 0 && !unbanChars.has(encoded1[0])) {
+        bias[encoded1[0]] = -100;
       }
-      const encoded2 = await tokenizeNum(fchar + alt);
-      if (encoded2.length > 0) {
-        if (!unbanChars.includes(encoded2[0])) {
-          bias[encoded2[0]] = -100;
-        }
+      const encoded2 = await tokenizeNum(char + alt);
+      if (encoded2.length > 0 && !unbanChars.has(encoded2[0])) {
+        bias[encoded2[0]] = -100;
       }
     }
   }
@@ -550,28 +551,52 @@ export async function getCharToken(char?: character | groupChat | null) {
     return { persistant: 0, dynamic: 0 };
   }
 
+  const charName = char.name;
   const normalize = (data: string) =>
-    data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name);
-  const persistentTexts = [
+    data.replace(/{{char}}/g, charName).replace(/<char>/g, charName);
+
+  const persistentTexts: string[] = [
     normalize(char.desc),
     normalize(char.personality ?? ""),
     normalize(char.scenario ?? ""),
   ];
-  const dynamicTexts = char.globalLore.map((lore) =>
-    normalize(
-      lore.content
-        .split("\n")
-        .filter((line) => !line.startsWith("@@") && line !== "")
-        .join("\n"),
-    ),
+
+  const dynamicTexts: string[] = [];
+  if (char.globalLore?.length) {
+    for (let i = 0; i < char.globalLore.length; i++) {
+      const content = char.globalLore[i].content;
+      if (!content) continue;
+      let stripped = "";
+      const lines = content.split("\n");
+      for (let j = 0; j < lines.length; j++) {
+        const line = lines[j];
+        if (line.length > 0 && !line.startsWith("@@")) {
+          stripped += (stripped.length > 0 ? "\n" : "") + line;
+        }
+      }
+      dynamicTexts.push(normalize(stripped));
+    }
+  }
+
+  const allTexts = new Array<string>(
+    persistentTexts.length + dynamicTexts.length,
   );
-  const counts = await countTokenTexts([...persistentTexts, ...dynamicTexts]);
-  const persistant = counts
-    .slice(0, persistentTexts.length)
-    .reduce((total, count) => total + count, 0);
-  const dynamic = counts
-    .slice(persistentTexts.length)
-    .reduce((total, count) => total + count, 0);
+  for (let i = 0; i < persistentTexts.length; i++) {
+    allTexts[i] = persistentTexts[i];
+  }
+  for (let i = 0; i < dynamicTexts.length; i++) {
+    allTexts[persistentTexts.length + i] = dynamicTexts[i];
+  }
+
+  const counts = await countTokenTexts(allTexts);
+  let persistant = 0;
+  for (let i = 0; i < persistentTexts.length; i++) {
+    persistant += counts[i] ?? 0;
+  }
+  let dynamic = 0;
+  for (let i = persistentTexts.length; i < counts.length; i++) {
+    dynamic += counts[i] ?? 0;
+  }
   return { persistant, dynamic };
 }
 

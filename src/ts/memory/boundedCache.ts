@@ -49,8 +49,11 @@ export class BoundedCache<K, V> {
   }
 
   clear(): void {
-    for (const [key, item] of this.values)
-      this.options.onEvict?.(item.value, key);
+    if (this.options.onEvict) {
+      this.values.forEach((item, key) => {
+        this.options.onEvict!(item.value, key);
+      });
+    }
     this.values.clear();
     this.totalWeight = 0;
   }

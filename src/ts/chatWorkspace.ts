@@ -25,7 +25,9 @@ function cloneTab(tab: ChatTab): ChatTab {
   return { ...tab, fileInput: [...tab.fileInput] };
 }
 
-export function cloneTabsSnapshot(snapshot: ChatTabsSnapshot): ChatTabsSnapshot {
+export function cloneTabsSnapshot(
+  snapshot: ChatTabsSnapshot,
+): ChatTabsSnapshot {
   return {
     tabs: snapshot.tabs.map(cloneTab),
     groups: snapshot.groups.map((group) => ({ ...group })),
@@ -68,7 +70,10 @@ export class ChatWindowManager {
     return this.setWindow({ id, kind: "auxiliary", tabs, bounds });
   }
 
-  updateTabs(id: string, tabs: ChatTabsSnapshot): ChatWorkspaceWindowState | null {
+  updateTabs(
+    id: string,
+    tabs: ChatTabsSnapshot,
+  ): ChatWorkspaceWindowState | null {
     const window = this.windows.get(id);
     if (!window) return null;
     window.tabs = cloneTabsSnapshot(tabs);
@@ -95,24 +100,48 @@ export class ChatWindowManager {
     const sourceWindow = this.windows.get(sourceWindowId);
     const targetWindow = this.windows.get(targetWindowId);
     if (!sourceWindow || !targetWindow) return null;
-    const sourceTab = sourceWindow.tabs.tabs.find((tab) => tab.id === tabId);
-    if (!sourceTab || targetWindow.tabs.tabs.some((tab) => tab.id === tabId)) return null;
 
-    const sourceGroup = sourceWindow.tabs.groups.find((group) => group.id === sourceTab.groupId);
-    if (!sourceGroup) return null;
-    sourceWindow.tabs.tabs = sourceWindow.tabs.tabs.filter((tab) => tab.id !== tabId);
-    const remainingSourceTabs = sourceWindow.tabs.tabs.filter(
-      (tab) => tab.groupId === sourceGroup.id,
+    const sourceTabs = sourceWindow.tabs.tabs;
+    const tabIndex = sourceTabs.findIndex((tab) => tab.id === tabId);
+    if (tabIndex === -1) return null;
+    const sourceTab = sourceTabs[tabIndex];
+
+    const targetTabs = targetWindow.tabs.tabs;
+    for (let i = 0; i < targetTabs.length; i++) {
+      if (targetTabs[i].id === tabId) return null;
+    }
+
+    const sourceGroups = sourceWindow.tabs.groups;
+    const sourceGroup = sourceGroups.find(
+      (group) => group.id === sourceTab.groupId,
     );
-    if (remainingSourceTabs.length === 0 && sourceWindow.tabs.groups.length > 1) {
-      sourceWindow.tabs.groups = sourceWindow.tabs.groups.filter(
-        (group) => group.id !== sourceGroup.id,
+    if (!sourceGroup) return null;
+
+    sourceTabs.splice(tabIndex, 1);
+
+    let remainingInSourceGroup = 0;
+    let firstRemainingId: string | null = null;
+    for (let i = 0; i < sourceTabs.length; i++) {
+      if (sourceTabs[i].groupId === sourceGroup.id) {
+        if (remainingInSourceGroup === 0) {
+          firstRemainingId = sourceTabs[i].id;
+        }
+        remainingInSourceGroup++;
+      }
+    }
+
+    if (remainingInSourceGroup === 0 && sourceGroups.length > 1) {
+      const groupIndex = sourceGroups.findIndex(
+        (group) => group.id === sourceGroup.id,
       );
+      if (groupIndex !== -1) {
+        sourceGroups.splice(groupIndex, 1);
+      }
       if (sourceWindow.tabs.focusedGroupId === sourceGroup.id) {
-        sourceWindow.tabs.focusedGroupId = sourceWindow.tabs.groups[0].id;
+        sourceWindow.tabs.focusedGroupId = sourceGroups[0]?.id ?? "";
       }
     } else if (sourceGroup.activeTabId === tabId) {
-      sourceGroup.activeTabId = remainingSourceTabs[0]?.id ?? null;
+      sourceGroup.activeTabId = firstRemainingId;
     }
 
     const targetGroup =
@@ -122,7 +151,11 @@ export class ChatWindowManager {
       ) ??
       targetWindow.tabs.groups[0];
     if (!targetGroup) return null;
-    const moved = { ...cloneTab(sourceTab), groupId: targetGroup.id, unread: false };
+    const moved = {
+      ...cloneTab(sourceTab),
+      groupId: targetGroup.id,
+      unread: false,
+    };
     targetWindow.tabs.tabs.push(moved);
     targetGroup.activeTabId = moved.id;
     targetWindow.tabs.focusedGroupId = targetGroup.id;
@@ -147,18 +180,25 @@ export class ChatWindowManager {
   }
 
   restore(snapshot: ChatWorkspaceSnapshot): void {
-    if (snapshot.version !== 1) throw new Error("Unsupported chat workspace version");
+    if (snapshot.version !== 1)
+      throw new Error("Unsupported chat workspace version");
     this.windows.clear();
-    for (const window of snapshot.windows) this.setWindow(window);
+    for (const window of snapshot.windows) {
+      this.windows.set(window.id, this.cloneWindow(window));
+    }
   }
 
-  private setWindow(window: ChatWorkspaceWindowState): ChatWorkspaceWindowState {
+  private setWindow(
+    window: ChatWorkspaceWindowState,
+  ): ChatWorkspaceWindowState {
     const cloned = this.cloneWindow(window);
     this.windows.set(window.id, cloned);
     return this.cloneWindow(cloned);
   }
 
-  private cloneWindow(window: ChatWorkspaceWindowState): ChatWorkspaceWindowState {
+  private cloneWindow(
+    window: ChatWorkspaceWindowState,
+  ): ChatWorkspaceWindowState {
     return {
       ...window,
       tabs: cloneTabsSnapshot(window.tabs),
