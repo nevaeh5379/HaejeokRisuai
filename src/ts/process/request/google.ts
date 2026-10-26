@@ -210,11 +210,11 @@ export async function requestGoogleCloudVertex(
 
   mergeGoogleConsecutiveChats(reformatedChat);
 
-  const uncensoredCatagory = buildGoogleSafetySettings({
+  const safetySettings = buildGoogleSafetySettings({
     includeCivicIntegrity: !arg.modelInfo.flags.includes(
       LLMFlags.noCivilIntegrity,
     ),
-    blockOff: arg.modelInfo.flags.includes(LLMFlags.geminiBlockOff),
+    settings: presetStore.state.googleSafetySettings,
   });
 
   const para = selectGoogleGenerationParameters(arg.modelInfo.parameters, {
@@ -235,7 +235,7 @@ export async function requestGoogleCloudVertex(
         modelId: arg.modelInfo.id,
       },
     ),
-    safetySettings: uncensoredCatagory,
+    safetySettings,
     systemInstruction: {
       parts: [
         {

@@ -56,10 +56,32 @@ export interface GoogleConversationPreparation {
   consumedLeadingSystem: boolean;
 }
 
-export type GoogleSafetyThreshold = "BLOCK_NONE" | "OFF";
+export const GOOGLE_SAFETY_CATEGORIES = [
+  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+  "HARM_CATEGORY_HATE_SPEECH",
+  "HARM_CATEGORY_HARASSMENT",
+  "HARM_CATEGORY_DANGEROUS_CONTENT",
+  "HARM_CATEGORY_CIVIC_INTEGRITY",
+  "HARM_CATEGORY_JAILBREAK",
+] as const;
+
+export const GOOGLE_SAFETY_THRESHOLDS = [
+  "OFF",
+  "BLOCK_NONE",
+  "BLOCK_ONLY_HIGH",
+  "BLOCK_MEDIUM_AND_ABOVE",
+  "BLOCK_LOW_AND_ABOVE",
+  "HARM_BLOCK_THRESHOLD_UNSPECIFIED",
+] as const;
+
+export type GoogleSafetyCategory = (typeof GOOGLE_SAFETY_CATEGORIES)[number];
+export type GoogleSafetyThreshold = (typeof GOOGLE_SAFETY_THRESHOLDS)[number];
+export type GoogleSafetyOverrides = Partial<
+  Record<GoogleSafetyCategory, GoogleSafetyThreshold>
+>;
 
 export interface GoogleSafetySetting {
-  category: string;
+  category: GoogleSafetyCategory;
   threshold: GoogleSafetyThreshold;
 }
 
@@ -298,22 +320,26 @@ function finalizeGoogleGenerationConfig(
   return { generationConfig, useStreaming };
 }
 
-function buildGoogleSafetySettings(options?: {
-  includeCivicIntegrity?: boolean;
-  blockOff?: boolean;
-}): GoogleSafetySetting[];
-function buildGoogleSafetySettings(options: any = {}): any {
-  const threshold: any = options.blockOff ? "OFF" : "BLOCK_NONE";
-  const categories: any = [
-    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-    "HARM_CATEGORY_HATE_SPEECH",
-    "HARM_CATEGORY_HARASSMENT",
-    "HARM_CATEGORY_DANGEROUS_CONTENT",
-  ];
-  if (options.includeCivicIntegrity !== false) {
-    categories.push("HARM_CATEGORY_CIVIC_INTEGRITY");
-  }
-  return categories.map((category?: any) => ({ category, threshold }));
+function buildGoogleSafetySettings(
+  options: {
+    includeCivicIntegrity?: boolean;
+    blockOff?: boolean;
+    settings?: GoogleSafetyOverrides;
+  } = {},
+): GoogleSafetySetting[] {
+  // Preserve legacy callers; preset-aware requests always pass settings, even {}.
+  const hasPresetSettings = options.settings !== undefined;
+  const defaultThreshold =
+    hasPresetSettings || options.blockOff ? "OFF" : "BLOCK_NONE";
+  return GOOGLE_SAFETY_CATEGORIES.filter(
+    (category) =>
+      (category !== "HARM_CATEGORY_CIVIC_INTEGRITY" ||
+        options.includeCivicIntegrity !== false) &&
+      (category !== "HARM_CATEGORY_JAILBREAK" || hasPresetSettings),
+  ).map((category) => ({
+    category,
+    threshold: options.settings?.[category] ?? defaultThreshold,
+  }));
 }
 
 function mergeGoogleConsecutiveChats(chats: GeminiChat[]): GeminiChat[];

@@ -1,4 +1,8 @@
 import * as v from "valibot";
+import {
+  GOOGLE_SAFETY_CATEGORIES,
+  GOOGLE_SAFETY_THRESHOLDS,
+} from "@risuai/chat-core/googleProvider.ts";
 import rfdc from "rfdc";
 import type {
   FormatingOrderItem,
@@ -174,6 +178,13 @@ export const presetSchema = v.object({
   ),
   aiModel: retain(defaultString("gemini-3-flash-preview")),
   subModel: retain(defaultString("gemini-3-flash-preview")),
+  googleSafetySettings: v.fallback(
+    v.record(
+      v.picklist(GOOGLE_SAFETY_CATEGORIES),
+      v.picklist(GOOGLE_SAFETY_THRESHOLDS),
+    ),
+    () => ({}),
+  ),
   currentPluginProvider: retain(defaultString()),
   textgenWebUIStreamURL: retain(defaultString()),
   textgenWebUIBlockingURL: retain(defaultString()),
