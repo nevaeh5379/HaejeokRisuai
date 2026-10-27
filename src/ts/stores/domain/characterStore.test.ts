@@ -3,9 +3,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
-import type { character, Chat, groupChat } from "../../storage/database/schema";
+import type {
+  character,
+  Chat,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 
 function makeChat(name: string): Chat {
   return {

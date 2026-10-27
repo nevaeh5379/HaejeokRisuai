@@ -1,5 +1,5 @@
 import { v4 } from "uuid";
-import type { folder } from "../storage/database/schema";
+import type { folder } from "@risuai/protocol/domain/database.ts";
 
 type CharacterOrder = (string | folder)[];
 

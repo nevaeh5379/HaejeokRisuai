@@ -1,6 +1,7 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import localforage from "localforage";
-import { normalizeHypaModel, type HypaModel } from "./hypamemory";
+import { normalizeHypaModel } from "./hypamemory";
+import type { HypaModel } from "@risuai/protocol/domain/hypaModel.ts";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { TaskRateLimiter, TaskCanceledError } from "./taskRateLimiter";
 import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";

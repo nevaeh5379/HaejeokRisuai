@@ -1,6 +1,6 @@
 import { getPresetApplyPolicy } from "../storage/presets/presetService";
 import { repairLegacyModuleIntegration } from "../storage/presets/legacyPresetMigration";
-import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 

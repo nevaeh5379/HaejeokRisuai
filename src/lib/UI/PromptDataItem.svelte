@@ -1,7 +1,7 @@
 <script lang="ts">
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prompt";
+import type { PromptItem, PromptItemChat, PromptRole } from "@risuai/protocol/domain/promptTypes.ts";
     import OptionInput from "./GUI/OptionInput.svelte";
     import TextAreaInput from "./GUI/TextAreaInput.svelte";
     import SelectInput from "./GUI/SelectInput.svelte";

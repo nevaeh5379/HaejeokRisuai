@@ -1,9 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import type {
-  PluginMetadata,
-  PluginScript,
-} from "../../plugins/pluginTypes";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { PluginMetadata, PluginScript } from "@risuai/protocol/domain/pluginTypes.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { safeStructuredClone } from "../../polyfill";

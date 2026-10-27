@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "./ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 let storage: ISqlStorage | null = null;
 

@@ -2,7 +2,7 @@
     import { ArrowDown, ArrowUp, EyeIcon, PlusIcon, TrashIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { selectedCharID } from "src/ts/stores.svelte";
-    import type { character } from "src/ts/storage/database/schema";
+import type { character } from "@risuai/protocol/domain/database.ts";
     import { createOnboarding, createOnboardingQuestion } from "src/ts/onboarding";
     import Help from "../Others/Help.svelte";
     import LazyComponent from "../Others/LazyComponent.svelte";

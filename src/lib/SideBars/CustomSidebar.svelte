@@ -3,7 +3,7 @@
     import { loadoutModalStore, openPersonaList, openPresetList, selectedCharID, settingsOpen, SettingsMenuIndex, MobileGUI, MobileSideBar, openMobileSettingsPage } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, personaStore, presetStore } from 'src/ts/stores/domain';
     import Button from '../UI/GUI/Button.svelte';
-    import type { CustomSideBarItem } from '../../ts/storage/database/schema';
+import type { CustomSideBarItem } from "@risuai/protocol/domain/database.ts";
     import { language } from 'src/lang';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { getFullSettingsData } from 'src/ts/setting/utils';

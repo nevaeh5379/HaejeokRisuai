@@ -3,7 +3,7 @@ import {
   convertCharacterToModule,
   convertModuleToCharacter,
 } from "../interchangeability";
-import type { RisuModule } from "./modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 
 const mocks = vi.hoisted(() => ({
   requestChatData: vi.fn(async () => ({
@@ -56,7 +56,8 @@ vi.mock("src/ts/stores/domain/characterStore.svelte", () => ({
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { getModuleTriggers } from "./modules";
-import { runTrigger, type triggerscript } from "./triggers";
+import { runTrigger } from "./triggers";
+import type { triggerscript } from "@risuai/protocol/domain/triggers.ts";
 
 describe("Module subModel feature", () => {
   describe("interchangeability", () => {

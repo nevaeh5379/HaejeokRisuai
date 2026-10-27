@@ -1,5 +1,5 @@
 import type { LLMModel } from "../../model/modellist";
-import type { character } from "../../storage/database/schema";
+import type { character } from "@risuai/protocol/domain/database.ts";
 import type { ChatExecutionTarget } from "../../chatTarget";
 import type {
   ChatModelResponse,

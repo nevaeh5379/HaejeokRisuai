@@ -22,8 +22,8 @@ import {
   colorSchemeSchema,
   defaultColorScheme,
   type ColorScheme,
-} from "./colorSchemeDefaults";
-export { defaultColorScheme, type ColorScheme } from "./colorSchemeDefaults";
+} from "@risuai/protocol/domain/colorScheme.ts";
+export { defaultColorScheme, type ColorScheme } from "@risuai/protocol/domain/colorScheme.ts";
 
 async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
   if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {

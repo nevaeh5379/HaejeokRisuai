@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { folder } from "../storage/database/schema";
+import type { folder } from "@risuai/protocol/domain/database.ts";
 import { Order } from "./order";
 
 const makeFolder = (id: string, data: string[]): folder => ({

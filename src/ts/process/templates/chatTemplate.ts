@@ -2,7 +2,7 @@ import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { Template } from "@huggingface/jinja";
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
-import type { character, groupChat } from "../../storage/database/schema";
+import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
 
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { getUserName } from "src/ts/util";

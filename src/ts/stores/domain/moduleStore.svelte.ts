@@ -2,8 +2,8 @@ import type {
   RisuModule,
   ModuleFolder,
   ModuleSandboxGroup,
-} from "../../process/modules";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+} from "@risuai/protocol/domain/modules.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";

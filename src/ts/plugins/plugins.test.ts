@@ -11,7 +11,7 @@ import { PluginCrashGuard } from "./pluginCrashGuard";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
-import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../storage/sql/sqlCommit";
 
 describe("Plugin Storage & SafeDatabase Persistence", () => {

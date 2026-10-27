@@ -6,7 +6,7 @@ import type {
   Chat,
   groupChat,
   OnboardingQuestion,
-} from "./storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { getChatVar, setChatVar } from "./parser/chatVar.svelte";
 
 export const onboardingVarNameAttr = "risu-change-var-name";

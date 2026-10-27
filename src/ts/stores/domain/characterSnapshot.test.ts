@@ -29,12 +29,12 @@ import { importChat } from "../../characters";
 import * as util from "../../util";
 import { selectedCharID } from "../../stores.svelte";
 import type { DatabaseSync } from "node:sqlite";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type {
   character,
   PortableDatabase,
   botPreset,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 
 describe.each([
   { name: "Web", make: makeWebStorage },

@@ -1,5 +1,5 @@
 import { loadPlugins } from "../plugins/plugins.svelte";
-import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";

@@ -46,7 +46,7 @@ import { encode } from "../../tokenizer";
 import { requestChatDataMain } from "../request/request";
 import { prepareBrowserProviderContext } from "../request/providerContextAdapter";
 import { LLMFormat } from "../../model/modellist";
-import type { character, Message } from "../../storage/database/schema";
+import type { character, Message } from "@risuai/protocol/domain/database.ts";
 import { v4 } from "uuid";
 import { getLogger } from "@logtape/logtape";
 

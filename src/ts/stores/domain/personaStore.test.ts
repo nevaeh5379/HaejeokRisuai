@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { personaStore } from "./personaStore.svelte";
 

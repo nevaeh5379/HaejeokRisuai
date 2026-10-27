@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync } from "svelte";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
-import type { ModuleFolder, RisuModule } from "../../process/modules";
+import type {
+  ModuleFolder,
+  RisuModule,
+} from "@risuai/protocol/domain/modules.ts";
 import { moduleStore } from "./moduleStore.svelte";
 
 describe("moduleStore ordering and folder positions", () => {

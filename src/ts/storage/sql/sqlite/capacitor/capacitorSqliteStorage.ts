@@ -1,6 +1,6 @@
 import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
-import type { ISqlStorage } from "../../ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { isCapacitor } from "../../../../platform";
 import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
@@ -13,7 +13,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import type { Database as DatabaseType } from "../../../database/schema";
+import type { Database as DatabaseType } from "@risuai/protocol/domain/database.ts";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
 import { readSqliteQueryStream } from "./capacitorSqliteQueryStream";

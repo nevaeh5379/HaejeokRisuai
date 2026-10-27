@@ -8,7 +8,7 @@ import {
   getChatBranchesFromPersistentGraph,
   type ChatGraphTimeline,
 } from "./branches";
-import type { Chat, Message } from "../storage/database/schema";
+import type { Chat, Message } from "@risuai/protocol/domain/database.ts";
 
 function message(chatId: string, role: Message["role"], data: string): Message {
   return { chatId, role, data };

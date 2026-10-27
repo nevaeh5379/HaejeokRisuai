@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { Database } from "./schema";
-import { defaultColorScheme } from "../../gui/colorSchemeDefaults";
+import type { Database } from "@risuai/protocol/domain/database.ts";
+import { defaultColorScheme } from "@risuai/protocol/domain/colorScheme.ts";
 import { defaultOoba, defaultAIN } from "../presets/presetDefaults";
 import {
   normalizeDatabaseDefaults,

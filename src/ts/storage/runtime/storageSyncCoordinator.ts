@@ -1,6 +1,6 @@
 import { flushDurableStores } from "../../stores/domain/flushDurableStores";
 import { NodeApiCompatibilityError } from "@risuai/storage-remote/nodeApiClient";
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type {
   NodeStorageSyncAssetChunkResult,
   NodeStorageSyncAssetManifestEntry,

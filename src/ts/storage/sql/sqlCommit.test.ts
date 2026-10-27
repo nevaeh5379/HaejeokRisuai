@@ -5,7 +5,7 @@ import {
   createEmptySqlCommit,
   hasSqlCommitChanges,
 } from "./sqlCommit";
-import type { Database } from "../database/schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 
 describe("SQL row commits", () => {
   it("keeps character, chat, and message rows separate during explicit import", () => {

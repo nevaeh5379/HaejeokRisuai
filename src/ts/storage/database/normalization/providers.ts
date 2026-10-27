@@ -1,13 +1,13 @@
-import { defaultColorScheme } from "../../../gui/colorSchemeDefaults";
+import { defaultColorScheme } from "@risuai/protocol/domain/colorScheme.ts";
 import { fallback, object, picklist, type InferOutput } from "valibot";
 import { LLMFormat } from "../../../model/types";
-import type { botPreset, Database } from "../schema";
+import type { botPreset, Database } from "@risuai/protocol/domain/database.ts";
 import {
   oobaDefaults,
   ainDefaults,
   naiDefaults,
   promptSettingsDefaults,
-} from "../../presets/presetSchema";
+} from "@risuai/protocol/domain/presetSchema.ts";
 import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
@@ -18,7 +18,7 @@ import {
   defaultStringArray,
   mergeDefaults,
   parseDefaults,
-} from "./valibotDefaults";
+} from "@risuai/protocol/domain/valibotDefaults.ts";
 
 const providerScalarDefaults = {
   classicMaxWidth: defaultBoolean(false),

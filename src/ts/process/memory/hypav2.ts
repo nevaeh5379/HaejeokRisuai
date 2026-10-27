@@ -1,7 +1,11 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { parseChatML } from "src/ts/parser/chatML";
-import type { Chat, character, groupChat } from "../../storage/database/schema";
+import type {
+  Chat,
+  character,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatTokenizer } from "src/ts/tokenizer";
@@ -14,32 +18,11 @@ import {
   type HypaGenerationContext,
 } from "./nodeHypaMemory";
 
-export interface HypaV2Data {
-  lastMainChunkID: number; // can be removed, but exists to more readability of the code.
-  mainChunks: {
-    // summary itself
-    id: number;
-    text: string;
-    chatMemos: Set<string>; // UUIDs of summarized chats
-    lastChatMemo: string;
-  }[];
-  chunks: {
-    // split mainChunks for retrieval or something. Although quite uncomfortable logic, so maybe I will delete it soon.
-    mainChunkID: number;
-    text: string;
-  }[];
-}
-
-// Reuse HypaV2Data and override only chatMemos in mainChunks
-export interface SerializableHypaV2Data extends Omit<HypaV2Data, "mainChunks"> {
-  mainChunks: {
-    id: number;
-    text: string;
-    chatMemos: string[]; // Override Set<string> with string[]
-    lastChatMemo: string;
-  }[];
-}
-
+import type {
+  HypaV2Data,
+  SerializableHypaV2Data,
+  OldHypaV2Data,
+} from "../../../../packages/protocol/domain/hypaV2Data.ts";
 async function summary(
   stringlizedChat: string,
   context: HypaGenerationContext,
@@ -164,16 +147,6 @@ async function summary(
 } // No, I am not going to touch any http API calls.
 
 // Helper function start
-export interface OldHypaV2Data {
-  chunks: {
-    text: string;
-    targetId: string;
-  }[];
-  mainChunks: {
-    text: string;
-    targetId: string;
-  }[];
-}
 
 function isSubset<T>(subset: Set<T>, superset: Set<T>): boolean {
   for (const item of subset) {

@@ -4,7 +4,7 @@ import type {
   character,
   groupChat,
   loreBook,
-} from "../../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { pickHashRand } from "src/ts/util";
 import {

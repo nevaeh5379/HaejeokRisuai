@@ -1,8 +1,8 @@
 import {
   defaultJailbreak,
   defaultMainPrompt,
-} from "../../presets/defaultPrompts";
-import type { Database } from "../schema";
+} from "@risuai/protocol/domain/defaultPrompts.ts";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
@@ -10,7 +10,7 @@ import {
   defaultPicklist,
   defaultString,
   parseDefaults,
-} from "./valibotDefaults";
+} from "@risuai/protocol/domain/valibotDefaults.ts";
 
 const coreScalarDefaults = {
   apiType: defaultString("gemini-3-flash-preview"),

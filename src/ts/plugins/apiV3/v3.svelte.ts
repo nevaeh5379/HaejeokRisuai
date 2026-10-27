@@ -9,7 +9,7 @@ import {
   type PluginV2ProviderArgument,
   type PluginV2ProviderOptions,
 } from "../plugins.svelte";
-import type { PluginMetadata } from "../pluginTypes";
+import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
 import { SandboxHost } from "./factory";
 import { prepareDatabaseSnapshot } from "./databaseSnapshot.svelte";
 

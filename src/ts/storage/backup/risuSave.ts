@@ -3,7 +3,10 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { presetTemplate } from "../presets/presetDefaults";
-import type { Database, PortableDatabase } from "../database/schema";
+import type {
+  Database,
+  PortableDatabase,
+} from "@risuai/protocol/domain/database.ts";
 import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
   LEGACY_RAW_DATABASE_HEADER_BYTES,

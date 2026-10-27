@@ -1,10 +1,10 @@
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import type {
   PluginStorageRecord,
   PluginStorageValue,
-} from "../../plugins/pluginTypes";
+} from "@risuai/protocol/domain/pluginTypes.ts";
 
 /** Lazily loaded per-key values written by plugins. Unknown JSON by design. */
 export type { PluginStorageRecord, PluginStorageValue };

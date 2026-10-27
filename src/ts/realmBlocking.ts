@@ -1,4 +1,4 @@
-import type { BlockedRealmCreator } from "./storage/database/schema";
+import type { BlockedRealmCreator } from "@risuai/protocol/domain/database.ts";
 
 type RealmCreatorData = {
   creator?: string;

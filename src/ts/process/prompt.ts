@@ -2,75 +2,22 @@ import { tokenizeAccurate } from "../tokenizer";
 import { presetTemplate } from "../storage/presets/presetDefaults";
 
 import { alertError, alertNormal } from "../alert";
-import type { OobaChatCompletionRequestParams } from "../model/ooba";
+import type { OobaChatCompletionRequestParams } from "@risuai/protocol/domain/ooba.ts";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 
-export type PromptItem =
-  | PromptItemPlain
-  | PromptItemTyped
-  | PromptItemChat
-  | PromptItemAuthorNote
-  | PromptItemChatML
-  | PromptItemCache;
-export type PromptType = PromptItem["type"];
-export type PromptSettings = {
-  assistantPrefill: string;
-  postEndInnerFormat: string;
-  sendChatAsSystem: boolean;
-  sendName: boolean;
-  utilOverride: boolean;
-  customChainOfThought?: boolean;
-  maxThoughtTagDepth?: number;
-  trimStartNewChat?: boolean;
-};
-
-export type PromptRole = "user" | "bot" | "system";
-
-export interface PromptItemPlain {
-  type: "plain" | "jailbreak" | "cot";
-  type2: "normal" | "globalNote" | "main";
-  text: string;
-  role: PromptRole;
-  name?: string;
-}
-
-export interface PromptItemChatML {
-  type: "chatML";
-  text: string;
-  name?: string;
-}
-
-export interface PromptItemTyped {
-  type: "persona" | "description" | "lorebook" | "postEverything" | "memory";
-  innerFormat?: string;
-  role2?: PromptRole;
-  name?: string;
-}
-
-export interface PromptItemAuthorNote {
-  type: "authornote";
-  innerFormat?: string;
-  defaultText?: string;
-  role2?: PromptRole;
-  name?: string;
-}
-
-export interface PromptItemChat {
-  type: "chat";
-  rangeStart: number;
-  rangeEnd: number | "end";
-  chatAsOriginalOnSystem?: boolean;
-  name?: string;
-}
-
-export interface PromptItemCache {
-  type: "cache";
-  name: string;
-  depth: number;
-  role: "user" | "assistant" | "system" | "all";
-}
-
+import type {
+  PromptItem,
+  PromptType,
+  PromptSettings,
+  PromptRole,
+  PromptItemPlain,
+  PromptItemChatML,
+  PromptItemTyped,
+  PromptItemAuthorNote,
+  PromptItemChat,
+  PromptItemCache,
+} from "../../../packages/protocol/domain/promptTypes.ts";
 export async function tokenizePreset(
   prompts: PromptItem[],
   consti: boolean = false,

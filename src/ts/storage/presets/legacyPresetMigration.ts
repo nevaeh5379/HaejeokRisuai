@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { commitSqlChanges } from "../sql/sqlCommitCoordinator";
 
 /** Repair only the stale active preset produced by the old SQL migration. */

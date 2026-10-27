@@ -12,9 +12,7 @@ import {
   vectorTextRevision,
 } from "./vectorIndexSignature";
 
-export type HypaModel =
-  "custom" | "ada" | "openai3small" | "openai3large" | "voyageContext3";
-
+import type { HypaModel } from "../../../../packages/protocol/domain/hypaModel.ts";
 export const DEFAULT_HYPA_MODEL: HypaModel = "openai3small";
 const EMBEDDING_CACHE_BATCH_SIZE = 128;
 

@@ -1,6 +1,6 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import type { Chat, character } from "../../storage/database/schema";
+import type { Chat, character } from "@risuai/protocol/domain/database.ts";
 
 import { HypaProcesser } from "../memory/hypamemory";
 import { getUserName } from "src/ts/util";

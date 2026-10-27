@@ -22,7 +22,7 @@ import type {
   loreBook,
   triggerscript,
   groupChat,
-} from "./storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { importPreset } from "./storage/presets/presetService";
 
 import {
@@ -62,13 +62,10 @@ import { hasher } from "./hash";
 import { type CharacterCardV3, type LorebookEntry } from "@risuai/ccardlib";
 import { reencodeImage } from "./process/files/inlays";
 import { PngChunk } from "./pngChunk";
-import type { OnnxModelFiles } from "./process/transformers";
+import type { OnnxModelFiles } from "@risuai/protocol/domain/onnxModelFiles.ts";
 import { CharXImporter, CharXWriter } from "./process/processzip";
-import {
-  exportModuleLegacy,
-  readModule,
-  type RisuModule,
-} from "./process/modules";
+import { exportModuleLegacy, readModule } from "./process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { NodeStorage } from "./storage/files/nodeStorage";

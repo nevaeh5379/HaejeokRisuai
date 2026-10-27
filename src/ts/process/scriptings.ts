@@ -23,7 +23,7 @@ import type {
   character,
   groupChat,
   triggerscript,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 
 import { get } from "svelte/store";
 import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";

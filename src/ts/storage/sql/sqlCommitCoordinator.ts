@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "./ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
 import { beginSave } from "./saveActivity.svelte";
 

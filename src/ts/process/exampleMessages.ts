@@ -1,6 +1,6 @@
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import type { character } from "../storage/database/schema";
+import type { character } from "@risuai/protocol/domain/database.ts";
 import { risuChatParser } from "./scripts";
 
 export function exampleMessage(

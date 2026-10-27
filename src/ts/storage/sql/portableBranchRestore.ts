@@ -1,4 +1,4 @@
-import type { Message } from "../database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
 import type {
   PortableBranchGraph,
   PortableBranchGraphMap,

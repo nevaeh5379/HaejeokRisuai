@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { AutoStorage } from "../files/autoStorage";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import type { StorageProfile } from "./storageProfile";

@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { iterateStorageSyncSqlRecords } from "../runtime/storageSyncSource";
 import { stripLegacyBranchFields } from "@risuai/backup-core/portableBranches";
 import {

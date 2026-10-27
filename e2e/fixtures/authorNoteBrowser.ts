@@ -5,8 +5,8 @@ import {
 import { applyAuthorNotes } from "@risuai/protocol/src/authorNoteSql.ts";
 import { readNote, resolveNote } from "../../src/ts/authorNote";
 import { globalAuthorNoteStore } from "../../src/ts/stores/domain/globalAuthorNoteStore";
-import type { Chat } from "../../src/ts/storage/database/schema";
-import type { ISqlStorage } from "../../src/ts/storage/sql/ISqlStorage";
+import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 export async function probeAuthorNoteBrowser() {
   let failure: Error = new AuthorNoteError("missing", "deleted");

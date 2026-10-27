@@ -1,6 +1,6 @@
 <script lang="ts">
     import ChatBody from 'src/lib/ChatScreens/ChatBody.svelte'
-    import type { Message } from 'src/ts/storage/database/schema'
+    import type { Message } from '@risuai/protocol/domain/database.ts'
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte'
     import { settingsStore } from 'src/ts/stores/domain'
 

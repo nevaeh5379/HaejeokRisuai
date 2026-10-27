@@ -1,7 +1,7 @@
 <script lang="ts">
     import Chats from 'src/lib/ChatScreens/Chats.svelte'
     import { characterStore } from 'src/ts/stores/domain'
-    import type { character } from 'src/ts/storage/database/schema'
+    import type { character } from '@risuai/protocol/domain/database.ts'
 
     let { initialCharacter }: { initialCharacter: character } = $props()
     const initial = () => initialCharacter

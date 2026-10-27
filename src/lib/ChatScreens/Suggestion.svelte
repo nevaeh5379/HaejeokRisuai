@@ -4,7 +4,7 @@
 import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import type { OpenAIChat } from "@risuai/chat-core/types.ts";
     import { activeGenerationChatIds } from "../../ts/process/chat/runtimeState";
-    import type { character, Message, groupChat } from "../../ts/storage/database/schema";
+import type { character, Message, groupChat } from "@risuai/protocol/domain/database.ts";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
     import { isTauri } from 'src/ts/platform';
@@ -15,7 +15,7 @@ import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator"
     import { getUserName, replacePlaceholders } from "../../ts/util";
     import { onDestroy } from 'svelte';
     import { ParseMarkdown } from "src/ts/parser/parser.svelte";
-    import {defaultAutoSuggestPrompt} from "../../ts/storage/presets/defaultPrompts.js";
+    import {defaultAutoSuggestPrompt} from "@risuai/protocol/domain/defaultPrompts.ts";
     import { requireChatTargetFromIndexes } from "../../ts/chatTarget";
 
     interface Props {

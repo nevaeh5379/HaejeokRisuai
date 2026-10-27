@@ -6,7 +6,7 @@ import type {
   customscript,
   groupChat,
   triggerscript,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import type { SettingsState } from "../stores/domain/stateOwnership";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 

@@ -8,7 +8,11 @@ import {
 } from "@risuai/backup-core/compatibility";
 import { safeStructuredClone } from "./polyfill";
 import { coldStorageHeader } from "./process/coldstorageData";
-import type { Chat, character, groupChat } from "./storage/database/schema";
+import type {
+  Chat,
+  character,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 
 type IdFactory = () => string;
 type BackupCharacter = character | groupChat;

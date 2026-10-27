@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { characterStore, settingsStore } from "src/ts/stores/domain";
 import { MobileSearch, selectedCharID } from "src/ts/stores.svelte";
-import type { Chat, character } from "src/ts/storage/database/schema";
+import type { Chat, character } from "@risuai/protocol/domain/database.ts";
 import MobileCharacters from "src/lib/Mobile/MobileCharacters.svelte";
 import MobileChatList from "src/lib/Mobile/MobileChatList.svelte";
 import SideChatList from "src/lib/SideBars/SideChatList.svelte";

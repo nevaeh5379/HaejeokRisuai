@@ -1,5 +1,8 @@
-import type { FormatingOrderItem } from "../../storage/database/schema";
-import type { PromptItem, PromptSettings } from "../prompt";
+import type { FormatingOrderItem } from "@risuai/protocol/domain/database.ts";
+import type {
+  PromptItem,
+  PromptSettings,
+} from "@risuai/protocol/domain/promptTypes.ts";
 
 /**
  * Request-local prompt/session overrides. These values must never be copied

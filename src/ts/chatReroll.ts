@@ -1,4 +1,4 @@
-import type { Message } from "./storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
 
 export interface RerollTarget {
   branchMessageIndex: number;

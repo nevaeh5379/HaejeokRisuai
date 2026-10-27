@@ -1,8 +1,11 @@
 import rfdc from "rfdc";
 const clone = rfdc();
-import { createPresetSettings } from "./presetSchema";
-import type { botPreset } from "../database/schema";
-export { defaultAIN, defaultOoba } from "./providerDefaults";
+import { createPresetSettings } from "@risuai/protocol/domain/presetSchema.ts";
+import type { botPreset } from "@risuai/protocol/domain/database.ts";
+export {
+  defaultAIN,
+  defaultOoba,
+} from "@risuai/protocol/domain/providerDefaults.ts";
 export const presetTemplate: botPreset = {
   ...createPresetSettings(),
   name: "New Preset",

@@ -9,7 +9,8 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import Help from "src/lib/Others/Help.svelte";
-    import { type triggerEffectV2, type triggerEffect, type triggerscript, displayAllowList, requestAllowList, type triggerV2IfAdvanced } from "src/ts/process/triggers";
+    import { displayAllowList, requestAllowList } from "src/ts/process/triggers";
+    import type { triggerEffectV2, triggerEffect, triggerscript, triggerV2IfAdvanced } from "@risuai/protocol/domain/triggers.ts";
     import { onDestroy, onMount } from "svelte";
     import { settingsStore } from "src/ts/stores/domain";
     import { RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from "src/ts/dragTypes";

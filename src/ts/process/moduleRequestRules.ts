@@ -1,14 +1,5 @@
 /** Literal, case-sensitive conditions for routing auxiliary requests to a module's model. */
-export interface ModuleRequestRule {
-  enabled: boolean;
-  phrases: string[];
-  sourceModuleId?: string;
-  role?: "user" | "assistant" | "system";
-  /** Optional advanced limit, counted from the end of the entire request. */
-  lastMessages?: number;
-  /** "any": match if any phrase matches (default). "all": all phrases in same message. "all_request": all phrases across entire request. */
-  matchMode?: "any" | "all" | "all_request";
-}
+import type { ModuleRequestRule } from "../../../packages/protocol/domain/moduleRequestRules.ts";
 
 export interface RuleMessage {
   role: string;

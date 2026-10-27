@@ -1,7 +1,7 @@
 <script lang="ts">
     import BranchGraphModal from 'src/lib/Others/BranchGraphModal.svelte'
-    import type { Chat } from 'src/ts/storage/database/schema'
-    import type { SqlChatBranchGraphData } from 'src/ts/storage/sql/ISqlStorage'
+    import type { Chat } from '@risuai/protocol/domain/database.ts'
+    import type { SqlChatBranchGraphData } from '@risuai/storage-core/sqlStorage'
 
     interface Props {
         initialChat: Chat

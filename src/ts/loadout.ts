@@ -8,18 +8,7 @@ import { presetStore } from "./stores/domain/presetStore.svelte";
 import { personaStore } from "./stores/domain/personaStore.svelte";
 import { moduleStore } from "./stores/domain/moduleStore.svelte";
 
-export type Loadout = {
-  name: string;
-  id: string;
-  lastUsed: number;
-  favorite: boolean;
-  characterIds: string[];
-  modules: string[];
-  globalVariables: { [key: string]: string };
-  presetName: string;
-  personaId: string;
-  icons?: string[];
-};
+import type { Loadout } from "../../packages/protocol/domain/loadout.ts";
 
 export function makeLoadout(options: { name: string }): Loadout {
   const character = characterStore.currentCharacter;

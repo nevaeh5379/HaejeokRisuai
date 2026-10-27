@@ -1,7 +1,7 @@
 import { createBlankChar } from "../characterDefaults";
 import { updateColorScheme } from "../gui/colorscheme";
 import { applyUITheme } from "../gui/uiTheme";
-import type { RisuModule } from "../process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";

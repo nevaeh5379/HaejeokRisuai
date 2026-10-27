@@ -4,14 +4,14 @@ import { flushSync } from "svelte";
 import type {
   ISqlStorage,
   StoredBotPreset,
-} from "../../storage/sql/ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { presetStore } from "./presetStore.svelte";
 import { defaultPresetApplyPolicy } from "../../storage/presets/presetState";
 import {
   createPresetSettings,
   PRESET_SETTING_KEYS,
-} from "../../storage/presets/presetSchema";
+} from "@risuai/protocol/domain/presetSchema.ts";
 
 function preset(id: string, mainPrompt = id): StoredBotPreset {
   return {

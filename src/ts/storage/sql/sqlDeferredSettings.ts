@@ -1,8 +1,6 @@
 import protocolSettings from "../../../../packages/protocol/settings.ts";
-import {
-  PRESET_SETTING_KEYS,
-  type PresetSettingKey,
-} from "../presets/presetSchema";
+import type { PresetSettingKey } from "@risuai/protocol/domain/presetSchema.ts";
+import { PRESET_SETTING_KEYS } from "@risuai/protocol/domain/presetSchema.ts";
 
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
 export const LEGACY_PERSONA_MIRROR_KEYS =

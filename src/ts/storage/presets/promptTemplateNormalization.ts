@@ -1,4 +1,4 @@
-import type { PromptItem } from "../../process/prompt";
+import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
 import { safeStructuredClone } from "../../polyfill";
 
 function normalizePromptRole(role: unknown): "user" | "bot" | "system" | null {

@@ -1,11 +1,7 @@
 import localforage from "localforage";
-import type { PluginMetadata, PluginScript } from "../../../plugins/pluginTypes";
-import type { ISqlStorage } from "../ISqlStorage";
-import type {
-  IPluginScriptStorage,
-  IPluginStorage,
-  PluginLoadOptions,
-} from "../pluginStorage";
+import type { PluginMetadata, PluginScript } from "@risuai/protocol/domain/pluginTypes.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
+import type { IPluginScriptStorage, IPluginStorage, PluginLoadOptions } from "@risuai/protocol/domain/pluginStorage.ts";
 import { createEmptySqlCommit } from "../sqlCommit";
 import { commitSqlChanges } from "../sqlCommitCoordinator";
 import type { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";

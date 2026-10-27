@@ -1,4 +1,4 @@
-import type { RisuModule } from "../../process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { Sha256 } from "@aws-crypto/sha256-js";
 

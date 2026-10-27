@@ -4,7 +4,8 @@
 import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lucide/svelte";
     import { language } from "src/lang";
     import PromptDataItem from "src/lib/UI/PromptDataItem.svelte";
-    import { tokenizePreset, type PromptItem } from "src/ts/process/prompt";
+import { tokenizePreset } from "src/ts/process/prompt";
+    import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
     import { templateCheck } from "src/ts/process/templates/templateCheck";
 
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
@@ -18,7 +19,7 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
     import Accordion from "src/lib/UI/Accordion.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
     import { onDestroy, onMount } from "svelte";
-    import {defaultAutoSuggestPrompt} from "../../../ts/storage/presets/defaultPrompts";
+import { defaultAutoSuggestPrompt } from "@risuai/protocol/domain/defaultPrompts.ts";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
 
     let sorted = 0

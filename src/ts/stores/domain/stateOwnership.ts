@@ -1,8 +1,10 @@
 import type { ProtocolSettingKeys } from "@risuai/protocol/settings.ts";
 import type { NormalizedSettingsState } from "../../storage/database/databaseDefaults";
-import type { PresetSettings } from "../../storage/presets/presetSchema";
-export type { PresetSettingKey } from "../../storage/presets/presetSchema";
-import type { PresetSettingKey } from "../../storage/presets/presetSchema";
+import type {
+  PresetSettings,
+  PresetSettingKey,
+} from "@risuai/protocol/domain/presetSchema.ts";
+export type { PresetSettingKey } from "@risuai/protocol/domain/presetSchema.ts";
 
 type OtherDomainKey =
   | ProtocolSettingKeys["DOMAIN_STORE_SETTING_KEYS"]

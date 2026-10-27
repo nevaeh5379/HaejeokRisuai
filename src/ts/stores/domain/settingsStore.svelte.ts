@@ -1,11 +1,11 @@
-import type { DatabaseSettings } from "../../storage/database/schema";
+import type { DatabaseSettings } from "@risuai/protocol/domain/database.ts";
 import {
   normalizeSettingsDefaults,
   type NormalizedSettingsState,
 } from "../../storage/database/databaseDefaults";
 
 import type { SettingsKey, SettingsState } from "./stateOwnership";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import {

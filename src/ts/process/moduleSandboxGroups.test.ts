@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import {
-  getModuleSandboxes,
-  getModuleTriggers,
-  type RisuModule,
-} from "./modules";
+import { getModuleSandboxes, getModuleTriggers } from "./modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 
 describe("module sandbox groups", () => {
   beforeEach(() => {

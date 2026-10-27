@@ -5,7 +5,7 @@
  * Settings are defined as data and rendered automatically by SettingRenderer.
  */
 
-import type { DatabaseSettings } from "../storage/database/schema";
+import type { DatabaseSettings } from "@risuai/protocol/domain/database.ts";
 import type {
   PresetState,
   SettingsState,

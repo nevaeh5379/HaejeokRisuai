@@ -1,9 +1,9 @@
-import type { Database } from "./schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 import { normalizeDatabaseDefaults } from "./databaseDefaults";
 import { restoreUpstreamPluginStorage } from "@risuai/backup-core/upstreamPluginStorage";
 import { getColdStorageItem } from "../../process/coldstorage.svelte";
 import { decodeRisuSave } from "../backup/risuSave";
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { isTauri } from "../../platform";
 import { forageStorage } from "../../globalApi.svelte";
 

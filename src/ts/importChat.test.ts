@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
 import { importChat } from "./characters";
-import type { character, Chat } from "./storage/database/schema";
-import type { ISqlStorage } from "./storage/sql/ISqlStorage";
+import type { character, Chat } from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
 import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
 import { selectedCharID } from "./stores.svelte";

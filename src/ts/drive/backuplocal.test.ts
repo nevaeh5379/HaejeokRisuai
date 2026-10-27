@@ -1,7 +1,7 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
 import { LocalWriter } from "../globalApi.svelte";
-import type { Database } from "../storage/database/schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
   createNativeAssetCommit,

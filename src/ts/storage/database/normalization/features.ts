@@ -3,7 +3,7 @@ import { normalizeTranslatorPresetState } from "../../../translator/presets";
 import { safeStructuredClone } from "../../../polyfill";
 import { defaultHotkeys } from "../../../defaulthotkeys";
 import { LLMFormat } from "../../../model/types";
-import type { Database } from "../schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 import { object, string } from "valibot";
 import {
   defaultBoolean,
@@ -17,7 +17,7 @@ import {
   optionalBoolean,
   optionalString,
   parseDefaults,
-} from "./valibotDefaults";
+} from "@risuai/protocol/domain/valibotDefaults.ts";
 
 const llmFormatOptions = Object.values(LLMFormat) as [
   LLMFormat,

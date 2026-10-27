@@ -21,7 +21,7 @@ import {
 } from "../../../src/ts/storage/sql/sqlite/sqliteTestHarness";
 import { buildFullDatabase } from "../../../src/ts/storage/sql/sqlite/sqliteTestFixtures";
 import schema from "../../../packages/storage-sqlite/src/schema/schema.sql?raw";
-import type { ISqlStorage } from "../../../src/ts/storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 const cleanups: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => {

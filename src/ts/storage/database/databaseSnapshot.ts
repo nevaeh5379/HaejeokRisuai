@@ -4,7 +4,7 @@ import { personaStore } from "../../stores/domain/personaStore.svelte";
 import { moduleStore } from "../../stores/domain/moduleStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
 import { safeStructuredClone } from "../../polyfill";
-import type { Database } from "./schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 
 /** Builds a detached aggregate only at serialization and external API boundaries. */
 export function createDatabaseSnapshot(): Database {

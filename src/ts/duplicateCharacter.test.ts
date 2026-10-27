@@ -7,8 +7,8 @@ import type {
   groupChat,
   Chat,
   Message,
-} from "./storage/database/schema";
-import type { ISqlStorage } from "./storage/sql/ISqlStorage";
+} from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
 import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
 

@@ -1,4 +1,4 @@
-import type { PromptItem } from "../prompt";
+import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
 
 export function templateCheck(temp: PromptItem[] | undefined) {
   if (!temp) {

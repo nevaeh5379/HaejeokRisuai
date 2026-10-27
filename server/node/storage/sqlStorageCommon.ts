@@ -10,7 +10,7 @@ import type {
   NormalizedSqlCommit,
   SqlSettingUpsert,
 } from "../../../packages/protocol/src/sqlCommit.ts";
-import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.ts";
+import type { PluginMetadata } from "../../../packages/protocol/domain/pluginTypes.ts";
 import type {
   ExternalSyncTransaction,
   PluginRecordRow,

@@ -4,7 +4,7 @@ import type {
   Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";

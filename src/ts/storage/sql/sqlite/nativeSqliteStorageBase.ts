@@ -11,8 +11,8 @@ import type {
   loreBook,
   Message,
   RisuPersona,
-} from "../../database/schema";
-import type { RisuModule } from "../../../process/modules";
+} from "@risuai/protocol/domain/database.ts";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
@@ -24,7 +24,7 @@ import type {
   SqlChatBranchSummary,
   SqlCreateChatBranchInput,
   StoredBotPreset,
-} from "../ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import type {
   NodePostgresBotChatStats,
   NodePostgresCharacterSearchResult,
@@ -44,7 +44,7 @@ import {
   type SqlCommitResult,
   SqlRevisionConflictError,
 } from "../sqlCommit";
-import type { IPluginStorage } from "../pluginStorage";
+import type { IPluginStorage } from "@risuai/protocol/domain/pluginStorage.ts";
 import { SqlitePluginStorage } from "./sqlitePluginStorage";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import * as sqliteCommitPrep from "@risuai/storage-sqlite/commit/prepare";

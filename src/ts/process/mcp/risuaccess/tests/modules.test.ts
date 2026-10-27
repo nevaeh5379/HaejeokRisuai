@@ -1,9 +1,9 @@
 import fc from "fast-check";
-import type { RisuModule } from "src/ts/process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {
   customscript,
   loreBook,
-} from "../../../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { beforeEach, expect, test, vi } from "vitest";

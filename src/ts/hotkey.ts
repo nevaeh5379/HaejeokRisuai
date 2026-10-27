@@ -26,7 +26,8 @@ import {
 } from "./stores.svelte";
 import { language } from "src/lang";
 import { updateTextThemeAndCSS } from "./gui/colorscheme";
-import { defaultHotkeys, type Hotkey } from "./defaulthotkeys";
+import { defaultHotkeys } from "./defaulthotkeys";
+import type { Hotkey } from "@risuai/protocol/domain/hotkeys.ts";
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";

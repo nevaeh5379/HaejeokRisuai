@@ -1,10 +1,6 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import type {
-  Chat,
-  ChatBranchReason,
-  Message,
-} from "../storage/database/schema";
-import type { SqlChatBranchGraphData } from "../storage/sql/ISqlStorage";
+import type { Chat, ChatBranchReason, Message } from "@risuai/protocol/domain/database.ts";
+import type { SqlChatBranchGraphData } from "@risuai/storage-core/sqlStorage";
 
 export interface ChatGraphTerminal {
   branchId: string;

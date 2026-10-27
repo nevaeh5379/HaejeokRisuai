@@ -6,7 +6,7 @@ import { setSqlRuntime } from "../storage/sql/sqlRuntime";
 import {
   isNodeSqlStorageAdmin,
   type ISqlStorage,
-} from "../storage/sql/ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 
 /**
  * Initialises the environment-appropriate SQL storage backend (open DB,

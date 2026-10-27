@@ -2,8 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import type { character } from "./storage/database/schema";
-import type { ISqlStorage } from "./storage/sql/ISqlStorage";
+import type { character } from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 const alertCardExportMock = vi.fn();
 

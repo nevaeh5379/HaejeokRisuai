@@ -4,7 +4,7 @@ import type {
   Chat,
   groupChat,
   MessagePresetInfo,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { resolveIllustrationSettings } from "@risuai/protocol/src/illustration.ts";
 import { ChatTokenizer } from "../../tokenizer";

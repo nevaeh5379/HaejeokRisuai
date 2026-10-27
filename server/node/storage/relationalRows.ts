@@ -8,7 +8,7 @@
 // 관계형 스키마는 벤더별로 같은 논리 컬럼을 선언하고 모든 벤더가 같은 codec을
 // 사용하므로, 메모리 상의 행 타입은 드라이버마다 반복하지 않고 여기서 공유합니다.
 
-import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.ts";
+import type { PluginMetadata } from "../../../packages/protocol/domain/pluginTypes.ts";
 import { SETTING_RELATION_DEFINITIONS as RAW_SETTING_RELATION_DEFINITIONS } from "./postgres/postgresSettingRelations.ts";
 
 /** A single row as returned by any of the supported SQL drivers. */

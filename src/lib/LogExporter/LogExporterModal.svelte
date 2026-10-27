@@ -48,7 +48,7 @@
         LogExporterSettings,
         LogMessageData,
     } from 'src/ts/logexporter/types'
-    import type { character, groupChat } from '../../ts/storage/database/schema';// ── Responsive ───────────────────────────────────────────────────────
+import type { character, groupChat } from "@risuai/protocol/domain/database.ts";// ── Responsive ───────────────────────────────────────────────────────
     let windowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1280)
     const isMobile = $derived(windowWidth < 1024)
 

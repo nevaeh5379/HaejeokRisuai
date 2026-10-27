@@ -1,4 +1,4 @@
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import {
   getSqlDeferredDomain,
   PROMPT_SETTING_KEYS,

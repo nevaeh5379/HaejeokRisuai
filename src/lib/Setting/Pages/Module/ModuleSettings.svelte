@@ -9,7 +9,8 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import ModuleSandboxGroups from "src/lib/Setting/Pages/Module/ModuleSandboxGroups.svelte";
-    import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule, type ModuleFolder } from "src/ts/process/modules";
+import { exportModule, exportModuleLegacy, importModule, refreshModules } from "src/ts/process/modules";
+    import type { RisuModule, ModuleFolder } from "@risuai/protocol/domain/modules.ts";
     import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, GripVertical } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";

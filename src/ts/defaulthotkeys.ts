@@ -1,10 +1,4 @@
-export interface Hotkey {
-  key: string;
-  ctrl?: boolean;
-  shift?: boolean;
-  alt?: boolean;
-  action: string;
-}
+import type { Hotkey } from "../../packages/protocol/domain/hotkeys.ts";
 
 export const defaultHotkeys: Hotkey[] = [
   {

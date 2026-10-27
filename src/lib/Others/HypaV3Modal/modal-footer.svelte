@@ -1,9 +1,7 @@
 <script lang="ts">
-  import {
-    type SerializableHypaV3Data,
-    getCurrentHypaV3Preset,
-  } from "src/ts/process/memory/hypav3";
-  import type { Message } from "../../../ts/storage/database/schema";
+import { getCurrentHypaV3Preset } from "src/ts/process/memory/hypav3";
+  import type { SerializableHypaV3Data } from "@risuai/protocol/domain/hypaV3Data.ts";
+import type { Message } from "@risuai/protocol/domain/database.ts";
   import { selectedCharID } from "src/ts/stores.svelte";
   import { characterStore } from "src/ts/stores/domain";
   import { language } from "src/lang";

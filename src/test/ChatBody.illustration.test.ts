@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
-import type { Message } from "src/ts/storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
 import ChatBodyIllustrationHarness from "./fixtures/ChatBodyIllustrationHarness.svelte";
 
 const { parseMarkdown, onRevoke } = vi.hoisted(() => ({

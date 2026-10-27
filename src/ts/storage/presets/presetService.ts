@@ -13,7 +13,7 @@ import {
 } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../../rpack/rpack_js";
-import type { botPreset } from "../database/schema";
+import type { botPreset } from "@risuai/protocol/domain/database.ts";
 import { presetTemplate } from "./presetDefaults";
 import type { PresetApplyPolicy } from "./presetState";
 export {

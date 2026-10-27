@@ -1,4 +1,4 @@
-import type { Chat } from "./storage/database/schema";
+import type { Chat } from "@risuai/protocol/domain/database.ts";
 import { requireChatTarget, type ChatTarget } from "./chatTarget";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { globalAuthorNoteStore } from "./stores/domain/globalAuthorNoteStore";

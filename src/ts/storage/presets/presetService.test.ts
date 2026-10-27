@@ -5,8 +5,11 @@ import { encode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { importPreset, downloadPreset, copyPreset } from "./presetService";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
-import { createPresetSettings } from "./presetSchema";
-import type { ISqlStorage, StoredBotPreset } from "../sql/ISqlStorage";
+import { createPresetSettings } from "@risuai/protocol/domain/presetSchema.ts";
+import type {
+  ISqlStorage,
+  StoredBotPreset,
+} from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../sql/sqlCommit";
 import { downloadFile } from "../../globalApi.svelte";
 import { repairLegacyModuleIntegration } from "./legacyPresetMigration";

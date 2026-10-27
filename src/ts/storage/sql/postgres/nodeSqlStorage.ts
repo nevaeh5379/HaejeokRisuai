@@ -13,8 +13,8 @@ import type {
   botPreset,
   loreBook,
   customscript,
-} from "../../database/schema";
-import type { RisuModule } from "../../../process/modules";
+} from "@risuai/protocol/domain/database.ts";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {
   INodeSqlStorageAdmin,
   SqlStartupDataResult,
@@ -26,7 +26,7 @@ import type {
   SqlCreateChatBranchInput,
   BotPresetSummary,
   StoredBotPreset,
-} from "../ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import {
   buildSqlReplaceCommit,
   type SqlCommit,
@@ -56,7 +56,7 @@ import {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
-import type { IPluginStorage } from "../pluginStorage";
+import type { IPluginStorage } from "@risuai/protocol/domain/pluginStorage.ts";
 import { NodePluginStorage } from "./nodePluginStorage";
 import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import {

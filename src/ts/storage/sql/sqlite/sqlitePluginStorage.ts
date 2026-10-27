@@ -1,13 +1,13 @@
 import type {
   PluginMetadata,
   PluginScript,
-} from "../../../plugins/pluginTypes";
-import type { ISqlStorage } from "../ISqlStorage";
+} from "@risuai/protocol/domain/pluginTypes.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type {
   IPluginScriptStorage,
   IPluginStorage,
   PluginLoadOptions,
-} from "../pluginStorage";
+} from "@risuai/protocol/domain/pluginStorage.ts";
 import { createEmptySqlCommit } from "../sqlCommit";
 import { commitSqlChanges } from "../sqlCommitCoordinator";
 import * as sqlitePlugin from "@risuai/storage-sqlite/queries/plugin";

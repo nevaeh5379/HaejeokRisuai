@@ -5,7 +5,7 @@ import {
   ensureAllDomains,
   type CoreDomainKey,
 } from "./domainRegistry.svelte";
-import type { PortableDatabase } from "./schema";
+import type { PortableDatabase } from "@risuai/protocol/domain/database.ts";
 
 describe("Domain Registry and Contract", () => {
   it("implements all required domain keys in DOMAIN_REGISTRY", () => {

@@ -12,7 +12,7 @@ import type {
   character,
   customscript,
   groupChat,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
 
 import { downloadFile } from "../globalApi.svelte";

@@ -1,6 +1,6 @@
 import { IMAGE_PROVIDER_IDS } from "@risuai/protocol/src/imageGeneration.ts";
-import { defaultAutoSuggestPrompt } from "../../presets/defaultPrompts";
-import type { Database } from "../schema";
+import { defaultAutoSuggestPrompt } from "@risuai/protocol/domain/defaultPrompts.ts";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 import {
   defaultBoolean,
   defaultNumber,
@@ -8,7 +8,7 @@ import {
   defaultString,
   mergeDefaults,
   parseDefaults,
-} from "./valibotDefaults";
+} from "@risuai/protocol/domain/valibotDefaults.ts";
 
 const contentScalarDefaults = {
   sdProvider: defaultPicklist(["", ...IMAGE_PROVIDER_IDS], ""),

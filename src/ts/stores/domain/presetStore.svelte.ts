@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
-import type { botPreset } from "../../storage/database/schema";
+import type { botPreset } from "@risuai/protocol/domain/database.ts";
 import type { PresetSettingKey, PresetState } from "./stateOwnership";
 import { isPresetStoreSettingKey } from "../../storage/sql/sqlDeferredSettings";
-import { createPresetSettings } from "../../storage/presets/presetSchema";
+import { createPresetSettings } from "@risuai/protocol/domain/presetSchema.ts";
 import {
   createActivePresetSnapshot,
   createPresetSettingsState,
@@ -16,7 +16,7 @@ import type {
   BotPresetSummary,
   ISqlStorage,
   StoredBotPreset,
-} from "../../storage/sql/ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import { safeStructuredClone } from "../../polyfill";
 import type { SqlSettingUpsert } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";

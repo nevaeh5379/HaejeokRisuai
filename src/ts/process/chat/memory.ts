@@ -1,4 +1,8 @@
-import type { character, Chat, groupChat } from "../../storage/database/schema";
+import type {
+  character,
+  Chat,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";

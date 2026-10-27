@@ -1,6 +1,6 @@
 import { getCharImage } from "../characterImage";
 import { resolveRecentChatActiveTarget } from "../recentChatActivity";
-import type { SqlRecentChatMetadata } from "../storage/sql/ISqlStorage";
+import type { SqlRecentChatMetadata } from "@risuai/storage-core/sqlStorage";
 import { getSqlRuntime } from "../storage/sql/sqlRuntime";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

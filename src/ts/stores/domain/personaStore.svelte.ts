@@ -1,5 +1,5 @@
-import type { RisuPersona } from "../../storage/database/schema";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { RisuPersona } from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";

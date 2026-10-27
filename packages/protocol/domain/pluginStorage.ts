@@ -1,7 +1,4 @@
-import type {
-  PluginMetadata,
-  PluginScript,
-} from "../../plugins/pluginTypes";
+import type { PluginMetadata, PluginScript } from "./pluginTypes.ts";
 
 export interface PluginLoadOptions {
   enabledOnly?: boolean;

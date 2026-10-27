@@ -2,7 +2,7 @@
     import { PlusIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { alertConfirm } from "src/ts/alert";
-    import type { triggerscript } from "../../../ts/storage/database/schema";
+import type { triggerscript } from "@risuai/protocol/domain/database.ts";
     import TextInput from "../../UI/GUI/TextInput.svelte";
     import SelectInput from "../../UI/GUI/SelectInput.svelte";
     import OptionInput from "../../UI/GUI/OptionInput.svelte";

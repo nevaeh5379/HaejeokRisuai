@@ -5,11 +5,7 @@ import {
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "src/ts/rpack/rpack_js.js";
 
-export interface TranslatorPreset {
-  name: string;
-  prompt: string;
-  maxResponse: number;
-}
+import type { TranslatorPreset } from "../../../packages/protocol/domain/translatorPresets.ts";
 
 export interface TranslatorPresetStateLike {
   translatorPrompt?: string;

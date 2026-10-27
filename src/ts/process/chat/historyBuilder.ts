@@ -4,7 +4,7 @@ import type {
   Chat,
   groupChat,
   Message,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { replaceTargetChat, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../../tokenizer";

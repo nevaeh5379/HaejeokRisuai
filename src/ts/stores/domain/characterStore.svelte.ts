@@ -1,5 +1,9 @@
-import type { character, groupChat, Chat } from "../../storage/database/schema";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type {
+  character,
+  groupChat,
+  Chat,
+} from "@risuai/protocol/domain/database.ts";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { v4 as uuidv4 } from "uuid";
 import {

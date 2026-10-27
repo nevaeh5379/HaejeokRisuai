@@ -2,7 +2,7 @@ import * as v from "valibot";
 import {
   GOOGLE_SAFETY_CATEGORIES,
   GOOGLE_SAFETY_THRESHOLDS,
-} from "@risuai/chat-core/googleProvider.ts";
+} from "../../chat-core/googleProvider.ts";
 import rfdc from "rfdc";
 import type {
   FormatingOrderItem,
@@ -10,23 +10,24 @@ import type {
   SeparateParameters,
   ProviderModelOverride,
   DynamicOutput,
-} from "../database/schema";
-import type { OobaChatCompletionRequestParams } from "../../model/ooba";
-import type { PromptItem } from "../../process/prompt";
-import { LLMFormat, type LLMFlags } from "../../model/types";
+} from "./database.ts";
+import type { OobaChatCompletionRequestParams } from "./ooba.ts";
+import type { PromptItem } from "./promptTypes.ts";
+import { LLM_FORMATS as LLMFormat } from "../modelFormat.ts";
+import type { LLMFlagValue as LLMFlags } from "../modelFlags.ts";
 import {
   defaultMainPrompt,
   defaultJailbreak,
   defaultAutoSuggestPrompt,
-} from "./defaultPrompts";
-import { defaultAIN, defaultOoba, defaultNAI } from "./providerDefaults";
+} from "./defaultPrompts.ts";
+import { defaultAIN, defaultOoba, defaultNAI } from "./providerDefaults.ts";
 import {
   defaultLooseObject,
   defaultString,
   defaultNumber,
   defaultBoolean,
   defaultStringArray,
-} from "../database/normalization/valibotDefaults";
+} from "./valibotDefaults.ts";
 
 const clone = rfdc();
 // Legacy transition hints, read only by applyPresetSettings. Valibot parsing

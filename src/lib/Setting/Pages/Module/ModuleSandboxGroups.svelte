@@ -2,7 +2,7 @@
   import { language } from "src/lang";
   import ModelList from "src/lib/UI/ModelList.svelte";
   import { alertConfirm, alertInput } from "src/ts/alert";
-  import type { ModuleSandboxGroup } from "src/ts/process/modules";
+import type { ModuleSandboxGroup } from "@risuai/protocol/domain/modules.ts";
   import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 
   type Position = { x: number; y: number };

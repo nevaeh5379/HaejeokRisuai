@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createPresetSettings, PRESET_SETTING_KEYS } from "./presetSchema";
+import {
+  createPresetSettings,
+  PRESET_SETTING_KEYS,
+} from "@risuai/protocol/domain/presetSchema.ts";
 import {
   createActivePresetSnapshot,
   createPresetSettingsState,

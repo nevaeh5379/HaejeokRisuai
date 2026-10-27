@@ -926,13 +926,13 @@ test("author note triggers read raw text and gate shared writes, including previ
         ],
       },
     ],
-  } as unknown as import("../storage/database/schema").character;
+  } as unknown as import("@risuai/protocol/domain/database.ts").character;
   const makeChat = () =>
     ({
       message: [],
       note: "local retained",
       globalAuthorNoteId: "shared",
-    }) as unknown as import("../storage/database/schema").Chat;
+    }) as unknown as import("@risuai/protocol/domain/database.ts").Chat;
   try {
     const blocked = await runTrigger(character, "start", { chat: makeChat() });
     expect(blocked?.chat.scriptstate?.$read).toBe("shared raw");

@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { v4 } from "uuid";
-import type { character } from "../../storage/database/schema";
+import type { character } from "@risuai/protocol/domain/database.ts";
 import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 import type { ChatTokenizer } from "../../tokenizer";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";

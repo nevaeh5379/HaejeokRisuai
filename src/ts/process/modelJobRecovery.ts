@@ -8,7 +8,7 @@ import { preLoadChat } from "./coldstorage.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
-import type { Message } from "../storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.ts";
 import { setRemoteChatGeneration } from "./chat/runtimeState";
 

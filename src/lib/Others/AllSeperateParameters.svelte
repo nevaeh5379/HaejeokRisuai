@@ -7,7 +7,7 @@ import { settingsStore } from "src/ts/stores/domain";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import SegmentedControl from "../UI/GUI/SegmentedControl.svelte";
     import ClaudeThinkingSeparateParams from "../Setting/Pages/ClaudeThinkingSeparateParams.svelte";
-    import type { SeparateParameters } from "../../ts/storage/database/schema";
+import type { SeparateParameters } from "@risuai/protocol/domain/database.ts";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { FileDownIcon, FileUpIcon, ImportIcon } from "@lucide/svelte";
     import { selectSingleFile } from "src/ts/util";

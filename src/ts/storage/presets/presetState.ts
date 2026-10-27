@@ -1,11 +1,11 @@
 import rfdc from "rfdc";
-import type { StoredBotPreset } from "../sql/ISqlStorage";
+import type { StoredBotPreset } from "@risuai/storage-core/sqlStorage";
+import type { PresetSettings } from "@risuai/protocol/domain/presetSchema.ts";
 import {
   createPresetSettings,
   PRESET_SETTING_KEYS,
   retainsMissingPresetField,
-  type PresetSettings,
-} from "./presetSchema";
+} from "@risuai/protocol/domain/presetSchema.ts";
 import { normalizePromptTemplate } from "./promptTemplateNormalization";
 
 const clone = rfdc();

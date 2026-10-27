@@ -13,14 +13,10 @@
     ChevronDownIcon,
   } from "@lucide/svelte";
   import { language } from "src/lang";
-  import {
-    type SerializableHypaV3Data,
-    type SerializableSummary,
-    summarize,
-    getCurrentHypaV3Preset,
-  } from "src/ts/process/memory/hypav3";
+import { summarize, getCurrentHypaV3Preset } from "src/ts/process/memory/hypav3";
+  import type { SerializableHypaV3Data, SerializableSummary } from "@risuai/protocol/domain/hypaV3Data.ts";
   import { type OpenAIChat } from "@risuai/chat-core/types.ts";
-  import type { Message } from "../../../ts/storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
   import { translateHTML } from "src/ts/translator/translator";
   import { alertConfirm } from "src/ts/alert";
   import { selectedCharID } from "src/ts/stores.svelte";

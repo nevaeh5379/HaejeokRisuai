@@ -19,7 +19,7 @@ import {
   SqlRevisionConflictError,
   type SqlCommit,
 } from "../sqlCommit";
-import type { ISqlStorage } from "../ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
@@ -35,7 +35,12 @@ import {
   makeHarness,
   type QueryLog,
 } from "./sqliteTestHarness";
-import type { Database, character, Chat, Message } from "../../database/schema";
+import type {
+  Database,
+  character,
+  Chat,
+  Message,
+} from "@risuai/protocol/domain/database.ts";
 import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveRerollTarget } from "./chatReroll";
-import type { Message } from "./storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
 
 const message = (role: Message["role"], data: string): Message => ({
   role,

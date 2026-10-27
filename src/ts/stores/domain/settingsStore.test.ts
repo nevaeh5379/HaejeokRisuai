@@ -3,7 +3,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { settingsStore } from "./settingsStore.svelte";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { PRESET_STORE_SETTING_KEYS } from "../../storage/sql/sqlDeferredSettings";
 

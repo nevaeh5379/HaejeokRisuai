@@ -1,8 +1,9 @@
 <script lang="ts">
   import { language } from "src/lang";
-  import type { RisuModule } from "src/ts/process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
   import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
-  import { resolveModuleRequestRules, type ModuleRequestRule, type ModuleRuleDecision } from "src/ts/process/moduleRequestRules";
+  import { resolveModuleRequestRules, type ModuleRuleDecision } from "src/ts/process/moduleRequestRules";
+  import type { ModuleRequestRule } from "@risuai/protocol/domain/moduleRequestRules.ts";
   import { capturedModuleRequests, moduleRequestCaptureEnabled, recentModuleRuleDecisions, setModuleRequestCapture, clearModuleRequestCapture, type CapturedModuleRequest } from "src/ts/process/moduleRequestCapture";
   import Help from "src/lib/Others/Help.svelte";
 

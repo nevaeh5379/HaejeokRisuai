@@ -10,19 +10,18 @@ import type {
   botPreset,
   loreBook,
   customscript,
-} from "../database/schema";
-import type { RisuModule } from "../../process/modules";
-import type { IPluginStorage } from "./pluginStorage";
-import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+} from "@risuai/protocol/domain/database.ts";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
+import type { IPluginStorage } from "@risuai/protocol/domain/pluginStorage.ts";
+import type { SqlCommit } from "@risuai/protocol/domain/sqlCommit.ts";
+import type { SqlCommitResult } from "@risuai/protocol/src/sqlCommit.ts";
 
 export type {
   IPluginScriptStorage,
   IPluginStorage,
   PluginLoadOptions,
-} from "./pluginStorage";
+} from "@risuai/protocol/domain/pluginStorage.ts";
 import type {
-  NodePostgresServerConfig,
-  NodePostgresServerConfigUpdate,
   NodePostgresRevision,
   NodePostgresRevisionDetails,
   NodePostgresRevisionDiff,
@@ -31,8 +30,15 @@ import type {
   NodePostgresTokenUsage,
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
-} from "./postgres/nodeSqlStorage";
-import type { CharacterFields } from "../database/character.ts";
+  NodePostgresTableInfo,
+  NodePostgresTableData,
+} from "@risuai/protocol/databaseApi.ts";
+import type {
+  NodePostgresServerConfig,
+  NodePostgresServerConfigUpdate,
+  DbVendor,
+} from "@risuai/protocol/storageConfig.ts";
+import type { CharacterFields } from "@risuai/protocol/domain/character.ts";
 
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
@@ -210,11 +216,10 @@ export interface ISqlStorage {
     onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean>;
 
-
   character: {
-    update(id: string, update: CharacterFields)
-  }
-  
+    update(id: string, update: CharacterFields);
+  };
+
   // ── Per-entity lazy loaders ──────────────────────────────────────────
 
   loadCharacter(characterId: string): Promise<character | groupChat | null>;
@@ -274,19 +279,17 @@ export interface ISqlStorage {
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
   listGlobalAuthorNotes(): Promise<
-    import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+    import("@risuai/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
   >;
   getGlobalAuthorNote(
     id: string,
   ): Promise<
-    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
-    | null
+    import("@risuai/protocol/src/authorNotes.ts").AuthorNoteMetadata | null
   >;
   readGlobalAuthorNote(
     id: string,
   ): Promise<
-    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
-    | null
+    import("@risuai/protocol/src/authorNotes.ts").AuthorNoteRow | null
   >;
   getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
 
@@ -359,7 +362,7 @@ export interface ISqlStorage {
   // ── Optional table explorer ──────────────────────────────────────────
 
   listDbTables?(): Promise<
-    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
+    import("@risuai/protocol/databaseApi.ts").NodePostgresTableInfo[]
   >;
   getDbTableData?(
     table: string,
@@ -371,7 +374,7 @@ export interface ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
+  ): Promise<import("@risuai/protocol/databaseApi.ts").NodePostgresTableData>;
 }
 
 /**
@@ -388,21 +391,21 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
   getDatabaseConfig(): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
+      storedVendor: import("@risuai/protocol/storageConfig.ts").DbVendor | null;
     }
   >;
   applyDatabaseConfig(
-    vendor: import("./postgres/nodeSqlStorage").DbVendor,
+    vendor: import("@risuai/protocol/storageConfig.ts").DbVendor,
     params: Record<string, any>,
     migrate: boolean,
   ): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
+      storedVendor: import("@risuai/protocol/storageConfig.ts").DbVendor | null;
     }
   >;
   testConnection(
-    vendor: import("./postgres/nodeSqlStorage").DbVendor,
+    vendor: import("@risuai/protocol/storageConfig.ts").DbVendor,
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }>;
   migrateLegacyData(): Promise<{
@@ -411,7 +414,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
     skipped: number;
   }>;
   listDbTables(): Promise<
-    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
+    import("@risuai/protocol/databaseApi.ts").NodePostgresTableInfo[]
   >;
   getDbTableData(
     table: string,
@@ -423,7 +426,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
+  ): Promise<import("@risuai/protocol/databaseApi.ts").NodePostgresTableData>;
 }
 
 /**

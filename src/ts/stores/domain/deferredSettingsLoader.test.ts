@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 describe("DeferredSettingsLoader", () => {

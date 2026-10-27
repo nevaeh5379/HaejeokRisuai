@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./sqlStorage": "./src/sqlStorage.ts",
     "./storageSyncAsset": "./src/storageSyncAsset.ts",
     "./sqlCommitCompatibility": "./src/sqlCommitCompatibility.ts"
   },

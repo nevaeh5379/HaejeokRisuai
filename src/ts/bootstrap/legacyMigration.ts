@@ -5,7 +5,7 @@ import {
   checkAndMigrateLegacyDatabase,
   migrateLegacyDatabase,
 } from "../storage/database/migration";
-import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 /**
  * If a legacy aggregate database exists, offers the user to migrate it into

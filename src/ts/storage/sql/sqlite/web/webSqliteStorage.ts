@@ -13,8 +13,8 @@ import type {
   botPreset,
   loreBook,
   customscript,
-} from "../../../database/schema";
-import type { RisuModule } from "../../../../process/modules";
+} from "@risuai/protocol/domain/database.ts";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {
   ISqlStorage,
   SqlStartupDataResult,
@@ -24,7 +24,7 @@ import type {
   SqlCreateChatBranchInput,
   StoredBotPreset,
   SqlRecentChatMetadata,
-} from "../../ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import type {
   NodePostgresRevision,
   NodePostgresRevisionDetails,
@@ -51,7 +51,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import type { IPluginStorage } from "../../pluginStorage";
+import type { IPluginStorage } from "@risuai/protocol/domain/pluginStorage.ts";
 import { SqlitePluginStorage } from "../sqlitePluginStorage";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import * as sqliteCommitPrep from "@risuai/storage-sqlite/commit/prepare";

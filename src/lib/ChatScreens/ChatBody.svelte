@@ -12,7 +12,7 @@ import isEqual from "lodash/isEqual"
     import { isTauriAssetUrl } from "src/ts/mediaSrc";
     import { mount, unmount, tick, onDestroy } from "svelte";
     import IllustrationSlot from "./IllustrationSlot.svelte";
-    import type { Message } from "src/ts/storage/database/schema";
+import type { Message } from "@risuai/protocol/domain/database.ts";
     import { resolveIllustrationSettings } from "@risuai/protocol/src/illustration.ts";
     import { illustrationDisplayLayout } from "src/ts/process/illustration/illustrationDisplay";
 

@@ -1,5 +1,5 @@
-import type { NAISettings } from "../../process/models/nai";
-import type { AINsettings, OobaSettings } from "../database/schema";
+import type { NAISettings } from "./naiSettings.ts";
+import type { AINsettings, OobaSettings } from "./database.ts";
 export const defaultAIN: AINsettings = {
   top_p: 0.7,
   rep_pen: 1.0625,

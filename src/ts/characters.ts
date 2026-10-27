@@ -8,7 +8,7 @@ import type {
   Chat,
   loreBook,
   Message,
-} from "./storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { safeStructuredClone } from "./polyfill";
 

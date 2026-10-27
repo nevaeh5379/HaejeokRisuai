@@ -13,7 +13,11 @@ import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { get } from "svelte/store";
 import { open } from "@tauri-apps/plugin-shell";
-import type { Database, character, groupChat } from "./storage/database/schema";
+import type {
+  Database,
+  character,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { appVer, appSubVer } from "./appVersion";
 import { installStartupData } from "./storage/database/databaseLifecycle";
@@ -46,7 +50,7 @@ import {
   defaultMainPrompt,
   oldJailbreak,
   oldMainPrompt,
-} from "./storage/presets/defaultPrompts";
+} from "@risuai/protocol/domain/defaultPrompts.ts";
 import {
   decodeRisuSave,
   encodeRisuSaveLegacy,

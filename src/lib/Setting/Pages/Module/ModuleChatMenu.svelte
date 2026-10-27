@@ -3,7 +3,7 @@
     import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
-    import type { RisuModule } from "src/ts/process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
     
     import { ReloadGUIPointer, selectedCharID, SettingsMenuIndex, settingsOpen, MobileGUI, MobileSideBar, openMobileSettingsPage } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";

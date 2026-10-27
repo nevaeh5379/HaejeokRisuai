@@ -1,5 +1,5 @@
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
-import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { describe, expect, it, vi } from "vitest";
 import {
   makeHarness,

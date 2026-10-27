@@ -8,7 +8,7 @@ import { language } from 'src/lang';
     import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte';
     import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte';
     import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte';
-    import type { SeparateParameters } from '../../../ts/storage/database/schema';
+import type { SeparateParameters } from "@risuai/protocol/domain/database.ts";
 
     type AuxModelKey = keyof typeof presetStore.state.seperateModels
 

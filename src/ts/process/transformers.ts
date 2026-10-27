@@ -84,11 +84,7 @@ export const runImageEmbedding = async (dataurl: string) => {
 let synthesizer: TextToAudioPipeline = null;
 let lastSynth: string = null;
 
-export interface OnnxModelFiles {
-  files: { [key: string]: string };
-  id: string;
-  name?: string;
-}
+import type { OnnxModelFiles } from "../../../packages/protocol/domain/onnxModelFiles.ts";
 
 export const runVITS = async (
   text: string,

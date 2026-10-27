@@ -6,7 +6,7 @@ import type {
   RisuPersona,
   RisuModule,
   botPreset,
-} from "./schema";
+} from "@risuai/protocol/domain/database.ts";
 
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { personaStore } from "../../stores/domain/personaStore.svelte";

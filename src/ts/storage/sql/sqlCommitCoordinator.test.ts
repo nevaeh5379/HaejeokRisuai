@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "./ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { createEmptySqlCommit } from "./sqlCommit";
 import { commitSqlChanges, mutateSqlMessage } from "./sqlCommitCoordinator";
 import { saving } from "./saveActivity.svelte";

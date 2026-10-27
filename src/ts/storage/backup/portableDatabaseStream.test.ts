@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,

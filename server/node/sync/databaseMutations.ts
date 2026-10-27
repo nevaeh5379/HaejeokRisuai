@@ -1,14 +1,16 @@
 "use strict";
 
-import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/src/realtimeEvents.ts";
-import type { RealtimeEventBroadcaster } from "../../../packages/protocol/src/realtimeEvents.ts";
+import type {
+  RealtimeDatabaseChangeEvent,
+  RealtimeEventBroadcaster,
+} from "../../../packages/protocol/src/realtimeEvents.ts";
 import type {
   SqlCommitImpact,
   SqlCommitResult,
   SqlPluginEnabledUpdate,
 } from "../../../packages/protocol/src/sqlCommit.ts";
 import { attachSqlCommitImpactSink } from "../../../packages/protocol/src/sqlCommit.ts";
-import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.ts";
+import type { PluginMetadata } from "../../../packages/protocol/domain/pluginTypes.ts";
 
 import { normalizeClientId } from "../http/realtimeEvents.ts";
 

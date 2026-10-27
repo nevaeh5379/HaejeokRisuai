@@ -1,7 +1,11 @@
 import { get } from "svelte/store";
 import { getChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { selectedCharID } from "../stores.svelte";
-import type { Chat, Message, loreBook } from "../storage/database/schema";
+import type {
+  Chat,
+  Message,
+  loreBook,
+} from "@risuai/protocol/domain/database.ts";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import {

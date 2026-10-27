@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NoteSource, materializeChatNote, resolveNote } from "./authorNote";
-import type { Chat } from "./storage/database/schema";
+import type { Chat } from "@risuai/protocol/domain/database.ts";
 
 describe("authorNote", () => {
   it("resolves note with fallback", () => {

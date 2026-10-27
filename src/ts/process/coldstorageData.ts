@@ -5,7 +5,7 @@ import {
   isColdStorageBackupData,
 } from "@risuai/backup-core/coldStorage";
 import { safeStructuredClone } from "../polyfill";
-import type { character, groupChat } from "../storage/database/schema";
+import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
 
 export interface ColdStorageCharacterReference {
   chaId: string;

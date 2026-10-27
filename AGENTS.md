@@ -47,6 +47,22 @@ risuai-newest/
 └── .github/workflows/      # CI/CD pipelines
 ```
 
+## Package Boundaries
+
+Shared storage/backup contracts live in `packages/*` (`backup-core`, `storage-core`,
+`protocol`, `node-adapter`, and similar adapters). Application code may import packages,
+but package code must never import `src/*`, use app aliases, or read app state.
+Run `pnpm run check:packages` (also part of `pnpm check`) to enforce this boundary.
+
+Shared domain types (character/database records, modules, triggers, presets, prompt
+items, plugin storage) live in `packages/protocol/domain/`; app code imports them from
+`@risuai/protocol/domain/...` directly rather than through app-side forwarding files.
+Keep package declarations as the source of truth; do not add compatibility re-export
+shims under `src/`.
+
+Node server runtime dependencies are separately audited by `pnpm run check:runtime-dependencies`,
+which protects the lower-memory Node path from accidental heavy-package lazy loading.
+
 ### Source Code Structure (`/src`)
 
 #### `/src/ts` - TypeScript Business Logic
@@ -190,6 +206,10 @@ You can safely apply Tailwind's opacity modifiers directly to these custom theme
 
 - Unified SQL storage abstraction (`ISqlStorage`) with multiple backends:
   - Tauri SQLite (desktop), Web SQLite with OPFS/WASM (browser), Node Multi-SQL (PostgreSQL/Oracle/Azure SQL)
+- Shared types are package-resident: the persisted domain model and plugin/storage
+  contracts live in `packages/protocol/domain/`, the storage interface in
+  `packages/storage-core/`. `packages/*` must never import `src/`; the app keeps
+  thin re-export shims at the old paths (`pnpm run check:packages` enforces this).
 - Domain Stores (`settingsStore`, `presetStore`, `moduleStore`, `personaStore`, `characterStore`)
 - Character cards & backups: Import/export in various formats (.risum, .risup, .charx, .risubackup)
 

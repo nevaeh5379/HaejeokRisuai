@@ -8,8 +8,8 @@ import {
   convertPersonaToModule,
 } from "./interchangeability";
 import { createBlankChar } from "./characterDefaults";
-import type { RisuModule } from "./process/modules";
-import type { RisuPersona } from "./storage/database/schema";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
+import type { RisuPersona } from "@risuai/protocol/domain/database.ts";
 
 function editableModule(): RisuModule {
   return {

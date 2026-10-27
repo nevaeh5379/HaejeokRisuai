@@ -25,7 +25,7 @@ import {
   SafeLocalStorage,
 } from "./pluginSafeClass";
 import { PluginCrashGuard } from "./pluginCrashGuard";
-import type { PluginMetadata } from "./pluginTypes";
+import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
 import { isSafeModeEnabled } from "../safeMode";
 
 export const customProviderStore = writable([] as string[]);

@@ -7,13 +7,13 @@ import type {
   character,
   customscript,
   groupChat,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 
 import {
   defaultTranslatorPrompt,
   getCurrentTranslatorPresetFromState,
-  type TranslatorPreset,
 } from "./presets";
+import type { TranslatorPreset } from "@risuai/protocol/domain/translatorPresets.ts";
 import { globalFetch } from "../globalApi.svelte";
 import { isTauri, isNodeServer } from "src/ts/platform";
 import { alertError } from "../alert";

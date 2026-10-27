@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import ModuleRequestRules from "./ModuleRequestRules.svelte";
-import type { RisuModule } from "src/ts/process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import { language } from "src/lang";
 import {
   captureModuleRequest,

@@ -1,10 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { ChevronUpIcon, ChevronDownIcon } from "@lucide/svelte";
-  import { 
-    type SerializableSummary, 
-    summarize,
-  } from "src/ts/process/memory/hypav3";
+import { summarize } from "src/ts/process/memory/hypav3";
+  import type { SerializableSummary } from "@risuai/protocol/domain/hypaV3Data.ts";
   import { alertNormalWait } from "src/ts/alert";
   import { selectedCharID, hypaV3ModalOpen } from "src/ts/stores.svelte";
   import { characterStore } from "src/ts/stores/domain";

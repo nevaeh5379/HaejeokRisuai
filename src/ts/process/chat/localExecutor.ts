@@ -1,4 +1,4 @@
-import type { MessageGenerationInfo } from "../../storage/database/schema";
+import type { MessageGenerationInfo } from "@risuai/protocol/domain/database.ts";
 import { language } from "../../../lang";
 import { setChatProcessStage } from "./runtimeState";
 import {

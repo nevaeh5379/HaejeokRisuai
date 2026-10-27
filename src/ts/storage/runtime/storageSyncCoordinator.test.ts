@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NodeApiCompatibilityError } from "./nodeApiClient";
-import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type {
   NodeStorageSyncAssetManifestEntry,
   NodeStorageSyncAssetPlan,

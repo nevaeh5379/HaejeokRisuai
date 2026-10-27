@@ -11,7 +11,8 @@ import {
     } from "@lucide/svelte";
     import { loadoutModalStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain";
-    import { applyLoadout, saveCurrentLoadout, type Loadout } from "src/ts/loadout";
+    import { applyLoadout, saveCurrentLoadout } from "src/ts/loadout";
+    import type { Loadout } from "@risuai/protocol/domain/loadout.ts";
     
 
     type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona';

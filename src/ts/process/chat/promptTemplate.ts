@@ -2,7 +2,7 @@ import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type {
   character,
   MessagePresetInfo,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../../polyfill";
@@ -15,7 +15,7 @@ import type {
   PromptItemChat,
   PromptItemTyped,
   PromptRole,
-} from "../prompt";
+} from "@risuai/protocol/domain/promptTypes.ts";
 import { risuChatParser } from "../scripts";
 import { runLuaEditTrigger } from "../scriptings";
 import {

@@ -4,8 +4,8 @@
 
     import { language } from 'src/lang'
     import { buildChatGraphGitRows, buildChatGraphPackedLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
-    import type { Chat } from '../../ts/storage/database/schema'
-    import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
+    import type { Chat } from '@risuai/protocol/domain/database.ts'
+    import type { SqlChatBranchGraphData } from '@risuai/storage-core/sqlStorage'
 
     interface Props {
         chat?: Chat | null

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { Chat, Message } from "src/ts/storage/database/schema";
-import type { SqlChatBranchGraphData } from "src/ts/storage/sql/ISqlStorage";
+import type { Chat, Message } from "@risuai/protocol/domain/database.ts";
+import type { SqlChatBranchGraphData } from "@risuai/storage-core/sqlStorage";
 import BranchGraphModalHarness from "./fixtures/BranchGraphModalHarness.svelte";
 
 let mounted:

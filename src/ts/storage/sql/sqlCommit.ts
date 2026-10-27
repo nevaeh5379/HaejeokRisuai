@@ -6,7 +6,7 @@ import type {
   character,
   groupChat,
   botPreset,
-} from "../database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { v4 as uuidv4 } from "uuid";
 import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";
 
@@ -20,12 +20,11 @@ export type {
   SqlCommitResult,
 } from "../../../../packages/protocol/src/sqlCommit.ts";
 import type {
-  SqlCommit as ProtocolSqlCommit,
-  SqlPresetUpsert as ProtocolSqlPresetUpsert,
-} from "../../../../packages/protocol/src/sqlCommit.ts";
+  SqlCommit,
+  SqlPresetUpsert,
+} from "../../../../packages/protocol/domain/sqlCommit.ts";
 
-export type SqlPresetUpsert = ProtocolSqlPresetUpsert<botPreset>;
-export type SqlCommit = ProtocolSqlCommit<botPreset>;
+export type { SqlCommit, SqlPresetUpsert };
 
 export class SqlRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {

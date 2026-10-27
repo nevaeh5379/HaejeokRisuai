@@ -1,6 +1,6 @@
 import type { LLMParameter } from "../process/request/shared";
-import { LLM_FORMATS } from "@risuai/protocol/modelFormat.ts";
-import { LLM_FLAGS } from "@risuai/protocol/modelFlags.ts";
+import { LLM_FORMATS } from "../../../packages/protocol/modelFormat.ts";
+import { LLM_FLAGS } from "../../../packages/protocol/modelFlags.ts";
 
 export const LLMFlags = LLM_FLAGS;
 export type LLMFlags = (typeof LLMFlags)[keyof typeof LLMFlags];
@@ -29,26 +29,9 @@ export type LLMProvider = (typeof LLMProvider)[keyof typeof LLMProvider];
 export const LLMFormat = LLM_FORMATS;
 export type LLMFormat = (typeof LLMFormat)[keyof typeof LLMFormat];
 
-export const LLMTokenizer = {
-  Unknown: 0,
-  tiktokenCl100kBase: 1,
-  tiktokenO200Base: 2,
-  Mistral: 3,
-  Llama: 4,
-  NovelAI: 5,
-  Claude: 6,
-  NovelList: 7,
-  Llama3: 8,
-  Gemma: 9,
-  GoogleCloud: 10,
-  Cohere: 11,
-  Local: 12,
-  DeepSeek: 13,
-  DeepSeekV4: 14,
-  GLM4: 15,
-  GLM5: 16,
-} as const;
-export type LLMTokenizer = (typeof LLMTokenizer)[keyof typeof LLMTokenizer];
+import { LLM_TOKENIZER } from "../../../packages/protocol/modelTokenizer.ts";
+export const LLMTokenizer = LLM_TOKENIZER;
+export type LLMTokenizer = (typeof LLM_TOKENIZER)[keyof typeof LLM_TOKENIZER];
 
 export type ClaudeThinkingType = "off" | "budget" | "adaptive";
 

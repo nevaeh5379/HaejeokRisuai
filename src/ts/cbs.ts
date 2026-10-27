@@ -3,13 +3,13 @@ import type {
   character,
   groupChat,
   loreBook,
-} from "./storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import type {
   PresetState,
   SettingsState,
 } from "./stores/domain/stateOwnership";
 import type { CbsConditions } from "./parser/parser.svelte";
-import type { RisuModule } from "./process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type { LLMModel } from "./model/modellist";
 import { LLMFlags, LLMFormat } from "./model/types";
 import { get } from "svelte/store";

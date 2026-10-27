@@ -1,5 +1,5 @@
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
-import type { ISqlStorage } from "../../ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { isTauri } from "../../../../platform";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";

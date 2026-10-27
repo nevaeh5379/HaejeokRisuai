@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { ISqlStorage } from "./ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import {
   getSqlBranchStorage,
   setSqlStorageForTesting,

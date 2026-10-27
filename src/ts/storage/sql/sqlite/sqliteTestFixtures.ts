@@ -1,4 +1,4 @@
-import type { Database, Message } from "../../database/schema";
+import type { Database, Message } from "@risuai/protocol/domain/database.ts";
 
 /**
  * Shared fixture database used by the SQLite storage test suites.

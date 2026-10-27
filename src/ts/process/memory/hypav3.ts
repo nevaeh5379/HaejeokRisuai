@@ -12,65 +12,41 @@ import {
   type EmbeddingResult,
   HypaProcessorV2,
 } from "./hypamemoryv2";
-import { type DisplayMode as ModalDisplayMode } from "src/lib/Others/HypaV3Modal/types";
+import type { DisplayMode as ModalDisplayMode } from "@risuai/protocol/domain/hypaV3DisplayMode.ts";
 import { parseChatML } from "src/ts/parser/chatML";
-import type { Chat, character, groupChat } from "../../storage/database/schema";
+import type {
+  Chat,
+  character,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 
 import { type OpenAIChat } from "@risuai/chat-core/types.ts";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
-import { type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
+import type {
+  HypaV3Preset,
+  HypaV3Settings,
+} from "@risuai/protocol/domain/hypav3Preset.ts";
 import {
   tryRunNodeHypaMemory,
   type HypaGenerationContext,
 } from "./nodeHypaMemory";
 
 export { createHypaV3Preset } from "./hypav3Preset";
-export type { HypaV3Preset, HypaV3Settings } from "./hypav3Preset";
+export type {
+  HypaV3Preset,
+  HypaV3Settings,
+} from "@risuai/protocol/domain/hypav3Preset.ts";
 
-interface HypaV3Data {
-  summaries: Summary[];
-  categories?: { id: string; name: string }[];
-  lastSelectedSummaries?: number[]; // legacy
-  metrics?: {
-    lastImportantSummaries: number[];
-    lastRecentSummaries: number[];
-    lastSimilarSummaries: number[];
-    lastRandomSummaries: number[];
-  };
-  modalSettings?: {
-    displayMode: ModalDisplayMode;
-    displayRangeFrom: number;
-    displayRangeTo: number;
-    displayRecentCount: number;
-    displayImportant: boolean;
-    displaySelected: boolean;
-  };
-}
-
-export interface SerializableHypaV3Data extends Omit<HypaV3Data, "summaries"> {
-  summaries: SerializableSummary[];
-}
-
-interface Summary {
-  text: string;
-  chatMemos: Set<string>;
-  isImportant: boolean;
-  categoryId?: string;
-  tags?: string[];
-}
-
-export interface SerializableSummary extends Omit<Summary, "chatMemos"> {
-  chatMemos: string[];
-}
-
-interface SummaryChunk {
-  text: string;
-  summary: Summary;
-}
-
+import type {
+  HypaV3Data,
+  SerializableHypaV3Data,
+  Summary,
+  SerializableSummary,
+  SummaryChunk,
+} from "../../../../packages/protocol/domain/hypaV3Data.ts";
 export interface HypaV3Result {
   currentTokens: number;
   chats: OpenAIChat[];

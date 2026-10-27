@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  matchesModuleRequestRule,
-  resolveModuleRequestRules,
-  type ModuleRequestRule,
-} from "./moduleRequestRules";
+import { matchesModuleRequestRule, resolveModuleRequestRules } from "./moduleRequestRules";
+import type { ModuleRequestRule } from "@risuai/protocol/domain/moduleRequestRules.ts";
 
 const rule: ModuleRequestRule = {
   enabled: true,

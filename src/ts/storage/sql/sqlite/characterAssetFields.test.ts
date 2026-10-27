@@ -9,7 +9,7 @@ import {
 import { buildFullDatabase } from "./sqliteTestFixtures";
 import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import * as sqliteEntity from "@risuai/storage-sqlite/queries/entity";
-import type { ISqlStorage } from "../ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 

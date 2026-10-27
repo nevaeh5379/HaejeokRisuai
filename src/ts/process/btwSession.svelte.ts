@@ -8,7 +8,7 @@ import type {
   groupChat,
   Message,
   MessagePresetInfo,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { safeStructuredClone } from "../polyfill";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

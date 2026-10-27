@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PromptItem } from "../prompt";
+import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
 import { templateCheck } from "./templateCheck";
 
 describe("templateCheck", () => {

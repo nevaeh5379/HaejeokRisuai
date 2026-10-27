@@ -1,36 +1,35 @@
-import type { PresetSettings } from "../presets/presetSchema";
-import type { PluginMetadata } from "../../plugins/pluginTypes";
-import type { triggerscript as triggerscriptMain } from "../../process/triggers";
-import type { NAISettings } from "../../process/models/nai";
-import type { ColorScheme } from "../../gui/colorscheme";
-import type { PromptItem, PromptSettings } from "../../process/prompt";
-import type { OobaChatCompletionRequestParams } from "../../model/ooba";
-import type {
-  HypaV3Settings,
-  HypaV3Preset,
-} from "../../process/memory/hypav3Preset";
-import type { TranslatorPreset } from "../../translator/presets";
-import type { ModuleRequestRule } from "../../process/moduleRequestRules";
-import type { OnnxModelFiles } from "../../process/transformers";
+import type { PresetSettings } from "./presetSchema.ts";
+import type { PluginMetadata } from "./pluginTypes.ts";
+import type { triggerscript as triggerscriptMain } from "./triggers.ts";
+import type { NAISettings } from "./naiSettings.ts";
+import type { ColorScheme } from "./colorScheme.ts";
+import type { PromptItem, PromptSettings } from "./promptTypes.ts";
+import type { OobaChatCompletionRequestParams } from "./ooba.ts";
+import type { HypaV3Settings, HypaV3Preset } from "./hypav3Preset.ts";
+import type { TranslatorPreset } from "./translatorPresets.ts";
+import type { ModuleRequestRule } from "./moduleRequestRules.ts";
+import type { OnnxModelFiles } from "./onnxModelFiles.ts";
 import type {
   RisuModule,
   ModuleFolder,
   ModuleSandboxGroup,
-} from "../../process/modules";
+} from "./modules.ts";
 export type { RisuModule, ModuleFolder, ModuleSandboxGroup };
-import type { SerializableHypaV2Data } from "../../process/memory/hypav2";
-import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
-import type { HypaModel } from "../../process/memory/hypamemory";
-import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
-import type { Hotkey } from "../../defaulthotkeys";
-import type { OpenAIChat } from "@risuai/chat-core/types.ts";
-import type { Loadout } from "../../loadout";
+import type { SerializableHypaV2Data } from "./hypaV2Data.ts";
+import type { LLMFlagValue as LLMFlags } from "../modelFlags.ts";
+import type { LLMFormatValue as LLMFormat } from "../modelFormat.ts";
+import type { LLMTokenizerValue as LLMTokenizer } from "../modelTokenizer.ts";
+import type { HypaModel } from "./hypaModel.ts";
+import type { SerializableHypaV3Data } from "./hypaV3Data.ts";
+import type { Hotkey } from "./hotkeys.ts";
+import type { OpenAIChat } from "../../chat-core/types.ts";
+import type { Loadout } from "./loadout.ts";
 import type {
   Illustration,
   IllustrationOverrides,
   IllustrationSettings,
-} from "@risuai/protocol/src/illustration.ts";
-import type { ImageProviderId } from "@risuai/protocol/src/imageGeneration.ts";
+} from "../src/illustration.ts";
+import type { ImageProviderId } from "../src/imageGeneration.ts";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -545,7 +544,7 @@ export interface Database
     PresetStoreData,
     LegacyPersonaMirrorData {
   /** Internal serialization boundary; live data belongs to the independent note store. */
-  globalAuthorNotes?: import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow[];
+  globalAuthorNotes?: import("../src/authorNotes.ts").AuthorNoteRow[];
   globalAuthorNoteSettings?: { allowScriptWrite: boolean };
 }
 
@@ -635,7 +634,7 @@ export interface loreBook {
 }
 
 /**
- * @deprecated 
+ * @deprecated
  */
 export interface character {
   illustration?: IllustrationOverrides;
@@ -1056,7 +1055,7 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
-  workflows?: import("@risuai/protocol/src/imageGeneration.ts").ComfyWorkflow[];
+  workflows?: import("../src/imageGeneration.ts").ComfyWorkflow[];
   selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;

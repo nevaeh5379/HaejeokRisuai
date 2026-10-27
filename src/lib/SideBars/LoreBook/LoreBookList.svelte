@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { loreBook } from "../../../ts/storage/database/schema";
+import type { loreBook } from "@risuai/protocol/domain/database.ts";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import LoreBookData from "./LoreBookData.svelte";
     import { selectedCharID } from "src/ts/stores.svelte";

@@ -1,6 +1,6 @@
 import type { ModelModeExtended } from "./shared";
 import { resolveProviderRoleModelForMode } from "./providerRoleSettings";
-import type { ProviderModelOverride } from "../../storage/database/schema";
+import type { ProviderModelOverride } from "@risuai/protocol/domain/database.ts";
 
 export type OllamaRequestModelSettings = {
   ollamaModel: string;

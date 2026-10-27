@@ -1,5 +1,9 @@
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import type { Chat, character, groupChat } from "./storage/database/schema";
+import type {
+  Chat,
+  character,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 
 export interface ChatTarget {
   characterId: string;

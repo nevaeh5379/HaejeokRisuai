@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { character } from "../storage/database/schema";
+import type { character } from "@risuai/protocol/domain/database.ts";
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),

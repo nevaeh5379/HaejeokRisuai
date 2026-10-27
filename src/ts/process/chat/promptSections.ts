@@ -1,6 +1,10 @@
 import { readNote, resolveNote } from "../../authorNote";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, Chat, groupChat } from "../../storage/database/schema";
+import type {
+  character,
+  Chat,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../../polyfill";
@@ -8,7 +12,10 @@ import { getAuthorNoteDefaultText, getPersonaPrompt } from "../../util";
 import { risuChatParser } from "../scripts";
 import { additionalInformations } from "../embedding/addinfo";
 import { loadLoreBookV3Prompt } from "../lorebook.svelte";
-import type { PromptItem, PromptRole } from "../prompt";
+import type {
+  PromptItem,
+  PromptRole,
+} from "@risuai/protocol/domain/promptTypes.ts";
 import {
   generationOverride,
   type ChatGenerationOverrides,

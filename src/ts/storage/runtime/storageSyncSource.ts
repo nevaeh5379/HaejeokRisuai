@@ -5,7 +5,7 @@ import type {
   ISqlStorage,
   SqlChatBranchGraphLink,
   SqlStorageSyncSummary,
-} from "../sql/ISqlStorage";
+} from "@risuai/storage-core/sqlStorage";
 import {
   sqlCharacterData,
   sqlChatData,

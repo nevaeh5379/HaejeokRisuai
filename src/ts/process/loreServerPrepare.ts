@@ -1,5 +1,5 @@
 import { CCardLib } from "@risuai/ccardlib";
-import type { loreBook } from "../storage/database/schema";
+import type { loreBook } from "@risuai/protocol/domain/database.ts";
 
 export type PreparedLoreQuery = {
   keys: string[];

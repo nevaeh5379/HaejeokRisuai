@@ -3,10 +3,10 @@
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
     import ModuleRequestRules from "./ModuleRequestRules.svelte";
-    import type { loreBook } from "../../../../ts/storage/database/schema";
+import type { loreBook } from "@risuai/protocol/domain/database.ts";
     import LoreBookList from "src/lib/SideBars/LoreBook/LoreBookList.svelte";
     import { type CCLorebook, convertExternalLorebook } from "src/ts/process/lorebook.svelte";
-    import type { RisuModule } from "src/ts/process/modules";
+import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
     import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import TriggerList from "src/lib/SideBars/Scripts/TriggerList.svelte";

@@ -5,7 +5,7 @@ import type {
   groupChat,
   Chat,
   MessagePresetInfo,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { changeToPreset } from "../../storage/presets/presetService";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { characterStore } from "../../stores/domain/characterStore.svelte";

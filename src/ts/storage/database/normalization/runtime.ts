@@ -9,7 +9,10 @@ import {
   normalizeChatLoadPages,
 } from "../../../chatLoadPages";
 import { number, object, string } from "valibot";
-import type { Database, StreamingDisplayOptimizationMode } from "../schema";
+import type {
+  Database,
+  StreamingDisplayOptimizationMode,
+} from "@risuai/protocol/domain/database.ts";
 import {
   defaultArray,
   defaultBoolean,
@@ -20,7 +23,7 @@ import {
   defaultStringArray,
   mergeDefaults,
   parseDefaults,
-} from "./valibotDefaults";
+} from "@risuai/protocol/domain/valibotDefaults.ts";
 import { applyLocalBackupPerformanceDefaults } from "../../backup/localBackupPerformance";
 
 const runtimeScalarDefaults = {

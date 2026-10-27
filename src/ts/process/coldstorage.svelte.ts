@@ -16,7 +16,7 @@ import {
 } from "fflate";
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert";
 import { language } from "src/lang";
-import type { Database } from "../storage/database/schema";
+import type { Database } from "@risuai/protocol/domain/database.ts";
 
 const SHARED_TEXT_ENCODER = new TextEncoder();
 const SHARED_TEXT_DECODER = new TextDecoder();

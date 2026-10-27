@@ -2,7 +2,7 @@ import type {
   groupChat,
   character,
   StreamingDisplayOptimizationMode,
-} from "../../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { trimUntilPunctuation } from "../../util";

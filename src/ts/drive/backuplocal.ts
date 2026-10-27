@@ -29,7 +29,7 @@ import type {
   Database,
   LegacyPersonaMirrorKey,
   PortableDatabase,
-} from "../storage/database/schema";
+} from "@risuai/protocol/domain/database.ts";
 
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";

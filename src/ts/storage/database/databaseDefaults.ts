@@ -5,7 +5,7 @@ import type {
   DatabaseSettings,
   PortableDatabase,
   StreamingDisplayOptimizationMode,
-} from "./schema";
+} from "@risuai/protocol/domain/database.ts";
 import { safeStructuredClone } from "../../polyfill";
 import { presetTemplate } from "../presets/presetDefaults";
 import { SETTINGS_STORE_EXCLUDED_KEYS } from "../sql/sqlDeferredSettings";

@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginMetadata } from "./pluginTypes";
+import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
 import { getV2PluginAPIs } from "./plugins.svelte";
-import type { ISqlStorage } from "../storage/sql/ISqlStorage";
+import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit } from "../storage/sql/sqlCommit";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
 
