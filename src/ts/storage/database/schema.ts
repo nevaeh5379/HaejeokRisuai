@@ -10,6 +10,7 @@ import type {
   HypaV3Preset,
 } from "../../process/memory/hypav3Preset";
 import type { TranslatorPreset } from "../../translator/presets";
+import type { ModuleRequestRule } from "../../process/moduleRequestRules";
 import type { OnnxModelFiles } from "../../process/transformers";
 import type {
   RisuModule,
@@ -633,6 +634,9 @@ export interface loreBook {
   folder?: string;
 }
 
+/**
+ * @deprecated 
+ */
 export interface character {
   illustration?: IllustrationOverrides;
   type?: "character";
@@ -673,7 +677,8 @@ export interface character {
   scenario: string;
   firstMsgIndex: number;
   loreSettings?: loreSettings;
-  loreExt?: any;
+  loreExt?: charBookExtensions;
+  extentions?: charExtensions;
   additionalData?: {
     tag?: string[];
     creator?: string;
@@ -781,7 +786,6 @@ export interface character {
   virtualscript?: string;
   scriptstate?: { [key: string]: string | number | boolean };
   depth_prompt?: { depth: number; prompt: string };
-  extentions?: { [key: string]: any };
   largePortrait?: boolean;
   lorePlus?: boolean;
   inlayViewScreen?: boolean;
@@ -827,6 +831,30 @@ export interface loreSettings {
   scanDepth: number;
   recursiveScanning: boolean;
   fullWordMatching?: boolean;
+}
+
+/** Raw `character_book.extensions` object of a character card, kept as-is.
+ *  Other apps store arbitrary metadata there, so unknown keys must survive
+ *  import/export; only Risu's own keys are typed. */
+export interface charBookExtensions {
+  /** Mirror of loreSettings.fullWordMatching, written on export / read on import. */
+  risu_fullWordMatching?: boolean;
+  [key: string]: unknown;
+}
+
+/** Raw `extensions` object of a character card, plus Risu's own character-level keys.
+ *  Other apps store arbitrary metadata there, so unknown keys must survive
+ *  import/export; only Risu's own keys are typed. */
+export interface charExtensions {
+  /** Module conversion - auxiliary model id (interchangeability.ts). */
+  moduleSubModel?: string;
+  /** Module conversion - auxiliary model routing rules (interchangeability.ts). */
+  moduleSubModelRequestRules?: ModuleRequestRule[];
+  /** Marks a module converted to a character without a portrait (process/modules.ts). */
+  moduleNoneImage?: boolean;
+  /** Whitelisted PNG tEXt chunks kept with the portrait (characters.ts). */
+  pngExif?: Record<string, string>;
+  [key: string]: unknown;
 }
 
 export interface groupChat {

@@ -15,6 +15,7 @@ import {
 } from "./alert";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import type {
+  charBookExtensions,
   character,
   customscript,
   loreSettings,
@@ -700,7 +701,7 @@ function convertOffSpecCards(
     charaData.spec_version === "2.0" ? charaData.data.character_book : null;
   let lorebook: loreBook[] = [];
   let loresettings: undefined | loreSettings = undefined;
-  let loreExt: undefined | any = undefined;
+  let loreExt: charBookExtensions | undefined = undefined;
   if (charbook) {
     const a = convertCharbook({
       lorebook,
@@ -1079,7 +1080,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
   const charbook = data.character_book;
   let lorebook: loreBook[] = overrideLorebook ?? [];
   let loresettings: undefined | loreSettings = undefined;
-  let loreExt: undefined | any = undefined;
+  let loreExt: charBookExtensions | undefined = undefined;
   if (charbook) {
     const a = convertCharbook({
       lorebook: overrideLorebook ? [] : lorebook,
@@ -1202,7 +1203,7 @@ function convertCharbook(arg: {
   lorebook: loreBook[];
   charbook: CharacterBook;
   loresettings: loreSettings;
-  loreExt: any;
+  loreExt: charBookExtensions | undefined;
 }) {
   let { lorebook, loresettings, loreExt, charbook } = arg;
   if (

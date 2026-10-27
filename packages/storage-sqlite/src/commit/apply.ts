@@ -24,11 +24,10 @@ export function presetContentHash(value: unknown): string {
 }
 
 function assertCanonicalRootSetting(key: string): void {
-  if (isLegacyPersonaMirrorKey(key)) {
+  if (isLegacyPersonaMirrorKey(key))
     throw new Error(
       `${key} is a legacy persona mirror and cannot be persisted`,
     );
-  }
 }
 
 function nodeBind(ownerValues: unknown[], row: nodeCodec.NodeRow): unknown[] {
@@ -51,11 +50,11 @@ function countRelationalValueBatches(value: unknown): number {
   const ancestors = new Set<object>();
 
   const visit = (current: unknown, depth: number, key?: string): void => {
-    if (depth > nodeCodec.MAX_NODE_DEPTH) {
+    if (depth > nodeCodec.MAX_NODE_DEPTH)
       throw new Error(
         `Relational value exceeds maximum depth ${nodeCodec.MAX_NODE_DEPTH}`,
       );
-    }
+
     const text =
       typeof current === "string"
         ? current
@@ -84,22 +83,21 @@ function countRelationalValueBatches(value: unknown): number {
       typeof current === "string"
     )
       return;
-    if (typeof current !== "object") {
+    if (typeof current !== "object")
       throw new TypeError(
         `Unsupported relational value type: ${typeof current}`,
       );
-    }
-    if (ancestors.has(current)) {
+
+    if (ancestors.has(current))
       throw new TypeError("Relational values cannot contain cycles");
-    }
+
     ancestors.add(current);
-    if (Array.isArray(current)) {
+    if (Array.isArray(current))
       current.forEach((item) => visit(item, depth + 1));
-    } else {
-      for (const key of Object.keys(current)) {
+    else
+      for (const key of Object.keys(current))
         visit((current as Record<string, unknown>)[key], depth + 1, key);
-      }
-    }
+
     ancestors.delete(current);
   };
 
@@ -118,10 +116,10 @@ function countCharacterTagStatements(value: unknown): number {
   const tags = Array.isArray(value) ? value : [];
   let strings = 0;
   let removed = 0;
-  for (const tag of tags) {
+  for (const tag of tags)
     if (typeof tag === "string") strings++;
     else removed++;
-  }
+
   return (
     1 +
     Math.ceil(strings / CHARACTER_TAG_BATCH_SIZE) +
@@ -152,11 +150,9 @@ export function messageExtensionData(
     delete extraGenerationInfo.model;
     delete extraGenerationInfo.inputTokens;
     delete extraGenerationInfo.outputTokens;
-    if (Object.keys(extraGenerationInfo).length > 0) {
+    if (Object.keys(extraGenerationInfo).length > 0)
       extension.generationInfo = extraGenerationInfo;
-    } else {
-      delete extension.generationInfo;
-    }
+    else delete extension.generationInfo;
   }
   return extension;
 }
@@ -176,12 +172,11 @@ async function replaceNodes(
 
   // Explicit replace-entities restore batches run after the parent rows were
   // CASCADE-deleted, so there is no old node tail to trim in that path.
-  if (!skipDelete) {
+  if (!skipDelete)
     await execute(`DELETE FROM ${table} WHERE ${ownerWhere} AND node_id >= ?`, [
       ...ownerValues,
       rows.length,
     ]);
-  }
 
   const columns = [...ownerColumns, ...nodeCodec.NODE_COLUMNS];
   const conflictColumns = [...ownerColumns, "node_id"];
@@ -236,10 +231,9 @@ async function replaceCharacterTags(
 
   const stringTags: { position: number; tag: string }[] = [];
   const removedPositions: number[] = [];
-  for (const [position, tag] of tags.entries()) {
+  for (const [position, tag] of tags.entries())
     if (typeof tag === "string") stringTags.push({ position, tag });
     else removedPositions.push(position);
-  }
 
   for (
     let offset = 0;
@@ -309,16 +303,16 @@ export function countStatements(commit: StorageSqlCommit): number {
 
   for (const upsert of commit.root.upserts) {
     assertCanonicalRootSetting(upsert.key);
-    if (upsert.key === "botPresets" || upsert.key === "botPresetsId") {
+    if (upsert.key === "botPresets" || upsert.key === "botPresetsId")
       throw new Error(`${upsert.key} must be written through presets`);
-    }
+
     if (upsert.key === "pluginCustomStorage") continue;
     total += 1 + countReplaceNodeStatements(upsert.value);
   }
   for (const key of commit.root.deletes) {
-    if (key === "botPresets" || key === "botPresetsId") {
+    if (key === "botPresets" || key === "botPresetsId")
       throw new Error(`${key} is not a root setting`);
-    }
+
     total++;
   }
 
@@ -332,9 +326,8 @@ export function countStatements(commit: StorageSqlCommit): number {
     total += commit.presets.deletes.length;
     total += commit.presets.upserts.length;
     if (commit.presets.order) total += 1 + commit.presets.order.length;
-    if (commit.presets.activeId !== undefined) {
+    if (commit.presets.activeId !== undefined)
       total += 1 + countReplaceNodeStatements(commit.presets.activeId);
-    }
   }
 
   if (commit.modules) {
@@ -365,9 +358,9 @@ export function countStatements(commit: StorageSqlCommit): number {
   total += commit.characterTouches?.length ?? 0;
   total += commit.characterDeletes?.length ?? 0;
 
-  for (const entry of commit.chats) {
+  for (const entry of commit.chats)
     total += 3 + countReplaceNodeStatements(entry.data, replacingEntities);
-  }
+
   total += commit.chatDeletes?.length ?? 0;
 
   for (const entry of commit.messages) {
@@ -384,9 +377,9 @@ export function countStatements(commit: StorageSqlCommit): number {
           : 1
         : countReplaceNodeStatements(extension, replacingEntities));
   }
-  for (const deletion of commit.messageDeletes ?? []) {
+  for (const deletion of commit.messageDeletes ?? [])
     if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
-  }
+
   const affectedMessageChatIds = new Set([
     ...commit.messages.map((entry) => entry.chatId),
     ...(commit.messageDeletes ?? []).map((entry) => entry.chatId),
@@ -403,15 +396,13 @@ export async function apply(
   const replacingEntities = commit.action === "replace-entities";
   const affectedMessageChatIds = new Set<string>();
   for (const entry of commit.messages) affectedMessageChatIds.add(entry.chatId);
-  for (const deletion of commit.messageDeletes ?? []) {
+  for (const deletion of commit.messageDeletes ?? [])
     affectedMessageChatIds.add(deletion.chatId);
-  }
 
-  if (affectedMessageChatIds.size > 0) {
+  if (affectedMessageChatIds.size > 0)
     await execute(
       "UPDATE system_write_guards SET suppressed = 1 WHERE key = 'last_message_time'",
     );
-  }
 
   if (commit.replaceAll) {
     await execute("DELETE FROM plugin_custom_storage");
@@ -429,12 +420,11 @@ export async function apply(
   if (commit.presets) await applyPresets(commit, execute);
 
   await applyCharacters(commit, execute, replacingEntities);
-  for (const touch of commit.characterTouches ?? []) {
+  for (const touch of commit.characterTouches ?? [])
     await execute(
       "UPDATE characters SET last_interaction_time = ?, updated_at = datetime('now') WHERE id = ?",
       [touch.lastInteraction, touch.id],
     );
-  }
 
   for (const id of commit.characterDeletes ?? [])
     await execute("DELETE FROM characters WHERE id = ?", [id]);
@@ -530,13 +520,12 @@ export async function apply(
     );
     const extension = messageExtensionData(data, content);
     if (Object.keys(extension).length === 0) {
-      if (!replacingEntities) {
+      if (!replacingEntities)
         await execute(
           "DELETE FROM message_extension_nodes WHERE chat_id = ? AND message_id = ?",
           [entry.chatId, entry.id],
         );
-      }
-    } else {
+    } else
       await replaceNodes(
         execute,
         "message_extension_nodes",
@@ -545,7 +534,6 @@ export async function apply(
         extension,
         replacingEntities,
       );
-    }
   }
   for (const deletion of commit.messageDeletes ?? [])
     if (deletion.ids.length) {
@@ -589,7 +577,7 @@ export async function apply(
   // the final message state once per affected chat so updates and deletions can
   // move the timestamp backwards as well as forwards. Database triggers mirror
   // this invariant as a defensive guard for writes that bypass this commit path.
-  for (const chatId of affectedMessageChatIds) {
+  for (const chatId of affectedMessageChatIds)
     await execute(
       `UPDATE chats
           SET last_message_time = (
@@ -603,12 +591,11 @@ export async function apply(
         WHERE id = ?`,
       [chatId, chatId],
     );
-  }
-  if (affectedMessageChatIds.size > 0) {
+
+  if (affectedMessageChatIds.size > 0)
     await execute(
       "UPDATE system_write_guards SET suppressed = 0 WHERE key = 'last_message_time'",
     );
-  }
 }
 
 async function applyCharacters(
@@ -651,9 +638,9 @@ async function applyCharacters(
 }
 
 async function applyPresets(commit: StorageSqlCommit, execute: SqliteExecute) {
-  for (const id of commit.presets.deletes) {
+  for (const id of commit.presets.deletes)
     await execute("DELETE FROM bot_presets WHERE preset_id = ?", [id]);
-  }
+
   for (const entry of commit.presets.upserts) {
     const data = { ...entry.data } as Record<string, unknown>;
     delete data.id;
@@ -681,12 +668,11 @@ async function applyPresets(commit: StorageSqlCommit, execute: SqliteExecute) {
   }
   if (commit.presets.order) {
     await execute("UPDATE bot_presets SET position = position + 1000000000");
-    for (const [position, id] of commit.presets.order.entries()) {
+    for (const [position, id] of commit.presets.order.entries())
       await execute("UPDATE bot_presets SET position = ? WHERE preset_id = ?", [
         position,
         id,
       ]);
-    }
   }
   if (commit.presets.activeId !== undefined) {
     const value = commit.presets.activeId;
@@ -720,12 +706,12 @@ async function applyPresets(commit: StorageSqlCommit, execute: SqliteExecute) {
 async function applyModules(commit: StorageSqlCommit, execute: SqliteExecute) {
   if (!commit.modules) return;
 
-  for (const id of commit.modules.deletes) {
+  for (const id of commit.modules.deletes)
     await execute("DELETE FROM module_records WHERE module_id = ?", [id]);
-  }
-  if (commit.modules.order) {
+
+  if (commit.modules.order)
     await execute("UPDATE module_records SET position = position + 1000000000");
-  }
+
   for (const entry of commit.modules.upserts) {
     await execute(
       `INSERT INTO module_records (module_id, position, updated_at)
@@ -742,30 +728,28 @@ async function applyModules(commit: StorageSqlCommit, execute: SqliteExecute) {
       entry.data,
     );
   }
-  if (commit.modules.order) {
-    for (const [position, id] of commit.modules.order.entries()) {
+  if (commit.modules.order)
+    for (const [position, id] of commit.modules.order.entries())
       await execute(
         "UPDATE module_records SET position = ? WHERE module_id = ?",
         [position, id],
       );
-    }
-  }
 }
 
 async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
   if (!commit.plugins) return;
 
-  for (const id of commit.plugins.deletes) {
+  for (const id of commit.plugins.deletes)
     await execute("DELETE FROM plugin_records WHERE plugin_id = ?", [id]);
-  }
-  if (commit.plugins.order) {
+
+  if (commit.plugins.order)
     await execute("UPDATE plugin_records SET position = position + 1000000000");
-  }
+
   for (const entry of commit.plugins.upserts) {
     const data = entry.data as Record<string, unknown>;
-    if (typeof data.name !== "string" || data.name.length === 0) {
+    if (typeof data.name !== "string" || data.name.length === 0)
       throw new Error(`Plugin ${entry.id} must have a non-empty name`);
-    }
+
     await execute(
       `INSERT INTO plugin_records
         (plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled, updated_at)
@@ -797,7 +781,7 @@ async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
     );
   }
 
-  for (const script of commit.plugins.scripts ?? []) {
+  for (const script of commit.plugins.scripts ?? [])
     await execute(
       `INSERT INTO plugin_scripts (plugin_id, script, updated_at)
        VALUES (?, ?, datetime('now'))
@@ -805,23 +789,19 @@ async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
          script=excluded.script, updated_at=datetime('now')`,
       [script.id, script.script],
     );
-  }
 
-  for (const update of commit.plugins.enabled ?? []) {
+  for (const update of commit.plugins.enabled ?? [])
     await execute(
       "UPDATE plugin_records SET enabled = ?, updated_at = datetime('now') WHERE plugin_id = ?",
       [update.enabled ? 1 : 0, update.id],
     );
-  }
 
-  if (commit.plugins.order) {
-    for (const [position, id] of commit.plugins.order.entries()) {
+  if (commit.plugins.order)
+    for (const [position, id] of commit.plugins.order.entries())
       await execute(
         "UPDATE plugin_records SET position = ? WHERE plugin_id = ?",
         [position, id],
       );
-    }
-  }
 }
 
 async function applyPluginStorage(
@@ -834,13 +814,12 @@ async function applyPluginStorage(
   for (const key of commit.pluginStorage.deletes)
     await execute("DELETE FROM plugin_custom_storage WHERE key = ?", [key]);
 
-  for (const upsert of commit.pluginStorage.upserts) {
+  for (const upsert of commit.pluginStorage.upserts)
     await execute(
       `INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`,
       [upsert.key, JSON.stringify(upsert.value)],
     );
-  }
 }
 
 async function applySettingDeletes(
