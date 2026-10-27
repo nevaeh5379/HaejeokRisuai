@@ -32,6 +32,7 @@ import type {
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
 } from "./postgres/nodeSqlStorage";
+import type { CharacterFields } from "../database/character.ts";
 
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
@@ -209,6 +210,11 @@ export interface ISqlStorage {
     onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean>;
 
+
+  character: {
+    update(id: string, update: CharacterFields)
+  }
+  
   // ── Per-entity lazy loaders ──────────────────────────────────────────
 
   loadCharacter(characterId: string): Promise<character | groupChat | null>;

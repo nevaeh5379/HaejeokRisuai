@@ -15,9 +15,9 @@ export type CharacterFields = {
     : K]: Character[K];
 };
 
-export type CharacterUpdate = Partial<
-  Omit<CharacterFields, "chaId" | "type" | "detailsLoaded">
->;
+// export type CharacterUpdate = Partial<
+//   Omit<CharacterFields, "chaId" | "type" | "detailsLoaded">
+// >;
 
 export class Character {
       readonly #illustration?: IllustrationOverrides;
