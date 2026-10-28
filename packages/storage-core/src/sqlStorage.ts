@@ -217,7 +217,7 @@ export interface ISqlStorage {
   ): Promise<boolean>;
 
   character: {
-    update(id: string, update: CharacterFields);
+    update(id: string, update: CharacterFields): void;
   };
 
   // ── Per-entity lazy loaders ──────────────────────────────────────────

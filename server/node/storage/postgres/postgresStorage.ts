@@ -182,6 +182,9 @@ import {
   parseRevisionListLimit,
   summarizeStorageSyncRow,
 } from "../sqlStorageReadModels.ts";
+import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
+import { Kysely, PostgresDialect as KyselyPostgresDialect, sql } from "kysely";
+import { Pool } from "pg";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
 type SqlParameter = unknown;
@@ -757,6 +760,58 @@ async function pruneKeyedChildren(
 
 export type PostgresStorageContract = PostgresStorage;
 
+export class NPostgresStorage implements ISqlStorage {
+  db: Kysely<unknown> | null = null;
+  private readonly options: PostgresStorageOptions;
+  private initialization: Promise<boolean> | null = null;
+
+  constructor(options: PostgresStorageOptions = {}) {
+    this.options = options;
+  }
+
+  async init(): Promise<boolean> {
+    if (!this.options.connectionString) return false;
+    if (this.initialization) return this.initialization;
+
+    this.initialization = (async () => {
+      const poolMax = Number.parseInt(String(this.options.poolMax ?? "10"), 10);
+      const pool = new Pool({
+        connectionString: this.options.connectionString,
+        max: Number.isSafeInteger(poolMax) && poolMax > 0 ? poolMax : 10,
+        application_name: "risuai-node",
+        connectionTimeoutMillis: readStorageStartupSettings().connectTimeoutMs,
+      });
+      pool.on("error", (error: Error) => {
+        console.warn(
+          "[PostgreSQL] Idle pool connection failed:",
+          error.message,
+        );
+      });
+      const db = new Kysely<unknown>({
+        dialect: new KyselyPostgresDialect({ pool }),
+      });
+      try {
+        await sql`SELECT 1`.execute(db);
+        this.db = db;
+        return true;
+      } catch (error) {
+        await db.destroy().catch(() => {});
+        throw error;
+      }
+    })();
+
+    try {
+      return await this.initialization;
+    } catch (error) {
+      this.initialization = null;
+      throw error;
+    }
+  }
+}
+
+/**
+ * @deprecated
+ */
 class PostgresStorage extends SqlStorageBase {
   // The `pg` package ships no type definitions and is loaded lazily.
   declare pool: PgPool | null;
