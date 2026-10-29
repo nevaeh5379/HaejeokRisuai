@@ -2690,7 +2690,7 @@ const reverseProxyFunc = async (
     originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
       method: req.method,
       headers: header,
-      body: JSON.stringify(req.body),
+      body: Buffer.isBuffer(req.body) ? (req.body as Buffer<ArrayBuffer>) : JSON.stringify(req.body),
       signal: timeout.signal,
     });
     // get response body as stream
@@ -2999,6 +2999,9 @@ app.get("/hub-proxy/{*path}", authenticatedRouteLimiter, hubProxyFunc);
 
 app.post("/proxy", authenticatedRouteLimiter, reverseProxyFunc);
 app.post("/proxy2", authenticatedRouteLimiter, reverseProxyFunc);
+app.put("/proxy2", authenticatedRouteLimiter, reverseProxyFunc);
+app.patch("/proxy2", authenticatedRouteLimiter, reverseProxyFunc);
+app.delete("/proxy2", authenticatedRouteLimiter, reverseProxyFunc);
 app.post("/hub-proxy/{*path}", authenticatedRouteLimiter, hubProxyFunc);
 modelJobManager.registerRoutes(app, {
   auth: checkProxyAuth,
