@@ -38,7 +38,7 @@ import type {
   NodePostgresServerConfigUpdate,
   DbVendor,
 } from "@risuai/protocol/storageConfig.ts";
-import type { CharacterFields } from "@risuai/protocol/domain/character.ts";
+import type { Character, CharacterFields } from "@risuai/protocol/domain/character.ts";
 
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
@@ -218,6 +218,13 @@ export interface ISqlStorage {
 
   character: {
     update(id: string, update: CharacterFields): void;
+    // why is there no kind Parameters?
+    // haejeokRisuai does not support GroupChat, so the kind parameter always defaults to "Character".
+    create(name: string): Promise<void>;
+
+    position: {
+      max(): Promise<number>
+    }
   };
 
   // ── Per-entity lazy loaders ──────────────────────────────────────────

@@ -4,6 +4,7 @@ import {
   withAuthorNoteDatabase,
   notes as authorNoteSql,
 } from "../authorNotes.ts";
+import { v4 as uuidv4 } from 'uuid';
 import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -538,6 +539,10 @@ import {
   PostgresRevisionConflictError,
   PostgresPayloadError,
 } from "../storageErrors.ts";
+import { CharacterTables } from "./tables/character.ts";
+import { SystemTables } from "./tables/system.ts";
+import { ChatTables } from "./tables/chat.ts";
+import { ColdTables } from "./tables/cold.ts";
 const helpers: SqlStorageHelpers = createSqlStorageHelpers({
   PayloadError: PostgresPayloadError,
   maxIdLength: 1024,
@@ -760,53 +765,49 @@ async function pruneKeyedChildren(
 
 export type PostgresStorageContract = PostgresStorage;
 
+type PostgresDatabase = 
+& CharacterTables
+& SystemTables
+& ChatTables
+& ColdTables;
 export class NPostgresStorage implements ISqlStorage {
-  db: Kysely<unknown> | null = null;
-  private readonly options: PostgresStorageOptions;
-  private initialization: Promise<boolean> | null = null;
+  db: Kysely<PostgresDatabase>;
 
-  constructor(options: PostgresStorageOptions = {}) {
-    this.options = options;
+  constructor(connectionString: string, poolMax: number = 10) {
+    this.db = new Kysely({
+      dialect: new KyselyPostgresDialect({
+        pool: new Pool({ max: poolMax, connectionString: connectionString }),
+      }),
+    });
   }
 
-  async init(): Promise<boolean> {
-    if (!this.options.connectionString) return false;
-    if (this.initialization) return this.initialization;
+  character = {
+    create: async (name: string): Promise<void> => {
+      await this.db
+        .insertInto("character.characters")
+        .values({
+          id: uuidv4(),
+          position: Number(1),
+          kind: "character",
+          name: name,
+        })
+        .execute();
 
-    this.initialization = (async () => {
-      const poolMax = Number.parseInt(String(this.options.poolMax ?? "10"), 10);
-      const pool = new Pool({
-        connectionString: this.options.connectionString,
-        max: Number.isSafeInteger(poolMax) && poolMax > 0 ? poolMax : 10,
-        application_name: "risuai-node",
-        connectionTimeoutMillis: readStorageStartupSettings().connectTimeoutMs,
-      });
-      pool.on("error", (error: Error) => {
-        console.warn(
-          "[PostgreSQL] Idle pool connection failed:",
-          error.message,
+      return Promise.resolve();
+    },
+    position: {
+      max: async (): Promise<number> => {
+        return (
+          (
+            await this.db
+              .selectFrom("character.characters")
+              .select(({ fn }) => fn.max<number>("position").as("maxPosition"))
+              .executeTakeFirstOrThrow()
+          ).maxPosition ?? -1
         );
-      });
-      const db = new Kysely<unknown>({
-        dialect: new KyselyPostgresDialect({ pool }),
-      });
-      try {
-        await sql`SELECT 1`.execute(db);
-        this.db = db;
-        return true;
-      } catch (error) {
-        await db.destroy().catch(() => {});
-        throw error;
-      }
-    })();
-
-    try {
-      return await this.initialization;
-    } catch (error) {
-      this.initialization = null;
-      throw error;
-    }
-  }
+      },
+    },
+  };
 }
 
 /**
