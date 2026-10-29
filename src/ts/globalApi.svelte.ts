@@ -2540,7 +2540,10 @@ export async function fetchNative(
   ) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
-  const throughProxy = isNodeServer && useLocalNetworkRoute;
+  const throughProxy =
+    isNodeServer &&
+    (useLocalNetworkRoute ||
+      (!settingsStore.state.usePlainFetch && !window.userScriptFetch));
   const shouldLogFetch = arg.logFetch ?? true;
   let fetchLogIndex: number | null = null;
   if (shouldLogFetch) {
@@ -2891,7 +2894,7 @@ export async function fetchNative(
           ? {
               "risu-header": encodeURIComponent(JSON.stringify(headers)),
               "risu-url": encodeURIComponent(url),
-              "Content-Type": "application/json",
+              "Content-Type": "application/octet-stream",
               "x-risu-tk": "use",
               ...(arg.requestTimeoutMs && {
                 "risu-timeout-ms": Math.max(
@@ -2907,7 +2910,7 @@ export async function fetchNative(
           : {
               "risu-header": encodeURIComponent(JSON.stringify(headers)),
               "risu-url": encodeURIComponent(url),
-              "Content-Type": "application/json",
+              "Content-Type": "application/octet-stream",
               ...(arg.requestTimeoutMs && {
                 "risu-timeout-ms": Math.max(
                   1,

@@ -8,6 +8,7 @@ import {
 
 const native = vi.hoisted(() => ({
   isCapacitor: true,
+  isNodeServer: false,
   listener: null as ((event: unknown) => void) | null,
   streamedFetch: vi.fn(),
   cancelStreamedFetch: vi.fn(async () => {}),
@@ -17,6 +18,9 @@ vi.mock("./platform", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./platform")>()),
   get isCapacitor() {
     return native.isCapacitor;
+  },
+  get isNodeServer() {
+    return native.isNodeServer;
   },
 }));
 
@@ -43,6 +47,8 @@ vi.mock("@capacitor/core", async (importOriginal) => {
 
 import { fetchNative, globalFetch } from "./globalApi.svelte";
 import { processZip } from "./process/processzip";
+import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import * as nodeStorage from "./storage/files/nodeStorage";
 
 const url = "https://image.novelai.net/ai/generate-image";
 const image = new Uint8Array([137, 80, 78, 71, 0, 255, 128, 192]);
@@ -388,5 +394,113 @@ describe("globalFetch binary responses on Android", () => {
     expect(result.data).toEqual({ remaining: 10 });
     expect(browserFetch).toHaveBeenCalledOnce();
     expect(native.streamedFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("plugin nativeFetch on Node", () => {
+  beforeEach(() => {
+    native.isCapacitor = false;
+    native.isNodeServer = true;
+    settingsStore.state.usePlainFetch = false;
+    vi.spyOn(nodeStorage, "getNodeServerProxyAuth").mockResolvedValue(
+      "node-token",
+    );
+  });
+
+  afterEach(() => {
+    native.isCapacitor = true;
+    native.isNodeServer = false;
+    delete window.userScriptFetch;
+    settingsStore.state.usePlainFetch = false;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["GET", "POST"] as const)(
+    "routes a %s request through the authenticated proxy when the API disallows browser fetch",
+    async (method) => {
+      const abort = new AbortController();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (target, init: RequestInit) => {
+          if (target !== "/proxy2") throw new TypeError("Failed to fetch");
+          const headers = new Headers(init.headers);
+          expect(decodeURIComponent(headers.get("risu-url")!)).toBe(url);
+          expect(
+            JSON.parse(decodeURIComponent(headers.get("risu-header")!)),
+          ).toEqual({ Authorization: "Bearer provider-token" });
+          expect(headers.get("risu-auth")).toBe("node-token");
+          expect(headers.get("content-type")).toBe("application/octet-stream");
+          expect(headers.get("risu-timeout-ms")).toBe("1000");
+          expect(init.method).toBe(method);
+          expect(init.signal?.aborted).toBe(false);
+          expect(init.cache).toBe("no-store");
+          expect(
+            init.body
+              ? new TextDecoder().decode(init.body as Uint8Array)
+              : undefined,
+          ).toBe(method === "POST" ? '{"prompt":"hello"}' : undefined);
+          return new Response("data: hello\n\n", {
+            headers: { "content-type": "text/event-stream" },
+          });
+        }),
+      );
+
+      const response = await fetchNative(url, {
+        method,
+        body: method === "POST" ? '{"prompt":"hello"}' : undefined,
+        headers: { Authorization: "Bearer provider-token" },
+        signal: abort.signal,
+        requestTimeoutMs: 1000,
+        logFetch: false,
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(await response.text()).toBe("data: hello\n\n");
+    },
+  );
+
+  it("honors the explicit plain-fetch setting", async () => {
+    settingsStore.state.usePlainFetch = true;
+    const browserFetch = vi.fn(async () => new Response("direct"));
+    vi.stubGlobal("fetch", browserFetch);
+    const response = await fetchNative(url, { method: "GET", logFetch: false });
+    expect(await response.text()).toBe("direct");
+    expect(browserFetch).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("preserves the userscript transport override", async () => {
+    window.userScriptFetch = vi.fn(async () => new Response("userscript"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Unexpected browser fetch");
+      }),
+    );
+    const response = await fetchNative(url, { method: "GET", logFetch: false });
+    expect(await response.text()).toBe("userscript");
+    expect(window.userScriptFetch).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("keeps an explicit local-network route on the proxy even with plain fetch enabled", async () => {
+    settingsStore.state.usePlainFetch = true;
+    const browserFetch = vi.fn(async () => new Response("local"));
+    vi.stubGlobal("fetch", browserFetch);
+    const response = await fetchNative("http://model-server:8000/v1/models", {
+      method: "GET",
+      networkRoute: "local_network",
+      logFetch: false,
+    });
+    expect(await response.text()).toBe("local");
+    expect(browserFetch).toHaveBeenCalledWith(
+      "/proxy2",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 });
