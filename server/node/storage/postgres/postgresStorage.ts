@@ -183,6 +183,7 @@ import {
   parseRevisionListLimit,
   summarizeStorageSyncRow,
 } from "../sqlStorageReadModels.ts";
+import { Character } from "../../../../packages/protocol/domain/character.ts";
 import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
 import { Kysely, PostgresDialect as KyselyPostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
@@ -539,10 +540,10 @@ import {
   PostgresRevisionConflictError,
   PostgresPayloadError,
 } from "../storageErrors.ts";
-import { CharacterTables } from "./tables/character.ts";
-import { SystemTables } from "./tables/system.ts";
-import { ChatTables } from "./tables/chat.ts";
-import { ColdTables } from "./tables/cold.ts";
+import type { CharacterTables } from "./tables/character.ts";
+import type { SystemTables } from "./tables/system.ts";
+import type { ChatTables } from "./tables/chat.ts";
+import type { ColdTables } from "./tables/cold.ts";
 const helpers: SqlStorageHelpers = createSqlStorageHelpers({
   PayloadError: PostgresPayloadError,
   maxIdLength: 1024,
@@ -782,8 +783,8 @@ export class NPostgresStorage implements ISqlStorage {
   }
 
   character = {
-    create: async (name: string): Promise<void> => {
-      await this.db
+    create: async (name: string): Promise<Character> => {
+      const row = await this.db
         .insertInto("character.characters")
         .values({
           id: uuidv4(),
@@ -791,9 +792,9 @@ export class NPostgresStorage implements ISqlStorage {
           kind: "character",
           name: name,
         })
-        .execute();
-
-      return Promise.resolve();
+        .returning(["id", "name"])
+        .executeTakeFirstOrThrow();
+      return new Character({ chaId: row.id, name: row.name });
     },
     position: {
       max: async (): Promise<number> => {

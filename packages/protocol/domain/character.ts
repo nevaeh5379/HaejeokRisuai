@@ -23,43 +23,43 @@ export type CharacterFields = {
 
 export class Character {
   readonly #illustration?: IllustrationOverrides;
-  #type?: "character";
-  #name!: string;
+  #type: "character";
+  #name: string;
   #image?: string;
   #detailsLoaded?: boolean;
-  #firstMessage!: string;
-  #desc!: string;
-  #notes!: string;
+  #firstMessage: string;
+  #desc: string;
+  #notes: string;
   //   chats: Chat[];
   //   chatFolders: ChatFolder[];
   //   chatPage: number;
-  #viewScreen!: "emotion" | "none" | "imggen";
-  #bias!: [string, number][];
-  #emotionImages!: [string, string][];
-  #globalLore!: loreBook[];
-  #chaId!: string;
-  #sdData!: [string, string][];
+  #viewScreen: "emotion" | "none" | "imggen";
+  #bias: [string, number][];
+  #emotionImages: [string, string][];
+  #globalLore: loreBook[];
+  #chaId: string;
+  #sdData: [string, string][];
   #newGenData?: {
     prompt: string;
     negative: string;
     instructions: string;
     emotionInstructions: string;
   };
-  #customscript!: customscript[];
-  #triggerscript!: triggerscript[];
-  #utilityBot!: boolean;
-  #exampleMessage!: string;
+  #customscript: customscript[];
+  #triggerscript: triggerscript[];
+  #utilityBot: boolean;
+  #exampleMessage: string;
   #removedQuotes?: boolean;
-  #creatorNotes!: string;
-  #systemPrompt!: string;
-  #postHistoryInstructions!: string;
-  #alternateGreetings!: string[];
-  #tags!: string[];
-  #creator!: string;
-  #characterVersion!: string;
-  #personality!: string;
-  #scenario!: string;
-  #firstMsgIndex!: number;
+  #creatorNotes: string;
+  #systemPrompt: string;
+  #postHistoryInstructions: string;
+  #alternateGreetings: string[];
+  #tags: string[];
+  #creator: string;
+  #characterVersion: string;
+  #personality: string;
+  #scenario: string;
+  #firstMsgIndex: number;
   #loreSettings?: loreSettings;
   #loreExt?: charBookExtensions;
   #additionalData?: {
@@ -143,13 +143,13 @@ export class Character {
   /** Folder id keyed by the unique additional-asset display name. */
   #additionalAssetFolderAssignments?: Record<string, string>;
   #ttsReadOnlyQuoted?: boolean;
-  #replaceGlobalNote!: string;
+  #replaceGlobalNote: string;
   #backgroundHTML?: string;
   #reloadKeys?: number;
   #backgroundCSS?: string;
   #license?: string;
   #private?: boolean;
-  #additionalText!: string;
+  #additionalText: string;
   #oaiVoice?: string;
   #oaiTTSConfig?: {
     /** User opted into advanced OpenAI-compatible settings. When false/absent,
@@ -208,6 +208,108 @@ export class Character {
   #coldstorage?: string;
   #coldStoragedChats?: string[];
   #customModuleToggle?: string;
+
+  /** Initializes character fields, using defaults for omitted values. */
+  constructor(
+    fields: Pick<CharacterFields, "chaId"> & Partial<CharacterFields>,
+  ) {
+    this.#illustration = fields.illustration;
+    this.#type = fields.type ?? "character";
+    this.#name = fields.name ?? "";
+    this.#image = fields.image;
+    this.#detailsLoaded = fields.detailsLoaded;
+    this.#firstMessage = fields.firstMessage ?? "";
+    this.#desc = fields.desc ?? "";
+    this.#notes = fields.notes ?? "";
+    this.#viewScreen = fields.viewScreen ?? "none";
+    this.#bias = fields.bias ?? [];
+    this.#emotionImages = fields.emotionImages ?? [];
+    this.#globalLore = fields.globalLore ?? [];
+    this.#chaId = fields.chaId;
+    this.#sdData = fields.sdData ?? [];
+    this.#newGenData = fields.newGenData;
+    this.#customscript = fields.customscript ?? [];
+    this.#triggerscript = fields.triggerscript ?? [
+      {
+        comment: "",
+        type: "manual",
+        conditions: [],
+        effect: [{ type: "v2Header", code: "", indent: 0 }],
+      },
+      { comment: "New Event", type: "manual", conditions: [], effect: [] },
+    ];
+    this.#utilityBot = fields.utilityBot ?? false;
+    this.#exampleMessage = fields.exampleMessage ?? "";
+    this.#removedQuotes = fields.removedQuotes;
+    this.#creatorNotes = fields.creatorNotes ?? "";
+    this.#systemPrompt = fields.systemPrompt ?? "";
+    this.#postHistoryInstructions = fields.postHistoryInstructions ?? "";
+    this.#alternateGreetings = fields.alternateGreetings ?? [];
+    this.#tags = fields.tags ?? [];
+    this.#creator = fields.creator ?? "";
+    this.#characterVersion = fields.characterVersion ?? "";
+    this.#personality = fields.personality ?? "";
+    this.#scenario = fields.scenario ?? "";
+    this.#firstMsgIndex = fields.firstMsgIndex ?? -1;
+    this.#loreSettings = fields.loreSettings;
+    this.#loreExt = fields.loreExt;
+    this.#additionalData = fields.additionalData;
+    this.#ttsMode = fields.ttsMode;
+    this.#ttsSpeech = fields.ttsSpeech;
+    this.#voicevoxConfig = fields.voicevoxConfig;
+    this.#naittsConfig = fields.naittsConfig;
+    this.#gptSoVitsConfig = fields.gptSoVitsConfig;
+    this.#fishSpeechConfig = fields.fishSpeechConfig;
+    this.#supaMemory = fields.supaMemory;
+    this.#additionalAssets = fields.additionalAssets;
+    this.#additionalAssetFolders = fields.additionalAssetFolders;
+    this.#additionalAssetFolderAssignments =
+      fields.additionalAssetFolderAssignments;
+    this.#ttsReadOnlyQuoted = fields.ttsReadOnlyQuoted;
+    this.#replaceGlobalNote = fields.replaceGlobalNote ?? "";
+    this.#backgroundHTML = fields.backgroundHTML;
+    this.#reloadKeys = fields.reloadKeys;
+    this.#backgroundCSS = fields.backgroundCSS;
+    this.#license = fields.license;
+    this.#private = fields.private;
+    this.#additionalText = fields.additionalText ?? "";
+    this.#oaiVoice = fields.oaiVoice;
+    this.#oaiTTSConfig = fields.oaiTTSConfig;
+    this.#virtualscript = fields.virtualscript;
+    this.#scriptstate = fields.scriptstate;
+    this.#depth_prompt = fields.depth_prompt;
+    this.#extentions = fields.extentions;
+    this.#largePortrait = fields.largePortrait;
+    this.#lorePlus = fields.lorePlus;
+    this.#inlayViewScreen = fields.inlayViewScreen;
+    this.#hfTTS = fields.hfTTS;
+    this.#vits = fields.vits;
+    this.#realmId = fields.realmId;
+    this.#imported = fields.imported;
+    this.#trashTime = fields.trashTime;
+    this.#nickname = fields.nickname;
+    this.#source = fields.source;
+    this.#group_only_greetings = fields.group_only_greetings;
+    this.#creation_date = fields.creation_date;
+    this.#modification_date = fields.modification_date;
+    this.#ccAssets = fields.ccAssets;
+    this.#defaultVariables = fields.defaultVariables;
+    this.#onboarding = fields.onboarding;
+    this.#lowLevelAccess = fields.lowLevelAccess;
+    this.#hideChatIcon = fields.hideChatIcon;
+    this.#lastInteraction = fields.lastInteraction;
+    this.#translatorNote = fields.translatorNote;
+    this.#doNotChangeSeperateModels = fields.doNotChangeSeperateModels;
+    this.#escapeOutput = fields.escapeOutput;
+    this.#prebuiltAssetCommand = fields.prebuiltAssetCommand;
+    this.#prebuiltAssetStyle = fields.prebuiltAssetStyle;
+    this.#prebuiltAssetExclude = fields.prebuiltAssetExclude;
+    this.#modules = fields.modules;
+    this.#moduleNamespace = fields.moduleNamespace;
+    this.#coldstorage = fields.coldstorage;
+    this.#coldStoragedChats = fields.coldStoragedChats;
+    this.#customModuleToggle = fields.customModuleToggle;
+  }
 
   get illustration(): IllustrationOverrides | undefined {
     return this.#illustration;
