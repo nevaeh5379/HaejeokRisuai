@@ -790,7 +790,6 @@ export class NPostgresStorage implements ISqlStorage {
         .selectFrom("character.characters")
         .selectAll()
         .where("id", "=", id)
-        .where("kind", "=", "character")
         .executeTakeFirstOrThrow();
       return new Character(row);
     },

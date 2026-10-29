@@ -28,10 +28,16 @@ export class Character {
   #type: "character";
   #name: string;
   #image?: string;
-  #detailsLoaded?: boolean;
+// Having this variable is wrong; it isn't supposed to exist.
+  // #detailsLoaded?: boolean;
   #firstMessage: string;
   #desc: string;
   #notes: string;
+
+// Why doesn't the Character class have a 'chats' variable?
+// Because the Chat class is too large. Instead of loading all chats at once, they are lazy-loaded one by one.
+// Q. But, the plugin API needs a Character class to fully load the chats array.
+// A. This class is not for the plugin API; it's for haejeokRiausi. We'll create a separate Character class for plugin API compatibility.
   //   chats: Chat[];
   //   chatFolders: ChatFolder[];
   //   chatPage: number;
