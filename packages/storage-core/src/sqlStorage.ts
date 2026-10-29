@@ -220,6 +220,8 @@ export interface ISqlStorage {
   ): Promise<boolean>;
 
   character: {
+    /** Loads the character core row without relations; rejects if the ID is not a character. */
+    load(id: string): Promise<Character>;
     update(id: string, update: CharacterFields): void;
     // why is there no kind Parameters?
     // haejeokRisuai does not support GroupChat, so the kind parameter always defaults to "Character".

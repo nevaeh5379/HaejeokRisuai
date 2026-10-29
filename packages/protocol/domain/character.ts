@@ -7,6 +7,8 @@ import type {
   loreSettings,
   triggerscript,
 } from "./database.ts";
+import type { Selectable } from "kysely";
+import type { CharactersTable } from "../tables/character.ts";
 import type { OnnxModelFiles } from "./onnxModelFiles.ts";
 
 export type CharacterFields = {
@@ -209,10 +211,18 @@ export class Character {
   #coldStoragedChats?: string[];
   #customModuleToggle?: string;
 
-  /** Initializes character fields, using defaults for omitted values. */
+  /** Initializes a character from fields or a database table row. */
   constructor(
     fields: Pick<CharacterFields, "chaId"> & Partial<CharacterFields>,
+  );
+  constructor(row: Selectable<CharactersTable>);
+  constructor(
+    input:
+      | (Pick<CharacterFields, "chaId"> & Partial<CharacterFields>)
+      | Selectable<CharactersTable>,
   ) {
+    const fields = "id" in input ? Character.#fieldsFromRow(input) : input;
+
     this.#illustration = fields.illustration;
     this.#type = fields.type ?? "character";
     this.#name = fields.name ?? "";
@@ -309,6 +319,54 @@ export class Character {
     this.#coldstorage = fields.coldstorage;
     this.#coldStoragedChats = fields.coldStoragedChats;
     this.#customModuleToggle = fields.customModuleToggle;
+  }
+
+  static #fieldsFromRow(
+    row: Selectable<CharactersTable>,
+  ): Pick<CharacterFields, "chaId"> & Partial<CharacterFields> {
+    return {
+      name: row.name,
+      image: row.image ?? undefined,
+      detailsLoaded: false,
+      firstMessage: row.first_message,
+      desc: row.description ?? "",
+      notes: row.notes ?? "",
+      viewScreen:
+        row.view_screen === "emotion" || row.view_screen === "imggen"
+          ? row.view_screen
+          : "none",
+      chaId: row.id,
+      utilityBot: row.utility_bot ?? false,
+      exampleMessage: row.example_message ?? "",
+      creatorNotes: row.creator_notes ?? "",
+      systemPrompt: row.system_prompt ?? "",
+      postHistoryInstructions: row.post_history_instructions ?? "",
+      creator: row.creator ?? "",
+      characterVersion: row.character_version ?? "",
+      personality: row.personality ?? "",
+      scenario: row.scenario ?? "",
+      firstMsgIndex: row.first_message_index ?? -1,
+      backgroundHTML: row.background_html ?? undefined,
+      backgroundCSS: row.background_css ?? undefined,
+      license: row.license ?? undefined,
+      private: row.is_private ?? undefined,
+      additionalText: row.additional_text ?? "",
+      realmId: row.realm_id ?? undefined,
+      trashTime: row.trash_time === null ? undefined : Number(row.trash_time),
+      nickname: row.nickname ?? undefined,
+      creation_date:
+        row.creation_time === null ? undefined : Number(row.creation_time),
+      modification_date:
+        row.modification_time === null
+          ? undefined
+          : Number(row.modification_time),
+      defaultVariables: row.default_variables ?? undefined,
+      lastInteraction:
+        row.last_interaction_time === null
+          ? undefined
+          : Number(row.last_interaction_time),
+      translatorNote: row.translator_note ?? undefined,
+    };
   }
 
   get illustration(): IllustrationOverrides | undefined {

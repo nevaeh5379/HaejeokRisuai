@@ -180,6 +180,7 @@
     "happy-dom": "^21.0.4",
     "internal-ip": "^9.0.0",
     "jsdom": "^30.1.3",
+    "kysely": "^0.29.7",
     "postcss": "^8.5.31",
     "source-map": "^0.8.0",
     "svelte": "^5.57.2",

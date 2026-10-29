@@ -4,6 +4,7 @@ import {
   withAuthorNoteDatabase,
   notes as authorNoteSql,
 } from "../authorNotes.ts";
+import { CharactersTable } from "../../../../packages/protocol/tables/character.ts"
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from "crypto";
 import * as fs from "fs/promises";
@@ -185,7 +186,7 @@ import {
 } from "../sqlStorageReadModels.ts";
 import { Character } from "../../../../packages/protocol/domain/character.ts";
 import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
-import { Kysely, PostgresDialect as KyselyPostgresDialect, sql } from "kysely";
+import { Kysely, PostgresDialect as KyselyPostgresDialect, Selectable, sql } from "kysely";
 import { Pool } from "pg";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
@@ -540,10 +541,10 @@ import {
   PostgresRevisionConflictError,
   PostgresPayloadError,
 } from "../storageErrors.ts";
-import type { CharacterTables } from "./tables/character.ts";
-import type { SystemTables } from "./tables/system.ts";
-import type { ChatTables } from "./tables/chat.ts";
-import type { ColdTables } from "./tables/cold.ts";
+import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
+import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
+import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
+import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 const helpers: SqlStorageHelpers = createSqlStorageHelpers({
   PayloadError: PostgresPayloadError,
   maxIdLength: 1024,
@@ -783,18 +784,28 @@ export class NPostgresStorage implements ISqlStorage {
   }
 
   character = {
-    create: async (name: string): Promise<Character> => {
+    load: async (id: string): Promise<Character> => {
+      assertId(id, "characterId");
       const row = await this.db
+        .selectFrom("character.characters")
+        .selectAll()
+        .where("id", "=", id)
+        .where("kind", "=", "character")
+        .executeTakeFirstOrThrow();
+      return new Character(row);
+    },
+    create: async (name: string): Promise<Character> => {
+      const row = (await this.db
         .insertInto("character.characters")
         .values({
           id: uuidv4(),
-          position: Number(1),
+          position: await this.character.position.max(),
           kind: "character",
           name: name,
         })
-        .returning(["id", "name"])
-        .executeTakeFirstOrThrow();
-      return new Character({ chaId: row.id, name: row.name });
+        .returningAll()
+        .executeTakeFirstOrThrow()) satisfies Selectable<CharactersTable>;
+      return new Character(row);
     },
     position: {
       max: async (): Promise<number> => {
