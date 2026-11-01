@@ -1001,18 +1001,6 @@ export class NPostgresStorage implements Pick<
       .compile();
   }
 
-  private async createCharacter(name: string): Promise<Character> {
-    const query = this.db
-      .selectFrom(
-        sql<{ id: string; storage_revision: string }>`
-      system.character_apply_create(${JSON.stringify(encodePostgresJsonValue(name))}::jsonb)
-    `.as("result"),
-      )
-      .selectAll()
-      .compile();
-    const { id } = (await this.db.executeQuery(query)).rows[0];
-    return this.handle(id);
-  }
 
   character = {
     load: async (id: string): Promise<Character> => {
@@ -1026,7 +1014,18 @@ export class NPostgresStorage implements Pick<
         throw new Error(`Character not found: ${id}`);
       return this.handle(id);
     },
-    create: (name: string): Promise<Character> => this.createCharacter(name),
+    create: async (name: string): Promise<Character> => {
+      const query = this.db
+        .selectFrom(
+          sql<{ id: string; storage_revision: string }>`
+        system.character_apply_create(${JSON.stringify(encodePostgresJsonValue(name))}::jsonb)
+      `.as("result"),
+        )
+        .selectAll()
+        .compile();
+      const { id } = (await this.db.executeQuery(query)).rows[0];
+      return this.handle(id);
+    },
     read: async <K extends keyof CharacterFields>(
       id: string,
       ...keys: [K, ...K[]]
