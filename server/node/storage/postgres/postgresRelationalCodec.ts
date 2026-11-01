@@ -1,4 +1,14 @@
 import {
+  CHARACTER_KEYS,
+  characterDefault,
+  type CharacterFields,
+  type CharacterUpdate,
+} from "../../../../packages/protocol/domain/character.ts";
+import type {
+  CharactersTable,
+  CharacterTables,
+} from "../../../../packages/protocol/tables/character.ts";
+import {
   decodePostgresJsonValue,
   encodePostgresJsonValue,
 } from "./postgresJsonCodec.ts";
@@ -75,7 +85,7 @@ function decodeJson(value?: any): any {
   return decodePostgresJsonValue(value);
 }
 
-function containsNul(value?: any, seen: any = new Set()): any {
+export function containsNul(value: unknown, seen = new Set<object>()): boolean {
   if (typeof value === "string") return value.includes("\0");
   if (!value || typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
@@ -945,3 +955,216 @@ export {
   splitLore,
   splitMessage,
 };
+
+/** Field mappings are schema constants, never SQL supplied by a caller. */
+export const CHARACTER_FIELD_COLUMNS = {
+  name: "name",
+  image: "image",
+  firstMessage: "first_message",
+  desc: "description",
+  notes: "notes",
+  creatorNotes: "creator_notes",
+  systemPrompt: "system_prompt",
+  postHistoryInstructions: "post_history_instructions",
+  personality: "personality",
+  scenario: "scenario",
+  exampleMessage: "example_message",
+  creator: "creator",
+  characterVersion: "character_version",
+  nickname: "nickname",
+  viewScreen: "view_screen",
+  firstMsgIndex: "first_message_index",
+  utilityBot: "utility_bot",
+  private: "is_private",
+  realmId: "realm_id",
+  license: "license",
+  defaultVariables: "default_variables",
+  additionalText: "additional_text",
+  translatorNote: "translator_note",
+  backgroundHTML: "background_html",
+  backgroundCSS: "background_css",
+  creation_date: "creation_time",
+  modification_date: "modification_time",
+  lastInteraction: "last_interaction_time",
+  trashTime: "trash_time",
+} as const satisfies Partial<
+  Record<keyof CharacterFields, keyof CharactersTable>
+>;
+
+export interface CharacterRelation {
+  table: keyof CharacterTables;
+  /** The property returned by splitCharacter/rebuildCharacter. */
+  related: string;
+  discriminator?: readonly [column: string, value: string];
+}
+
+export const CHARACTER_RELATIONS = {
+  bias: { table: "character.biases", related: "biases" },
+  tags: { table: "character.tags", related: "tags" },
+  alternateGreetings: {
+    table: "character.greetings",
+    related: "greetings",
+    discriminator: ["greeting_type", "alternate"],
+  },
+  group_only_greetings: {
+    table: "character.greetings",
+    related: "greetings",
+    discriminator: ["greeting_type", "group-only"],
+  },
+  emotionImages: { table: "character.emotions", related: "emotions" },
+  modules: { table: "character.modules", related: "modules" },
+  customscript: {
+    table: "character.scripts",
+    related: "scripts",
+    discriminator: ["script_kind", "custom"],
+  },
+  triggerscript: {
+    table: "character.scripts",
+    related: "scripts",
+    discriminator: ["script_kind", "trigger"],
+  },
+  sdData: { table: "character.sd_data", related: "sdData" },
+  additionalAssets: {
+    table: "character.assets",
+    related: "assets",
+    discriminator: ["asset_source", "additional"],
+  },
+  ccAssets: {
+    table: "character.assets",
+    related: "assets",
+    discriminator: ["asset_source", "character-card"],
+  },
+  globalLore: { table: "character.lore_entries", related: "lore" },
+} as const satisfies Partial<Record<keyof CharacterFields, CharacterRelation>>;
+
+export { CHARACTER_KEYS, characterDefault };
+
+export function characterColumn(
+  key: keyof CharacterFields,
+): string | undefined {
+  return Object.hasOwn(CHARACTER_FIELD_COLUMNS, key)
+    ? CHARACTER_FIELD_COLUMNS[key as keyof typeof CHARACTER_FIELD_COLUMNS]
+    : undefined;
+}
+
+export function characterRelation(
+  key: keyof CharacterFields,
+): CharacterRelation | undefined {
+  return Object.hasOwn(CHARACTER_RELATIONS, key)
+    ? CHARACTER_RELATIONS[key as keyof typeof CHARACTER_RELATIONS]
+    : undefined;
+}
+
+export type CharacterReadRow = Record<string, unknown> & {
+  id: string;
+  kind: string;
+  __revision: string | number;
+  __attributes?: Record<string, unknown> | string | null;
+};
+
+/** Both read paths decode only the projection requested by the caller. */
+export function decodeCharacterReadRow<K extends keyof CharacterFields>(
+  row: CharacterReadRow,
+  keys: readonly K[],
+): Pick<CharacterFields, K> {
+  const attributes =
+    typeof row.__attributes === "string"
+      ? (JSON.parse(row.__attributes) as Record<string, unknown>)
+      : (row.__attributes ?? {});
+  const values: Partial<Record<keyof CharacterFields, unknown>> = {};
+  for (const key of keys) {
+    let value: unknown = characterDefault(key);
+    const column = characterColumn(key);
+    const relation = characterRelation(key);
+    if (column && row[column] != null) {
+      value = CHARACTER_BIGINT_COLUMNS.has(column)
+        ? Number(row[column])
+        : row[column];
+    } else if (relation) {
+      const raw = row[key];
+      const rows: Record<string, unknown>[] =
+        typeof raw === "string" ? JSON.parse(raw) : (raw ?? []);
+      if (rows.length) {
+        rows.sort((a, b) => Number(a.position) - Number(b.position));
+        value = rebuildCharacter(row, { [relation.related]: rows })[key];
+      }
+    }
+    if (Object.hasOwn(attributes, key))
+      value = decodePostgresJsonValue(attributes[key]);
+    if (key === "viewScreen" && value !== "emotion" && value !== "imggen")
+      value = "none";
+    if (key === "chaId") value = row.id;
+    if (key === "type") value = "character";
+    values[key] = value;
+  }
+  return values as Pick<CharacterFields, K>;
+}
+
+export interface EncodedCharacterPatch {
+  columns: Record<string, unknown>;
+  relations: Array<
+    CharacterRelation & {
+      key: keyof CharacterFields;
+      rows: Record<string, unknown>[];
+    }
+  >;
+  attributeKeys: (keyof CharacterFields)[];
+  attributes: Array<{
+    character_id: string;
+    key: keyof CharacterFields;
+    value: unknown;
+  }>;
+}
+
+/** Reuse the legacy relational mapping, with explicit empty/NUL overrides. */
+export function encodeCharacterPatch(
+  id: string,
+  patch: CharacterUpdate,
+): EncodedCharacterPatch {
+  const result: EncodedCharacterPatch = {
+    columns: {},
+    relations: [],
+    attributeKeys: [],
+    attributes: [],
+  };
+  for (const key of Object.keys(patch) as (keyof CharacterFields)[]) {
+    if (key === "chaId" || key === "type") continue;
+    const value = patch[key];
+    const column = characterColumn(key);
+    const relation = characterRelation(key);
+    const unsafe = containsNul(value);
+    result.attributeKeys.push(key);
+    if (column) {
+      result.columns[column] =
+        unsafe || value === undefined
+          ? column === "name" || column === "first_message"
+            ? ""
+            : null
+          : value;
+    }
+    if (relation) {
+      const split =
+        value === undefined || unsafe
+          ? null
+          : splitCharacter({ id, position: 0, data: { [key]: value } });
+      result.relations.push({
+        ...relation,
+        key,
+        rows: split?.[relation.related] ?? [],
+      });
+    }
+    if (
+      value !== undefined &&
+      (unsafe ||
+        (!column && !relation) ||
+        (Array.isArray(value) && value.length === 0))
+    ) {
+      result.attributes.push({
+        character_id: id,
+        key,
+        value: encodePostgresJsonValue(value),
+      });
+    }
+  }
+  return result;
+}

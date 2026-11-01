@@ -1515,3 +1515,168 @@ BEGIN
         );
     END LOOP;
 END $$;
+
+-- Character writes run sequentially under the existing audit_change triggers.
+CREATE OR REPLACE FUNCTION system.character_begin_revision(p_action TEXT)
+RETURNS BIGINT LANGUAGE plpgsql AS $$
+DECLARE v_storage BIGINT; v_revision BIGINT;
+BEGIN
+    UPDATE system.storage_meta SET revision = revision + 1, updated_at = now()
+    WHERE singleton RETURNING revision INTO v_storage;
+    INSERT INTO system.revisions (storage_revision, database_initialized, scope, action)
+    VALUES (v_storage, TRUE, 'database', p_action) RETURNING id INTO v_revision;
+    PERFORM set_config('risu.revision_id', v_revision::TEXT, TRUE);
+    RETURN v_storage;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_relation_filter(p_table TEXT, p_column TEXT, p_value TEXT)
+RETURNS TEXT LANGUAGE plpgsql AS $$
+BEGIN
+    IF (p_table, p_column, p_value) IN (
+        ('character.greetings', 'greeting_type', 'alternate'),
+        ('character.greetings', 'greeting_type', 'group-only'),
+        ('character.scripts', 'script_kind', 'custom'),
+        ('character.scripts', 'script_kind', 'trigger'),
+        ('character.assets', 'asset_source', 'additional'),
+        ('character.assets', 'asset_source', 'character-card')) THEN
+        RETURN format(' AND %I = %L', p_column, p_value);
+    END IF;
+    IF p_table IN ('character.greetings', 'character.scripts', 'character.assets')
+        OR p_column IS NOT NULL OR p_value IS NOT NULL THEN
+        RAISE EXCEPTION 'Unsupported character discriminator: %.% = %', p_table, p_column, p_value;
+    END IF;
+    RETURN '';
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_relation_rows(
+    p_id TEXT, p_column TEXT, p_value TEXT, p_rows JSONB)
+RETURNS JSONB LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN (SELECT coalesce(jsonb_agg(item || jsonb_build_object('character_id', p_id) ||
+        CASE WHEN p_column IS NULL THEN '{}'::JSONB ELSE jsonb_build_object(p_column, p_value) END), '[]'::JSONB)
+        FROM jsonb_array_elements(p_rows) AS r(item));
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_position_assets(p_id TEXT, p_source TEXT, p_rows JSONB)
+RETURNS JSONB LANGUAGE plpgsql AS $$
+DECLARE v_offset INTEGER;
+BEGIN
+    SELECT coalesce(max(position), -1) + 1 INTO v_offset FROM character.assets
+    WHERE character_id = p_id AND asset_source <> p_source;
+    RETURN (SELECT coalesce(jsonb_agg(jsonb_set(item, '{position}',
+        to_jsonb((item->>'position')::INTEGER + v_offset))), '[]'::JSONB)
+        FROM jsonb_array_elements(p_rows) AS r(item));
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_replace_relation(
+    p_id TEXT, p_table TEXT, p_column TEXT, p_value TEXT, p_rows JSONB)
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE v_table TEXT; v_filter TEXT;
+BEGIN
+    IF p_table IS NULL OR NOT (p_table = ANY (ARRAY[
+        'character.biases', 'character.tags', 'character.greetings',
+        'character.emotions', 'character.modules', 'character.scripts',
+        'character.sd_data', 'character.assets', 'character.lore_entries'])) THEN
+        RAISE EXCEPTION 'Unsupported character relation: %', p_table;
+    END IF;
+    v_table := split_part(p_table, '.', 2);
+    v_filter := system.character_relation_filter(p_table, p_column, p_value);
+    EXECUTE format('DELETE FROM %I.%I WHERE character_id = $1%s', 'character', v_table, v_filter) USING p_id;
+    p_rows := system.character_relation_rows(p_id, p_column, p_value, p_rows);
+    IF v_table = 'assets' THEN
+        p_rows := system.character_position_assets(p_id, p_value, p_rows);
+    END IF;
+    EXECUTE format('INSERT INTO %I.%I SELECT * FROM jsonb_populate_recordset(NULL::%I.%I, $1)',
+        'character', v_table, 'character', v_table) USING p_rows;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_prepare_assets(p_id TEXT, p_relations JSONB)
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_relations) AS r(item)
+        WHERE item->>'table' = 'character.assets' AND item->'discriminator'->>1 = 'additional')
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements(p_relations) AS r(item)
+        WHERE item->>'table' = 'character.assets' AND item->'discriminator'->>1 = 'character-card') THEN
+        DELETE FROM character.assets WHERE character_id = p_id;
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_apply_relations(p_id TEXT, p_relations JSONB)
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE v_relation JSONB;
+BEGIN
+    PERFORM system.character_prepare_assets(p_id, p_relations);
+    FOR v_relation IN SELECT item FROM jsonb_array_elements(p_relations) WITH ORDINALITY AS r(item, ord)
+        ORDER BY CASE WHEN item->>'key' = 'additionalAssets' THEN 0 ELSE 1 END, ord LOOP
+        PERFORM system.character_replace_relation(p_id, v_relation->>'table',
+            v_relation->'discriminator'->>0, v_relation->'discriminator'->>1, v_relation->'rows');
+    END LOOP;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_core_assignments(p_core JSONB)
+RETURNS TEXT LANGUAGE plpgsql AS $$
+DECLARE v_columns TEXT[] := ARRAY[
+    'name', 'image', 'first_message', 'description', 'notes', 'creator_notes',
+    'system_prompt', 'post_history_instructions', 'personality', 'scenario',
+    'example_message', 'creator', 'character_version', 'nickname', 'view_screen',
+    'first_message_index', 'utility_bot', 'is_private', 'realm_id', 'license',
+    'default_variables', 'additional_text', 'translator_note', 'background_html',
+    'background_css', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time'];
+BEGIN
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_core) AS keys(key) WHERE NOT (key = ANY (v_columns))) THEN
+        RAISE EXCEPTION 'Unsupported character core column';
+    END IF;
+    RETURN (SELECT coalesce(string_agg(format('%1$I = src.%1$I', key), ', ') || ', ', '') || 'updated_at = now()'
+        FROM jsonb_object_keys(p_core) AS keys(key));
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_apply_core(p_id TEXT, p_core JSONB)
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE v_set TEXT := system.character_core_assignments(p_core);
+BEGIN
+    EXECUTE format('UPDATE %I.%I AS c SET %s FROM jsonb_populate_record(NULL::%I.%I, $2) src WHERE c.id = $1',
+        'character', 'characters', v_set, 'character', 'characters') USING p_id, p_core;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_replace_attributes(p_id TEXT, p_attrs JSONB, p_keys TEXT[])
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM character.attributes WHERE character_id = p_id AND key = ANY (p_keys);
+    INSERT INTO character.attributes (character_id, key, value)
+    SELECT p_id, item->>'key', item->'value' FROM jsonb_array_elements(p_attrs) AS r(item);
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_apply_update(
+    p_id TEXT, p_core JSONB, p_relations JSONB, p_attrs JSONB, p_attr_keys TEXT[])
+RETURNS TABLE(updated INTEGER, storage_revision BIGINT) LANGUAGE plpgsql AS $$
+DECLARE v_storage BIGINT; v_previous TEXT := current_setting('risu.revision_id', TRUE);
+BEGIN
+    PERFORM 1 FROM character.characters AS c WHERE c.id = p_id AND c.kind = 'character' FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT 0, NULL::BIGINT;
+        RETURN;
+    END IF;
+    v_storage := system.character_begin_revision('character:update');
+    PERFORM system.character_apply_core(p_id, p_core);
+    PERFORM system.character_apply_relations(p_id, p_relations);
+    PERFORM system.character_replace_attributes(p_id, p_attrs, p_attr_keys);
+    PERFORM set_config('risu.revision_id', coalesce(v_previous, ''), TRUE);
+    RETURN QUERY SELECT 1, v_storage;
+END $$;
+
+CREATE OR REPLACE FUNCTION system.character_apply_create(p_name JSONB)
+RETURNS TABLE(id TEXT, storage_revision BIGINT) LANGUAGE plpgsql AS $$
+DECLARE v_id TEXT := pg_catalog.gen_random_uuid()::TEXT; v_storage BIGINT;
+    v_previous TEXT := current_setting('risu.revision_id', TRUE);
+BEGIN
+    v_storage := system.character_begin_revision('character:create');
+    INSERT INTO character.characters (id, position, kind, name)
+    SELECT v_id, coalesce(max(c.position), -1) + 1, 'character',
+        CASE WHEN jsonb_typeof(p_name) = 'string' THEN p_name #>> '{}' ELSE '' END
+    FROM character.characters AS c;
+    IF jsonb_typeof(p_name) <> 'string' THEN
+        INSERT INTO character.attributes (character_id, key, value) VALUES (v_id, 'name', p_name);
+    END IF;
+    PERFORM set_config('risu.revision_id', coalesce(v_previous, ''), TRUE);
+    RETURN QUERY SELECT v_id, v_storage;
+END $$;

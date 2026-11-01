@@ -41,6 +41,7 @@ import type {
 import type {
   Character,
   CharacterFields,
+  CharacterUpdate,
 } from "../../protocol/domain/character.ts";
 
 export type SqlBackendKind =
@@ -220,16 +221,21 @@ export interface ISqlStorage {
   ): Promise<boolean>;
 
   character: {
-    /** Loads the character core row without relations; rejects if the ID is not a character. */
+    /** Loads the canonical handle for the id; rejects if the ID is not a character. */
     load(id: string): Promise<Character>;
-    update(id: string, update: CharacterFields): void;
-    // why is there no kind Parameters?
-    // haejeokRisuai does not support GroupChat, so the kind parameter always defaults to "Character".
     create(name: string): Promise<Character>;
-
-    position: {
-      max(): Promise<number>;
-    };
+    /** Reads exactly the requested fields in one SQL statement (or zero on cache hit). */
+    read<K extends keyof CharacterFields>(
+      id: string,
+      ...keys: [K, ...K[]]
+    ): Promise<Pick<CharacterFields, K>>;
+    /** One statement; missing IDs and non-character IDs are omitted. */
+    readMany?<K extends keyof CharacterFields>(
+      ids: readonly string[],
+      keys: readonly K[],
+    ): Promise<Array<Pick<CharacterFields, K> & { chaId: string }>>;
+    update(id: string, patch: CharacterUpdate): Promise<void>;
+    position: { max(): Promise<number> };
   };
 
   // ── Per-entity lazy loaders ──────────────────────────────────────────

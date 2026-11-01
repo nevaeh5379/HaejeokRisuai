@@ -7,89 +7,66 @@ import type {
   loreSettings,
   triggerscript,
 } from "./database.ts";
-import type { Selectable } from "kysely";
-import type { CharactersTable } from "../tables/character.ts";
 import type { OnnxModelFiles } from "./onnxModelFiles.ts";
 
-export type CharacterFields = {
-  [
-    K in keyof Character as Character[K] extends (...args: never[]) => unknown
-      ? never
-      : K
-  ]: Character[K];
-};
+export interface CharacterFields {
+  illustration?: IllustrationOverrides;
+  type: "character";
+  name: string;
+  image?: string;
+  firstMessage: string;
+  desc: string;
+  notes: string;
 
-// export type CharacterUpdate = Partial<
-//   Omit<CharacterFields, "chaId" | "type" | "detailsLoaded">
-// >;
-
-export class Character {
-  readonly #illustration?: IllustrationOverrides;
-  #type: "character";
-  #name: string;
-  #image?: string;
-// Having this variable is wrong; it isn't supposed to exist.
-  // #detailsLoaded?: boolean;
-  #firstMessage: string;
-  #desc: string;
-  #notes: string;
-
-// Why doesn't the Character class have a 'chats' variable?
-// Because the Chat class is too large. Instead of loading all chats at once, they are lazy-loaded one by one.
-// Q. But, the plugin API needs a Character class to fully load the chats array.
-// A. This class is not for the plugin API; it's for haejeokRiausi. We'll create a separate Character class for plugin API compatibility.
-  //   chats: Chat[];
-  //   chatFolders: ChatFolder[];
-  //   chatPage: number;
-  #viewScreen: "emotion" | "none" | "imggen";
-  #bias: [string, number][];
-  #emotionImages: [string, string][];
-  #globalLore: loreBook[];
-  #chaId: string;
-  #sdData: [string, string][];
-  #newGenData?: {
+  viewScreen: "emotion" | "none" | "imggen";
+  bias: [string, number][];
+  emotionImages: [string, string][];
+  globalLore: loreBook[];
+  chaId: string;
+  sdData: [string, string][];
+  newGenData?: {
     prompt: string;
     negative: string;
     instructions: string;
     emotionInstructions: string;
   };
-  #customscript: customscript[];
-  #triggerscript: triggerscript[];
-  #utilityBot: boolean;
-  #exampleMessage: string;
-  #removedQuotes?: boolean;
-  #creatorNotes: string;
-  #systemPrompt: string;
-  #postHistoryInstructions: string;
-  #alternateGreetings: string[];
-  #tags: string[];
-  #creator: string;
-  #characterVersion: string;
-  #personality: string;
-  #scenario: string;
-  #firstMsgIndex: number;
-  #loreSettings?: loreSettings;
-  #loreExt?: charBookExtensions;
-  #additionalData?: {
+  customscript: customscript[];
+  triggerscript: triggerscript[];
+  utilityBot: boolean;
+  exampleMessage: string;
+  removedQuotes?: boolean;
+  creatorNotes: string;
+  systemPrompt: string;
+  postHistoryInstructions: string;
+  alternateGreetings: string[];
+  tags: string[];
+  creator: string;
+  characterVersion: string;
+  personality: string;
+  scenario: string;
+  firstMsgIndex: number;
+  loreSettings?: loreSettings;
+  loreExt?: charBookExtensions;
+  additionalData?: {
     tag?: string[];
     creator?: string;
     character_version?: string;
   };
-  #ttsMode?: string;
-  #ttsSpeech?: string;
-  #voicevoxConfig?: {
+  ttsMode?: string;
+  ttsSpeech?: string;
+  voicevoxConfig?: {
     speaker?: string;
     SPEED_SCALE?: number;
     PITCH_SCALE?: number;
     INTONATION_SCALE?: number;
     VOLUME_SCALE?: number;
   };
-  #naittsConfig?: {
+  naittsConfig?: {
     customvoice?: boolean;
     voice?: string;
     version?: string;
   };
-  #gptSoVitsConfig?: {
+  gptSoVitsConfig?: {
     url?: string;
     use_auto_path?: boolean;
     ref_audio_path?: string;
@@ -132,7 +109,7 @@ export class Character {
     top_k?: number;
     text_split_method?: "cut0" | "cut1" | "cut2" | "cut3" | "cut4" | "cut5";
   };
-  #fishSpeechConfig?: {
+  fishSpeechConfig?: {
     model?: {
       _id: string;
       title: string;
@@ -141,25 +118,25 @@ export class Character {
     chunk_length: number;
     normalize: boolean;
   };
-  #supaMemory?: boolean;
-  #additionalAssets?: [string, string, string][];
-  #additionalAssetFolders?: Array<{
+  supaMemory?: boolean;
+  additionalAssets?: [string, string, string][];
+  additionalAssetFolders?: Array<{
     id: string;
     name: string;
     parentId?: string;
   }>;
   /** Folder id keyed by the unique additional-asset display name. */
-  #additionalAssetFolderAssignments?: Record<string, string>;
-  #ttsReadOnlyQuoted?: boolean;
-  #replaceGlobalNote: string;
-  #backgroundHTML?: string;
-  #reloadKeys?: number;
-  #backgroundCSS?: string;
-  #license?: string;
-  #private?: boolean;
-  #additionalText: string;
-  #oaiVoice?: string;
-  #oaiTTSConfig?: {
+  additionalAssetFolderAssignments?: Record<string, string>;
+  ttsReadOnlyQuoted?: boolean;
+  replaceGlobalNote: string;
+  backgroundHTML?: string;
+  reloadKeys?: number;
+  backgroundCSS?: string;
+  license?: string;
+  private?: boolean;
+  additionalText: string;
+  oaiVoice?: string;
+  oaiTTSConfig?: {
     /** User opted into advanced OpenAI-compatible settings. When false/absent,
      *  tts.ts ignores the other fields and uses the legacy oaiVoice + db.openAIKey path. */
     enabled?: boolean;
@@ -174,546 +151,635 @@ export class Character {
     /** Response format. Falls back to 'mp3'. */
     format?: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
   };
-  #virtualscript?: string;
-  #scriptstate?: { [key: string]: string | number | boolean };
-  #depth_prompt?: { depth: number; prompt: string };
-  #extentions?: { [key: string]: any };
-  #largePortrait?: boolean;
-  #lorePlus?: boolean;
-  #inlayViewScreen?: boolean;
-  #hfTTS?: {
+  virtualscript?: string;
+  scriptstate?: { [key: string]: string | number | boolean };
+  depth_prompt?: { depth: number; prompt: string };
+  extentions?: { [key: string]: any };
+  largePortrait?: boolean;
+  lorePlus?: boolean;
+  inlayViewScreen?: boolean;
+  hfTTS?: {
     model: string;
     language: string;
   };
-  #vits?: OnnxModelFiles;
-  #realmId?: string;
-  #imported?: boolean;
-  #trashTime?: number;
-  #nickname?: string;
-  #source?: string[];
-  #group_only_greetings?: string[];
-  #creation_date?: number;
-  #modification_date?: number;
-  #ccAssets?: Array<{
+  vits?: OnnxModelFiles;
+  realmId?: string;
+  imported?: boolean;
+  trashTime?: number;
+  nickname?: string;
+  source?: string[];
+  group_only_greetings?: string[];
+  creation_date?: number;
+  modification_date?: number;
+  ccAssets?: Array<{
     type: string;
     uri: string;
     name: string;
     ext: string;
   }>;
-  #defaultVariables?: string;
-  #onboarding?: CharacterOnboarding;
-  #lowLevelAccess?: boolean;
-  #hideChatIcon?: boolean;
-  #lastInteraction?: number;
-  #translatorNote?: string;
-  #doNotChangeSeperateModels?: boolean;
-  #escapeOutput?: boolean;
-  #prebuiltAssetCommand?: boolean;
-  #prebuiltAssetStyle?: string;
-  #prebuiltAssetExclude?: string[];
-  #modules?: string[];
-  #moduleNamespace?: string;
-  #coldstorage?: string;
-  #coldStoragedChats?: string[];
-  #customModuleToggle?: string;
+  defaultVariables?: string;
+  onboarding?: CharacterOnboarding;
+  lowLevelAccess?: boolean;
+  hideChatIcon?: boolean;
+  lastInteraction?: number;
+  translatorNote?: string;
+  doNotChangeSeperateModels?: boolean;
+  escapeOutput?: boolean;
+  prebuiltAssetCommand?: boolean;
+  prebuiltAssetStyle?: string;
+  prebuiltAssetExclude?: string[];
+  modules?: string[];
+  moduleNamespace?: string;
+  coldstorage?: string;
+  coldStoragedChats?: string[];
+  customModuleToggle?: string;
+}
 
-  /** Initializes a character from fields or a database table row. */
-  constructor(
-    fields: Pick<CharacterFields, "chaId"> & Partial<CharacterFields>,
-  );
-  constructor(row: Selectable<CharactersTable>);
-  constructor(
-    input:
-      | (Pick<CharacterFields, "chaId"> & Partial<CharacterFields>)
-      | Selectable<CharactersTable>,
-  ) {
-    const fields = "id" in input ? Character.#fieldsFromRow(input) : input;
+export type CharacterUpdate = Partial<CharacterFields>;
 
-    this.#illustration = fields.illustration;
-    this.#type = fields.type ?? "character";
-    this.#name = fields.name ?? "";
-    this.#image = fields.image;
-    this.#detailsLoaded = fields.detailsLoaded;
-    this.#firstMessage = fields.firstMessage ?? "";
-    this.#desc = fields.desc ?? "";
-    this.#notes = fields.notes ?? "";
-    this.#viewScreen = fields.viewScreen ?? "none";
-    this.#bias = fields.bias ?? [];
-    this.#emotionImages = fields.emotionImages ?? [];
-    this.#globalLore = fields.globalLore ?? [];
-    this.#chaId = fields.chaId;
-    this.#sdData = fields.sdData ?? [];
-    this.#newGenData = fields.newGenData;
-    this.#customscript = fields.customscript ?? [];
-    this.#triggerscript = fields.triggerscript ?? [
-      {
-        comment: "",
-        type: "manual",
-        conditions: [],
-        effect: [{ type: "v2Header", code: "", indent: 0 }],
-      },
-      { comment: "New Event", type: "manual", conditions: [], effect: [] },
-    ];
-    this.#utilityBot = fields.utilityBot ?? false;
-    this.#exampleMessage = fields.exampleMessage ?? "";
-    this.#removedQuotes = fields.removedQuotes;
-    this.#creatorNotes = fields.creatorNotes ?? "";
-    this.#systemPrompt = fields.systemPrompt ?? "";
-    this.#postHistoryInstructions = fields.postHistoryInstructions ?? "";
-    this.#alternateGreetings = fields.alternateGreetings ?? [];
-    this.#tags = fields.tags ?? [];
-    this.#creator = fields.creator ?? "";
-    this.#characterVersion = fields.characterVersion ?? "";
-    this.#personality = fields.personality ?? "";
-    this.#scenario = fields.scenario ?? "";
-    this.#firstMsgIndex = fields.firstMsgIndex ?? -1;
-    this.#loreSettings = fields.loreSettings;
-    this.#loreExt = fields.loreExt;
-    this.#additionalData = fields.additionalData;
-    this.#ttsMode = fields.ttsMode;
-    this.#ttsSpeech = fields.ttsSpeech;
-    this.#voicevoxConfig = fields.voicevoxConfig;
-    this.#naittsConfig = fields.naittsConfig;
-    this.#gptSoVitsConfig = fields.gptSoVitsConfig;
-    this.#fishSpeechConfig = fields.fishSpeechConfig;
-    this.#supaMemory = fields.supaMemory;
-    this.#additionalAssets = fields.additionalAssets;
-    this.#additionalAssetFolders = fields.additionalAssetFolders;
-    this.#additionalAssetFolderAssignments =
-      fields.additionalAssetFolderAssignments;
-    this.#ttsReadOnlyQuoted = fields.ttsReadOnlyQuoted;
-    this.#replaceGlobalNote = fields.replaceGlobalNote ?? "";
-    this.#backgroundHTML = fields.backgroundHTML;
-    this.#reloadKeys = fields.reloadKeys;
-    this.#backgroundCSS = fields.backgroundCSS;
-    this.#license = fields.license;
-    this.#private = fields.private;
-    this.#additionalText = fields.additionalText ?? "";
-    this.#oaiVoice = fields.oaiVoice;
-    this.#oaiTTSConfig = fields.oaiTTSConfig;
-    this.#virtualscript = fields.virtualscript;
-    this.#scriptstate = fields.scriptstate;
-    this.#depth_prompt = fields.depth_prompt;
-    this.#extentions = fields.extentions;
-    this.#largePortrait = fields.largePortrait;
-    this.#lorePlus = fields.lorePlus;
-    this.#inlayViewScreen = fields.inlayViewScreen;
-    this.#hfTTS = fields.hfTTS;
-    this.#vits = fields.vits;
-    this.#realmId = fields.realmId;
-    this.#imported = fields.imported;
-    this.#trashTime = fields.trashTime;
-    this.#nickname = fields.nickname;
-    this.#source = fields.source;
-    this.#group_only_greetings = fields.group_only_greetings;
-    this.#creation_date = fields.creation_date;
-    this.#modification_date = fields.modification_date;
-    this.#ccAssets = fields.ccAssets;
-    this.#defaultVariables = fields.defaultVariables;
-    this.#onboarding = fields.onboarding;
-    this.#lowLevelAccess = fields.lowLevelAccess;
-    this.#hideChatIcon = fields.hideChatIcon;
-    this.#lastInteraction = fields.lastInteraction;
-    this.#translatorNote = fields.translatorNote;
-    this.#doNotChangeSeperateModels = fields.doNotChangeSeperateModels;
-    this.#escapeOutput = fields.escapeOutput;
-    this.#prebuiltAssetCommand = fields.prebuiltAssetCommand;
-    this.#prebuiltAssetStyle = fields.prebuiltAssetStyle;
-    this.#prebuiltAssetExclude = fields.prebuiltAssetExclude;
-    this.#modules = fields.modules;
-    this.#moduleNamespace = fields.moduleNamespace;
-    this.#coldstorage = fields.coldstorage;
-    this.#coldStoragedChats = fields.coldStoragedChats;
-    this.#customModuleToggle = fields.customModuleToggle;
+// Exhaustive at compile time; the runtime list also rejects inherited object keys.
+const FIELD_NAMES = {
+  illustration: true,
+  type: true,
+  name: true,
+  image: true,
+  firstMessage: true,
+  desc: true,
+  notes: true,
+  viewScreen: true,
+  bias: true,
+  emotionImages: true,
+  globalLore: true,
+  chaId: true,
+  sdData: true,
+  newGenData: true,
+  customscript: true,
+  triggerscript: true,
+  utilityBot: true,
+  exampleMessage: true,
+  removedQuotes: true,
+  creatorNotes: true,
+  systemPrompt: true,
+  postHistoryInstructions: true,
+  alternateGreetings: true,
+  tags: true,
+  creator: true,
+  characterVersion: true,
+  personality: true,
+  scenario: true,
+  firstMsgIndex: true,
+  loreSettings: true,
+  loreExt: true,
+  additionalData: true,
+  ttsMode: true,
+  ttsSpeech: true,
+  voicevoxConfig: true,
+  naittsConfig: true,
+  gptSoVitsConfig: true,
+  fishSpeechConfig: true,
+  supaMemory: true,
+  additionalAssets: true,
+  additionalAssetFolders: true,
+  additionalAssetFolderAssignments: true,
+  ttsReadOnlyQuoted: true,
+  replaceGlobalNote: true,
+  backgroundHTML: true,
+  reloadKeys: true,
+  backgroundCSS: true,
+  license: true,
+  private: true,
+  additionalText: true,
+  oaiVoice: true,
+  oaiTTSConfig: true,
+  virtualscript: true,
+  scriptstate: true,
+  depth_prompt: true,
+  extentions: true,
+  largePortrait: true,
+  lorePlus: true,
+  inlayViewScreen: true,
+  hfTTS: true,
+  vits: true,
+  realmId: true,
+  imported: true,
+  trashTime: true,
+  nickname: true,
+  source: true,
+  group_only_greetings: true,
+  creation_date: true,
+  modification_date: true,
+  ccAssets: true,
+  defaultVariables: true,
+  onboarding: true,
+  lowLevelAccess: true,
+  hideChatIcon: true,
+  lastInteraction: true,
+  translatorNote: true,
+  doNotChangeSeperateModels: true,
+  escapeOutput: true,
+  prebuiltAssetCommand: true,
+  prebuiltAssetStyle: true,
+  prebuiltAssetExclude: true,
+  modules: true,
+  moduleNamespace: true,
+  coldstorage: true,
+  coldStoragedChats: true,
+  customModuleToggle: true,
+} satisfies Record<keyof CharacterFields, true>;
+
+export const CHARACTER_KEYS = Object.freeze(
+  Object.keys(FIELD_NAMES) as (keyof CharacterFields)[],
+);
+const KEY_SET = new Set<string>(CHARACTER_KEYS);
+
+const CHARACTER_DEFAULTS: Partial<CharacterFields> = {
+  type: "character",
+  name: "",
+  firstMessage: "",
+  desc: "",
+  notes: "",
+  exampleMessage: "",
+  creatorNotes: "",
+  systemPrompt: "",
+  postHistoryInstructions: "",
+  creator: "",
+  characterVersion: "",
+  personality: "",
+  scenario: "",
+  replaceGlobalNote: "",
+  additionalText: "",
+  viewScreen: "none",
+  firstMsgIndex: -1,
+  utilityBot: false,
+  bias: [],
+  emotionImages: [],
+  globalLore: [],
+  sdData: [],
+  customscript: [],
+  alternateGreetings: [],
+  tags: [],
+  triggerscript: [
+    {
+      comment: "",
+      type: "manual",
+      conditions: [],
+      effect: [{ type: "v2Header", code: "", indent: 0 }],
+    },
+    { comment: "New Event", type: "manual", conditions: [], effect: [] },
+  ],
+};
+
+/** Return only the requested default, with fresh mutable values. */
+export function characterDefault<K extends keyof CharacterFields>(
+  key: K,
+): CharacterFields[K] | undefined {
+  return structuredClone(CHARACTER_DEFAULTS[key]) as
+    CharacterFields[K] | undefined;
+}
+
+export function validateCharacterKeys(
+  keys: readonly string[],
+): (keyof CharacterFields)[] {
+  if (keys.length === 0)
+    throw new TypeError("At least one character field is required");
+  for (const key of keys) {
+    if (!KEY_SET.has(key))
+      throw new TypeError(`Unknown character field: ${key}`);
+  }
+  return [...new Set(keys)] as (keyof CharacterFields)[];
+}
+
+export function validateCharacterUpdate(
+  id: string,
+  patch: CharacterUpdate,
+): void {
+  for (const key of Object.keys(patch)) {
+    if (!KEY_SET.has(key))
+      throw new TypeError(`Unknown character field: ${key}`);
+    const field = key as keyof CharacterFields;
+    const value = patch[field];
+    if (
+      value === undefined &&
+      (field === "chaId" || Object.hasOwn(CHARACTER_DEFAULTS, field))
+    ) {
+      throw new TypeError(`Character field cannot be undefined: ${field}`);
+    }
+    if (
+      (field === "type" && value !== "character") ||
+      (field === "chaId" && value !== id)
+    ) {
+      throw new TypeError(`Character field is immutable: ${field}`);
+    }
+  }
+}
+
+type CharacterRead = <K extends keyof CharacterFields>(
+  ...keys: [K, ...K[]]
+) => Promise<Pick<CharacterFields, K>>;
+type CharacterWrite = (patch: CharacterUpdate) => Promise<void>;
+
+/** A stateless handle: values are owned exclusively by the storage layer. */
+export class Character {
+  readonly id: string;
+  readonly #read: CharacterRead;
+  readonly #write: CharacterWrite;
+
+  constructor(id: string, read: CharacterRead, write: CharacterWrite) {
+    this.id = id;
+    this.#read = read;
+    this.#write = write;
   }
 
-  static #fieldsFromRow(
-    row: Selectable<CharactersTable>,
-  ): Pick<CharacterFields, "chaId"> & Partial<CharacterFields> {
-    return {
-      name: row.name,
-      image: row.image ?? undefined,
-      detailsLoaded: false,
-      firstMessage: row.first_message,
-      desc: row.description ?? "",
-      notes: row.notes ?? "",
-      viewScreen:
-        row.view_screen === "emotion" || row.view_screen === "imggen"
-          ? row.view_screen
-          : "none",
-      chaId: row.id,
-      utilityBot: row.utility_bot ?? false,
-      exampleMessage: row.example_message ?? "",
-      creatorNotes: row.creator_notes ?? "",
-      systemPrompt: row.system_prompt ?? "",
-      postHistoryInstructions: row.post_history_instructions ?? "",
-      creator: row.creator ?? "",
-      characterVersion: row.character_version ?? "",
-      personality: row.personality ?? "",
-      scenario: row.scenario ?? "",
-      firstMsgIndex: row.first_message_index ?? -1,
-      backgroundHTML: row.background_html ?? undefined,
-      backgroundCSS: row.background_css ?? undefined,
-      license: row.license ?? undefined,
-      private: row.is_private ?? undefined,
-      additionalText: row.additional_text ?? "",
-      realmId: row.realm_id ?? undefined,
-      trashTime: row.trash_time === null ? undefined : Number(row.trash_time),
-      nickname: row.nickname ?? undefined,
-      creation_date:
-        row.creation_time === null ? undefined : Number(row.creation_time),
-      modification_date:
-        row.modification_time === null
-          ? undefined
-          : Number(row.modification_time),
-      defaultVariables: row.default_variables ?? undefined,
-      lastInteraction:
-        row.last_interaction_time === null
-          ? undefined
-          : Number(row.last_interaction_time),
-      translatorNote: row.translator_note ?? undefined,
-    };
+  get<K extends keyof CharacterFields>(
+    ...keys: [K, ...K[]]
+  ): Promise<Pick<CharacterFields, K>> {
+    const unique = validateCharacterKeys(keys) as [K, ...K[]];
+    return this.#read(...unique);
   }
 
-  get illustration(): IllustrationOverrides | undefined {
-    return this.#illustration;
+  update(patch: CharacterUpdate): Promise<void> {
+    validateCharacterUpdate(this.id, patch);
+    if (Object.keys(patch).length === 0) return Promise.resolve();
+    return this.#write(patch);
   }
 
-  //I don't know why type can be undefined?
-  get type(): "character" | undefined {
-    return this.#type;
-  }
-  get name(): string {
-    return this.#name;
-  }
-  get image(): string | undefined {
-    return this.#image;
-  }
-  get detailsLoaded(): boolean | undefined {
-    return this.#detailsLoaded;
-  }
-  get firstMessage(): string {
-    return this.#firstMessage;
-  }
-  get desc(): string {
-    return this.#desc;
-  }
-  get notes(): string {
-    return this.#notes;
-  }
-  get viewScreen(): "emotion" | "none" | "imggen" {
-    return this.#viewScreen;
-  }
-  get bias(): [string, number][] {
-    return this.#bias;
-  }
-  get emotionImages(): [string, string][] {
-    return this.#emotionImages;
-  }
-  get globalLore(): loreBook[] {
-    return this.#globalLore;
-  }
-  get chaId(): string {
-    return this.#chaId;
-  }
-  get sdData(): [string, string][] {
-    return this.#sdData;
-  }
-  get newGenData():
-    | {
-        prompt: string;
-        negative: string;
-        instructions: string;
-        emotionInstructions: string;
-      }
-    | undefined {
-    return this.#newGenData;
-  }
-  get customscript(): customscript[] {
-    return this.#customscript;
-  }
-  get triggerscript(): triggerscript[] {
-    return this.#triggerscript;
-  }
-  get utilityBot(): boolean {
-    return this.#utilityBot;
-  }
-  get exampleMessage(): string {
-    return this.#exampleMessage;
-  }
-  get removedQuotes(): boolean | undefined {
-    return this.#removedQuotes;
-  }
-  get creatorNotes(): string {
-    return this.#creatorNotes;
-  }
-  get systemPrompt(): string {
-    return this.#systemPrompt;
-  }
-  get postHistoryInstructions(): string {
-    return this.#postHistoryInstructions;
-  }
-  get alternateGreetings(): string[] {
-    return this.#alternateGreetings;
-  }
-  get tags(): string[] {
-    return this.#tags;
-  }
-  get creator(): string {
-    return this.#creator;
-  }
-  get characterVersion(): string {
-    return this.#characterVersion;
-  }
-  get personality(): string {
-    return this.#personality;
-  }
-  get scenario(): string {
-    return this.#scenario;
-  }
-  get firstMsgIndex(): number {
-    return this.#firstMsgIndex;
-  }
-  get loreSettings(): loreSettings | undefined {
-    return this.#loreSettings;
-  }
-  get loreExt(): charBookExtensions | undefined {
-    return this.#loreExt;
-  }
-  get additionalData():
-    | { tag?: string[]; creator?: string; character_version?: string }
-    | undefined {
-    return this.#additionalData;
-  }
-  get ttsMode(): string | undefined {
-    return this.#ttsMode;
-  }
-  get ttsSpeech(): string | undefined {
-    return this.#ttsSpeech;
-  }
-  get voicevoxConfig():
-    | {
-        speaker?: string;
-        SPEED_SCALE?: number;
-        PITCH_SCALE?: number;
-        INTONATION_SCALE?: number;
-        VOLUME_SCALE?: number;
-      }
-    | undefined {
-    return this.#voicevoxConfig;
-  }
-  get naittsConfig():
-    { customvoice?: boolean; voice?: string; version?: string } | undefined {
-    return this.#naittsConfig;
-  }
-  get gptSoVitsConfig():
-    | {
-        url?: string;
-        use_auto_path?: boolean;
-        ref_audio_path?: string;
-        use_long_audio?: boolean;
-        ref_audio_data?: { fileName: string; assetId: string };
-        volume?: number;
-        text_lang?:
-          | "auto"
-          | "auto_yue"
-          | "en"
-          | "zh"
-          | "ja"
-          | "yue"
-          | "ko"
-          | "all_zh"
-          | "all_ja"
-          | "all_yue"
-          | "all_ko";
-        text?: string;
-        use_prompt?: boolean;
-        prompt?: string | null;
-        prompt_lang?:
-          | "auto"
-          | "auto_yue"
-          | "en"
-          | "zh"
-          | "ja"
-          | "yue"
-          | "ko"
-          | "all_zh"
-          | "all_ja"
-          | "all_yue"
-          | "all_ko";
-        top_p?: number;
-        temperature?: number;
-        speed?: number;
-        top_k?: number;
-        text_split_method?: "cut0" | "cut1" | "cut2" | "cut3" | "cut4" | "cut5";
-      }
-    | undefined {
-    return this.#gptSoVitsConfig;
-  }
-  get fishSpeechConfig():
-    | {
-        model?: { _id: string; title: string; description: string };
-        chunk_length: number;
-        normalize: boolean;
-      }
-    | undefined {
-    return this.#fishSpeechConfig;
-  }
-  get supaMemory(): boolean | undefined {
-    return this.#supaMemory;
-  }
-  get additionalAssets(): [string, string, string][] | undefined {
-    return this.#additionalAssets;
-  }
-  get additionalAssetFolders():
-    Array<{ id: string; name: string; parentId?: string }> | undefined {
-    return this.#additionalAssetFolders;
-  }
-  get additionalAssetFolderAssignments(): Record<string, string> | undefined {
-    return this.#additionalAssetFolderAssignments;
-  }
-  get ttsReadOnlyQuoted(): boolean | undefined {
-    return this.#ttsReadOnlyQuoted;
-  }
-  get replaceGlobalNote(): string {
-    return this.#replaceGlobalNote;
-  }
-  get backgroundHTML(): string | undefined {
-    return this.#backgroundHTML;
-  }
-  get reloadKeys(): number | undefined {
-    return this.#reloadKeys;
-  }
-  get backgroundCSS(): string | undefined {
-    return this.#backgroundCSS;
-  }
-  get license(): string | undefined {
-    return this.#license;
-  }
-  get private(): boolean | undefined {
-    return this.#private;
-  }
-  get additionalText(): string {
-    return this.#additionalText;
-  }
-  get oaiVoice(): string | undefined {
-    return this.#oaiVoice;
-  }
-  get oaiTTSConfig():
-    | {
-        /** User opted into advanced OpenAI-compatible settings. When false/absent, * tts.ts ignores the other fields and uses the legacy oaiVoice + db.openAIKey path. */ enabled?: boolean;
-        /** Base URL, trailing slash trimmed at runtime. Falls back to 'https://api.openai.com/v1'. */ baseURL?: string;
-        /** Per-character API key. Falls back to db.openAIKey; the Authorization header is omitted entirely when both are empty. */ apiKey?: string;
-        /** Model ID. Falls back to 'tts-1'. */ model?: string;
-        /** Freeform voice ID for custom endpoints. Falls back to character.oaiVoice, then to 'alloy'. */ voice?: string;
-        /** Response format. Falls back to 'mp3'. */ format?:
-          "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
-      }
-    | undefined {
-    return this.#oaiTTSConfig;
-  }
-  get virtualscript(): string | undefined {
-    return this.#virtualscript;
-  }
-  get scriptstate(): { [key: string]: string | number | boolean } | undefined {
-    return this.#scriptstate;
-  }
-  get depth_prompt(): { depth: number; prompt: string } | undefined {
-    return this.#depth_prompt;
-  }
-  get extentions(): { [key: string]: any } | undefined {
-    return this.#extentions;
-  }
-  get largePortrait(): boolean | undefined {
-    return this.#largePortrait;
-  }
-  get lorePlus(): boolean | undefined {
-    return this.#lorePlus;
-  }
-  get inlayViewScreen(): boolean | undefined {
-    return this.#inlayViewScreen;
-  }
-  get hfTTS(): { model: string; language: string } | undefined {
-    return this.#hfTTS;
-  }
-  get vits(): OnnxModelFiles | undefined {
-    return this.#vits;
-  }
-  get realmId(): string | undefined {
-    return this.#realmId;
-  }
-  get imported(): boolean | undefined {
-    return this.#imported;
-  }
-  get trashTime(): number | undefined {
-    return this.#trashTime;
-  }
-  get nickname(): string | undefined {
-    return this.#nickname;
-  }
-  get source(): string[] | undefined {
-    return this.#source;
-  }
-  get group_only_greetings(): string[] | undefined {
-    return this.#group_only_greetings;
-  }
-  get creation_date(): number | undefined {
-    return this.#creation_date;
-  }
-  get modification_date(): number | undefined {
-    return this.#modification_date;
-  }
-  get ccAssets():
-    | Array<{ type: string; uri: string; name: string; ext: string }>
-    | undefined {
-    return this.#ccAssets;
-  }
-  get defaultVariables(): string | undefined {
-    return this.#defaultVariables;
-  }
-  get onboarding(): CharacterOnboarding | undefined {
-    return this.#onboarding;
-  }
-  get lowLevelAccess(): boolean | undefined {
-    return this.#lowLevelAccess;
-  }
-  get hideChatIcon(): boolean | undefined {
-    return this.#hideChatIcon;
-  }
-  get lastInteraction(): number | undefined {
-    return this.#lastInteraction;
-  }
-  get translatorNote(): string | undefined {
-    return this.#translatorNote;
-  }
-  get doNotChangeSeperateModels(): boolean | undefined {
-    return this.#doNotChangeSeperateModels;
-  }
-  get escapeOutput(): boolean | undefined {
-    return this.#escapeOutput;
-  }
-  get prebuiltAssetCommand(): boolean | undefined {
-    return this.#prebuiltAssetCommand;
-  }
-  get prebuiltAssetStyle(): string | undefined {
-    return this.#prebuiltAssetStyle;
-  }
-  get prebuiltAssetExclude(): string[] | undefined {
-    return this.#prebuiltAssetExclude;
-  }
-  get modules(): string[] | undefined {
-    return this.#modules;
-  }
-  get moduleNamespace(): string | undefined {
-    return this.#moduleNamespace;
-  }
-  get coldstorage(): string | undefined {
-    return this.#coldstorage;
-  }
-  get coldStoragedChats(): string[] | undefined {
-    return this.#coldStoragedChats;
-  }
-  get customModuleToggle(): string | undefined {
-    return this.#customModuleToggle;
+  setIllustration(value: CharacterFields["illustration"]): Promise<void> {
+    return this.update({ illustration: value });
+  }
+
+  setType(value: CharacterFields["type"]): Promise<void> {
+    return this.update({ type: value });
+  }
+
+  setName(value: CharacterFields["name"]): Promise<void> {
+    return this.update({ name: value });
+  }
+
+  setImage(value: CharacterFields["image"]): Promise<void> {
+    return this.update({ image: value });
+  }
+
+  setFirstMessage(value: CharacterFields["firstMessage"]): Promise<void> {
+    return this.update({ firstMessage: value });
+  }
+
+  setDesc(value: CharacterFields["desc"]): Promise<void> {
+    return this.update({ desc: value });
+  }
+
+  setNotes(value: CharacterFields["notes"]): Promise<void> {
+    return this.update({ notes: value });
+  }
+
+  setViewScreen(value: CharacterFields["viewScreen"]): Promise<void> {
+    return this.update({ viewScreen: value });
+  }
+
+  setBias(value: CharacterFields["bias"]): Promise<void> {
+    return this.update({ bias: value });
+  }
+
+  setEmotionImages(value: CharacterFields["emotionImages"]): Promise<void> {
+    return this.update({ emotionImages: value });
+  }
+
+  setGlobalLore(value: CharacterFields["globalLore"]): Promise<void> {
+    return this.update({ globalLore: value });
+  }
+
+  setChaId(value: CharacterFields["chaId"]): Promise<void> {
+    return this.update({ chaId: value });
+  }
+
+  setSdData(value: CharacterFields["sdData"]): Promise<void> {
+    return this.update({ sdData: value });
+  }
+
+  setNewGenData(value: CharacterFields["newGenData"]): Promise<void> {
+    return this.update({ newGenData: value });
+  }
+
+  setCustomscript(value: CharacterFields["customscript"]): Promise<void> {
+    return this.update({ customscript: value });
+  }
+
+  setTriggerscript(value: CharacterFields["triggerscript"]): Promise<void> {
+    return this.update({ triggerscript: value });
+  }
+
+  setUtilityBot(value: CharacterFields["utilityBot"]): Promise<void> {
+    return this.update({ utilityBot: value });
+  }
+
+  setExampleMessage(value: CharacterFields["exampleMessage"]): Promise<void> {
+    return this.update({ exampleMessage: value });
+  }
+
+  setRemovedQuotes(value: CharacterFields["removedQuotes"]): Promise<void> {
+    return this.update({ removedQuotes: value });
+  }
+
+  setCreatorNotes(value: CharacterFields["creatorNotes"]): Promise<void> {
+    return this.update({ creatorNotes: value });
+  }
+
+  setSystemPrompt(value: CharacterFields["systemPrompt"]): Promise<void> {
+    return this.update({ systemPrompt: value });
+  }
+
+  setPostHistoryInstructions(
+    value: CharacterFields["postHistoryInstructions"],
+  ): Promise<void> {
+    return this.update({ postHistoryInstructions: value });
+  }
+
+  setAlternateGreetings(
+    value: CharacterFields["alternateGreetings"],
+  ): Promise<void> {
+    return this.update({ alternateGreetings: value });
+  }
+
+  setTags(value: CharacterFields["tags"]): Promise<void> {
+    return this.update({ tags: value });
+  }
+
+  setCreator(value: CharacterFields["creator"]): Promise<void> {
+    return this.update({ creator: value });
+  }
+
+  setCharacterVersion(
+    value: CharacterFields["characterVersion"],
+  ): Promise<void> {
+    return this.update({ characterVersion: value });
+  }
+
+  setPersonality(value: CharacterFields["personality"]): Promise<void> {
+    return this.update({ personality: value });
+  }
+
+  setScenario(value: CharacterFields["scenario"]): Promise<void> {
+    return this.update({ scenario: value });
+  }
+
+  setFirstMsgIndex(value: CharacterFields["firstMsgIndex"]): Promise<void> {
+    return this.update({ firstMsgIndex: value });
+  }
+
+  setLoreSettings(value: CharacterFields["loreSettings"]): Promise<void> {
+    return this.update({ loreSettings: value });
+  }
+
+  setLoreExt(value: CharacterFields["loreExt"]): Promise<void> {
+    return this.update({ loreExt: value });
+  }
+
+  setAdditionalData(value: CharacterFields["additionalData"]): Promise<void> {
+    return this.update({ additionalData: value });
+  }
+
+  setTtsMode(value: CharacterFields["ttsMode"]): Promise<void> {
+    return this.update({ ttsMode: value });
+  }
+
+  setTtsSpeech(value: CharacterFields["ttsSpeech"]): Promise<void> {
+    return this.update({ ttsSpeech: value });
+  }
+
+  setVoicevoxConfig(value: CharacterFields["voicevoxConfig"]): Promise<void> {
+    return this.update({ voicevoxConfig: value });
+  }
+
+  setNaittsConfig(value: CharacterFields["naittsConfig"]): Promise<void> {
+    return this.update({ naittsConfig: value });
+  }
+
+  setGptSoVitsConfig(value: CharacterFields["gptSoVitsConfig"]): Promise<void> {
+    return this.update({ gptSoVitsConfig: value });
+  }
+
+  setFishSpeechConfig(
+    value: CharacterFields["fishSpeechConfig"],
+  ): Promise<void> {
+    return this.update({ fishSpeechConfig: value });
+  }
+
+  setSupaMemory(value: CharacterFields["supaMemory"]): Promise<void> {
+    return this.update({ supaMemory: value });
+  }
+
+  setAdditionalAssets(
+    value: CharacterFields["additionalAssets"],
+  ): Promise<void> {
+    return this.update({ additionalAssets: value });
+  }
+
+  setAdditionalAssetFolders(
+    value: CharacterFields["additionalAssetFolders"],
+  ): Promise<void> {
+    return this.update({ additionalAssetFolders: value });
+  }
+
+  setAdditionalAssetFolderAssignments(
+    value: CharacterFields["additionalAssetFolderAssignments"],
+  ): Promise<void> {
+    return this.update({ additionalAssetFolderAssignments: value });
+  }
+
+  setTtsReadOnlyQuoted(
+    value: CharacterFields["ttsReadOnlyQuoted"],
+  ): Promise<void> {
+    return this.update({ ttsReadOnlyQuoted: value });
+  }
+
+  setReplaceGlobalNote(
+    value: CharacterFields["replaceGlobalNote"],
+  ): Promise<void> {
+    return this.update({ replaceGlobalNote: value });
+  }
+
+  setBackgroundHTML(value: CharacterFields["backgroundHTML"]): Promise<void> {
+    return this.update({ backgroundHTML: value });
+  }
+
+  setReloadKeys(value: CharacterFields["reloadKeys"]): Promise<void> {
+    return this.update({ reloadKeys: value });
+  }
+
+  setBackgroundCSS(value: CharacterFields["backgroundCSS"]): Promise<void> {
+    return this.update({ backgroundCSS: value });
+  }
+
+  setLicense(value: CharacterFields["license"]): Promise<void> {
+    return this.update({ license: value });
+  }
+
+  setPrivate(value: CharacterFields["private"]): Promise<void> {
+    return this.update({ private: value });
+  }
+
+  setAdditionalText(value: CharacterFields["additionalText"]): Promise<void> {
+    return this.update({ additionalText: value });
+  }
+
+  setOaiVoice(value: CharacterFields["oaiVoice"]): Promise<void> {
+    return this.update({ oaiVoice: value });
+  }
+
+  setOaiTTSConfig(value: CharacterFields["oaiTTSConfig"]): Promise<void> {
+    return this.update({ oaiTTSConfig: value });
+  }
+
+  setVirtualscript(value: CharacterFields["virtualscript"]): Promise<void> {
+    return this.update({ virtualscript: value });
+  }
+
+  setScriptstate(value: CharacterFields["scriptstate"]): Promise<void> {
+    return this.update({ scriptstate: value });
+  }
+
+  setDepthPrompt(value: CharacterFields["depth_prompt"]): Promise<void> {
+    return this.update({ depth_prompt: value });
+  }
+
+  setExtentions(value: CharacterFields["extentions"]): Promise<void> {
+    return this.update({ extentions: value });
+  }
+
+  setLargePortrait(value: CharacterFields["largePortrait"]): Promise<void> {
+    return this.update({ largePortrait: value });
+  }
+
+  setLorePlus(value: CharacterFields["lorePlus"]): Promise<void> {
+    return this.update({ lorePlus: value });
+  }
+
+  setInlayViewScreen(value: CharacterFields["inlayViewScreen"]): Promise<void> {
+    return this.update({ inlayViewScreen: value });
+  }
+
+  setHfTTS(value: CharacterFields["hfTTS"]): Promise<void> {
+    return this.update({ hfTTS: value });
+  }
+
+  setVits(value: CharacterFields["vits"]): Promise<void> {
+    return this.update({ vits: value });
+  }
+
+  setRealmId(value: CharacterFields["realmId"]): Promise<void> {
+    return this.update({ realmId: value });
+  }
+
+  setImported(value: CharacterFields["imported"]): Promise<void> {
+    return this.update({ imported: value });
+  }
+
+  setTrashTime(value: CharacterFields["trashTime"]): Promise<void> {
+    return this.update({ trashTime: value });
+  }
+
+  setNickname(value: CharacterFields["nickname"]): Promise<void> {
+    return this.update({ nickname: value });
+  }
+
+  setSource(value: CharacterFields["source"]): Promise<void> {
+    return this.update({ source: value });
+  }
+
+  setGroupOnlyGreetings(
+    value: CharacterFields["group_only_greetings"],
+  ): Promise<void> {
+    return this.update({ group_only_greetings: value });
+  }
+
+  setCreationDate(value: CharacterFields["creation_date"]): Promise<void> {
+    return this.update({ creation_date: value });
+  }
+
+  setModificationDate(
+    value: CharacterFields["modification_date"],
+  ): Promise<void> {
+    return this.update({ modification_date: value });
+  }
+
+  setCcAssets(value: CharacterFields["ccAssets"]): Promise<void> {
+    return this.update({ ccAssets: value });
+  }
+
+  setDefaultVariables(
+    value: CharacterFields["defaultVariables"],
+  ): Promise<void> {
+    return this.update({ defaultVariables: value });
+  }
+
+  setOnboarding(value: CharacterFields["onboarding"]): Promise<void> {
+    return this.update({ onboarding: value });
+  }
+
+  setLowLevelAccess(value: CharacterFields["lowLevelAccess"]): Promise<void> {
+    return this.update({ lowLevelAccess: value });
+  }
+
+  setHideChatIcon(value: CharacterFields["hideChatIcon"]): Promise<void> {
+    return this.update({ hideChatIcon: value });
+  }
+
+  setLastInteraction(value: CharacterFields["lastInteraction"]): Promise<void> {
+    return this.update({ lastInteraction: value });
+  }
+
+  setTranslatorNote(value: CharacterFields["translatorNote"]): Promise<void> {
+    return this.update({ translatorNote: value });
+  }
+
+  setDoNotChangeSeperateModels(
+    value: CharacterFields["doNotChangeSeperateModels"],
+  ): Promise<void> {
+    return this.update({ doNotChangeSeperateModels: value });
+  }
+
+  setEscapeOutput(value: CharacterFields["escapeOutput"]): Promise<void> {
+    return this.update({ escapeOutput: value });
+  }
+
+  setPrebuiltAssetCommand(
+    value: CharacterFields["prebuiltAssetCommand"],
+  ): Promise<void> {
+    return this.update({ prebuiltAssetCommand: value });
+  }
+
+  setPrebuiltAssetStyle(
+    value: CharacterFields["prebuiltAssetStyle"],
+  ): Promise<void> {
+    return this.update({ prebuiltAssetStyle: value });
+  }
+
+  setPrebuiltAssetExclude(
+    value: CharacterFields["prebuiltAssetExclude"],
+  ): Promise<void> {
+    return this.update({ prebuiltAssetExclude: value });
+  }
+
+  setModules(value: CharacterFields["modules"]): Promise<void> {
+    return this.update({ modules: value });
+  }
+
+  setModuleNamespace(value: CharacterFields["moduleNamespace"]): Promise<void> {
+    return this.update({ moduleNamespace: value });
+  }
+
+  setColdstorage(value: CharacterFields["coldstorage"]): Promise<void> {
+    return this.update({ coldstorage: value });
+  }
+
+  setColdStoragedChats(
+    value: CharacterFields["coldStoragedChats"],
+  ): Promise<void> {
+    return this.update({ coldStoragedChats: value });
+  }
+
+  setCustomModuleToggle(
+    value: CharacterFields["customModuleToggle"],
+  ): Promise<void> {
+    return this.update({ customModuleToggle: value });
   }
 }

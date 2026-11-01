@@ -4,7 +4,6 @@ import {
   withAuthorNoteDatabase,
   notes as authorNoteSql,
 } from "../authorNotes.ts";
-import { CharactersTable } from "../../../../packages/protocol/tables/character.ts"
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from "crypto";
 import * as fs from "fs/promises";
@@ -184,9 +183,29 @@ import {
   parseRevisionListLimit,
   summarizeStorageSyncRow,
 } from "../sqlStorageReadModels.ts";
-import { Character } from "../../../../packages/protocol/domain/character.ts";
+import {
+  Character,
+  validateCharacterKeys,
+  validateCharacterUpdate,
+  type CharacterFields,
+  type CharacterUpdate,
+} from "../../../../packages/protocol/domain/character.ts";
+import {
+  CHARACTER_FIELD_COLUMNS,
+  CHARACTER_RELATIONS,
+  containsNul,
+  decodeCharacterReadRow,
+  encodeCharacterPatch,
+  type CharacterReadRow,
+} from "./postgresRelationalCodec.ts";
 import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
-import { Kysely, PostgresDialect as KyselyPostgresDialect, Selectable, sql } from "kysely";
+import {
+  Kysely,
+  PostgresDialect as KyselyPostgresDialect,
+  sql,
+  type ExpressionBuilder,
+  type PostgresPool,
+} from "kysely";
 import { Pool } from "pg";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
@@ -772,50 +791,476 @@ type PostgresDatabase =
 & SystemTables
 & ChatTables
 & ColdTables;
-export class NPostgresStorage implements ISqlStorage {
-  db: Kysely<PostgresDatabase>;
+/** Minimal injectable pool for character statement execution. */
+type PoolLike = {
+  connect(): Promise<{
+    query(
+      text: string,
+      parameters: readonly unknown[],
+    ): Promise<{
+      rows: Record<string, unknown>[];
+      rowCount?: number | null;
+      command?: string;
+    }>;
+    release(): void;
+  }>;
+  end(): Promise<void>;
+  options?: object;
+};
 
-  constructor(connectionString: string, poolMax: number = 10) {
-    this.db = new Kysely({
+export class NPostgresStorage implements Pick<
+  ISqlStorage,
+  "character" | "close"
+> {
+  db: Kysely<PostgresDatabase>;
+  private readonly handles = new Map<string, Character>();
+  private readonly cache = new Map<
+    string,
+    {
+      values: Partial<CharacterFields>;
+      revision: number;
+      bytes: number;
+    }
+  >();
+  private seenRevision: number | null = null;
+  private cacheBytes = 0;
+  private cacheEpoch = 0;
+  private readonly limits: { maxEntries: number; maxBytes: number };
+
+  constructor(
+    connectionString: string,
+    poolMax = 10,
+    options?: {
+      pool?: PoolLike;
+      cache?: { maxEntries: number; maxBytes: number };
+    },
+  ) {
+    this.db = this.createDatabase(connectionString, poolMax, options?.pool);
+    this.limits = this.cacheLimits(options?.cache);
+  }
+
+  private createDatabase(
+    connectionString: string,
+    poolMax: number,
+    injected?: PoolLike,
+  ) {
+    const pool = injected ?? new Pool({ max: poolMax, connectionString });
+    return new Kysely<PostgresDatabase>({
       dialect: new KyselyPostgresDialect({
-        pool: new Pool({ max: poolMax, connectionString: connectionString }),
+        pool: {
+          connect: () => pool.connect(),
+          end: () => pool.end(),
+          options: pool.options ?? {},
+        } as PostgresPool,
       }),
     });
+  }
+
+  private cacheLimits(limits = { maxEntries: 64, maxBytes: 4 * 1024 * 1024 }) {
+    if (
+      !Number.isSafeInteger(limits.maxEntries) ||
+      limits.maxEntries < 0 ||
+      !Number.isSafeInteger(limits.maxBytes) ||
+      limits.maxBytes < 0
+    ) {
+      throw new TypeError(
+        "Character cache limits must be nonnegative safe integers",
+      );
+    }
+    return { ...limits };
+  }
+
+  async close(): Promise<void> {
+    this.notifyExternalWrite();
+    await this.db.destroy();
+  }
+
+  /** TODO: server/node/sync가 커밋 후 호출해야 함. */
+  notifyExternalWrite(): void {
+    this.cache.clear();
+    this.cacheBytes = 0;
+    this.seenRevision = null;
+    this.cacheEpoch++;
+  }
+
+  private handle(id: string): Character {
+    let handle = this.handles.get(id);
+    if (!handle) {
+      handle = new Character(
+        id,
+        (...keys) => this.character.read(id, ...keys),
+        (patch) => this.character.update(id, patch),
+      );
+      this.handles.set(id, handle);
+    }
+    return handle;
+  }
+
+  private removeCached(id: string): void {
+    const old = this.cache.get(id);
+    if (old) this.cacheBytes -= old.bytes;
+    this.cache.delete(id);
+  }
+
+  private estimateBytes(value: unknown): number {
+    const pending: unknown[] = [value];
+    const seen = new Set<object>();
+    let bytes = 0;
+    while (pending.length && bytes <= this.limits.maxBytes) {
+      bytes = this.measureValue(pending.pop(), pending, seen, bytes);
+    }
+    return bytes;
+  }
+
+  private measureValue(
+    value: unknown,
+    pending: unknown[],
+    seen: Set<object>,
+    bytes: number,
+  ): number {
+    if (typeof value === "string") return bytes + value.length * 2;
+    if (typeof value === "number") return bytes + 8;
+    if (typeof value === "boolean") return bytes + 4;
+    if (!value || typeof value !== "object" || seen.has(value)) return bytes;
+    seen.add(value);
+    const overhead = Array.isArray(value) ? 24 + 8 * value.length : 32;
+    return this.queueProperties(value, pending, bytes + overhead);
+  }
+
+  private queueProperties(
+    value: object,
+    pending: unknown[],
+    bytes: number,
+  ): number {
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      bytes += key.length * 2 + 8;
+      pending.push((value as Record<string, unknown>)[key]);
+      if (bytes > this.limits.maxBytes) break;
+    }
+    return bytes;
+  }
+
+  private remember(
+    id: string,
+    values: Partial<CharacterFields>,
+    revision: number,
+  ): void {
+    const old = this.cache.get(id);
+    if (old && old.revision > revision) return;
+    // Equal-revision reads add missing keys without replacing cached values.
+    const merged =
+      old?.revision === revision ? { ...values, ...old.values } : values;
+    const bytes = this.estimateBytes(merged) + id.length * 2 + 32;
+    this.removeCached(id);
+    if (this.limits.maxEntries <= 0 || bytes > this.limits.maxBytes) return;
+    this.cache.set(id, { values: merged, revision, bytes });
+    this.cacheBytes += bytes;
+    this.trimCache();
+  }
+
+  private trimCache(): void {
+    while (
+      this.cache.size > this.limits.maxEntries ||
+      this.cacheBytes > this.limits.maxBytes
+    ) {
+      this.removeCached(this.cache.keys().next().value!);
+    }
+  }
+
+  private observeRead(
+    row: CharacterReadRow,
+    values: Partial<CharacterFields>,
+    epoch: number,
+  ): void {
+    if (epoch !== this.cacheEpoch) return;
+    const revision = Number(row.__revision);
+    if (this.seenRevision === null || revision > this.seenRevision) {
+      this.cache.clear();
+      this.cacheBytes = 0;
+      this.seenRevision = revision;
+    }
+    if (revision === this.seenRevision) this.remember(row.id, values, revision);
+  }
+
+  private ownWrite(id: string, revision: number): void {
+    this.cacheEpoch++;
+    if (this.seenRevision === null || revision > this.seenRevision) {
+      this.seenRevision = revision;
+      for (const entry of this.cache.values()) entry.revision = revision;
+    }
+    this.removeCached(id);
+  }
+
+  private readBase(keys: readonly (keyof CharacterFields)[]) {
+    return this.db
+      .selectFrom("character.characters as c")
+      .select(["c.id", "c.kind"])
+      .select((eb) => [
+        this.revisionProjection(eb),
+        this.attributeProjection(eb, keys),
+      ]);
+  }
+
+  private revisionProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+  ) {
+    return eb
+      .selectFrom("system.storage_meta as m")
+      .select("m.revision")
+      .where("m.singleton", "=", true)
+      .as("__revision");
+  }
+
+  private attributeProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+    keys: readonly (keyof CharacterFields)[],
+  ) {
+    return eb
+      .selectFrom("character.attributes as a")
+      .select((eb) =>
+        eb.fn.agg("jsonb_object_agg", ["a.key", "a.value"]).as("attributes"),
+      )
+      .whereRef("a.character_id", "=", "c.id")
+      .where("a.key", "in", keys)
+      .as("__attributes");
+  }
+
+  private addReadField(
+    query: ReturnType<NPostgresStorage["readBase"]>,
+    key: keyof CharacterFields,
+  ) {
+    if (Object.hasOwn(CHARACTER_FIELD_COLUMNS, key)) {
+      const column =
+        CHARACTER_FIELD_COLUMNS[key as keyof typeof CHARACTER_FIELD_COLUMNS];
+      query = query.select(`c.${column}`);
+    }
+    return Object.hasOwn(CHARACTER_RELATIONS, key)
+      ? query.select((eb) => this.relationProjection(eb, key))
+      : query;
+  }
+
+  private relationProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+    key: keyof CharacterFields,
+  ) {
+    const relation =
+      CHARACTER_RELATIONS[key as keyof typeof CHARACTER_RELATIONS];
+    switch (relation.table) {
+      case "character.greetings":
+        return this.greetingProjection(eb, key, relation.discriminator[1]);
+      case "character.scripts":
+        return this.scriptProjection(eb, key, relation.discriminator[1]);
+      case "character.assets":
+        return this.assetProjection(eb, key, relation.discriminator[1]);
+      default:
+        return eb
+          .selectFrom([`${relation.table} as t`])
+          .select((eb) => eb.fn.jsonAgg("t").orderBy("t.position").as("rows"))
+          .whereRef("t.character_id", "=", "c.id")
+          .as(key);
+    }
+  }
+
+  private greetingProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+    key: keyof CharacterFields,
+    kind: "alternate" | "group-only",
+  ) {
+    return eb
+      .selectFrom("character.greetings as t")
+      .select((eb) => eb.fn.jsonAgg("t").orderBy("t.position").as("rows"))
+      .whereRef("t.character_id", "=", "c.id")
+      .where("t.greeting_type", "=", kind)
+      .as(key);
+  }
+
+  private scriptProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+    key: keyof CharacterFields,
+    kind: "custom" | "trigger",
+  ) {
+    return eb
+      .selectFrom("character.scripts as t")
+      .select((eb) => eb.fn.jsonAgg("t").orderBy("t.position").as("rows"))
+      .whereRef("t.character_id", "=", "c.id")
+      .where("t.script_kind", "=", kind)
+      .as(key);
+  }
+
+  private assetProjection(
+    eb: ExpressionBuilder<
+      PostgresDatabase & { c: CharacterTables["character.characters"] },
+      "c"
+    >,
+    key: keyof CharacterFields,
+    source: "additional" | "character-card",
+  ) {
+    return eb
+      .selectFrom("character.assets as t")
+      .select((eb) => eb.fn.jsonAgg("t").orderBy("t.position").as("rows"))
+      .whereRef("t.character_id", "=", "c.id")
+      .where("t.asset_source", "=", source)
+      .as(key);
+  }
+
+  private readStatement(
+    keys: readonly (keyof CharacterFields)[],
+    lookup: string | readonly string[],
+  ) {
+    let query = this.readBase(keys);
+    for (const key of keys) query = this.addReadField(query, key);
+    return (
+      typeof lookup === "string"
+        ? query.where("c.id", "=", lookup)
+        : query.where("c.id", "in", lookup)
+    )
+      .$castTo<CharacterReadRow>()
+      .compile();
+  }
+
+  private cachedProjection<K extends keyof CharacterFields>(
+    id: string,
+    keys: readonly K[],
+  ): Pick<CharacterFields, K> | undefined {
+    const entry = this.cache.get(id);
+    if (
+      this.seenRevision === null ||
+      entry?.revision !== this.seenRevision ||
+      !keys.every((key) => Object.hasOwn(entry.values, key))
+    )
+      return;
+    this.cache.delete(id);
+    this.cache.set(id, entry);
+    return structuredClone(
+      Object.fromEntries(keys.map((key) => [key, entry.values[key]])),
+    ) as Pick<CharacterFields, K>;
+  }
+
+  private async readUncached<K extends keyof CharacterFields>(
+    id: string,
+    keys: readonly K[],
+  ): Promise<Pick<CharacterFields, K>> {
+    const epoch = this.cacheEpoch;
+    const result = await this.db.executeQuery(this.readStatement(keys, id));
+    const row = result.rows[0];
+    if (row?.kind !== "character")
+      throw new Error(`Character not found: ${id}`);
+    const values = decodeCharacterReadRow(row, keys);
+    this.observeRead(row, values, epoch);
+    return structuredClone(values);
+  }
+
+  private updateStatement(
+    id: string,
+    encoded: ReturnType<typeof encodeCharacterPatch>,
+  ) {
+    return this.db
+      .selectFrom(
+        sql<{ updated: number; storage_revision: string | null }>`
+      system.character_apply_update(${id}, ${JSON.stringify(encoded.columns)}::jsonb,
+        ${JSON.stringify(encoded.relations)}::jsonb, ${JSON.stringify(encoded.attributes)}::jsonb,
+        ${encoded.attributeKeys}::text[])`.as("result"),
+      )
+      .selectAll()
+      .compile();
+  }
+
+  private async createCharacter(name: string): Promise<Character> {
+    const query = this.db
+      .selectFrom(
+        sql<{ id: string; storage_revision: string }>`
+      system.character_apply_create(${JSON.stringify(encodePostgresJsonValue(name))}::jsonb)
+    `.as("result"),
+      )
+      .selectAll()
+      .compile();
+    const { id, storage_revision } = (await this.db.executeQuery(query))
+      .rows[0];
+    const revision = Number(storage_revision);
+    this.ownWrite(id, revision);
+    if (revision === this.seenRevision)
+      this.remember(id, { chaId: id, type: "character", name }, revision);
+    return this.handle(id);
   }
 
   character = {
     load: async (id: string): Promise<Character> => {
       assertId(id, "characterId");
-      const row = await this.db
+      const cached = this.handles.get(id);
+      if (cached) return cached;
+      const query = this.db
         .selectFrom("character.characters")
-        .selectAll()
+        .select(["id", "kind"])
         .where("id", "=", id)
-        .executeTakeFirstOrThrow();
-      return new Character(row);
+        .compile();
+      const result = await this.db.executeQuery(query);
+      if (result.rows[0]?.kind !== "character")
+        throw new Error(`Character not found: ${id}`);
+      return this.handle(id);
     },
-    create: async (name: string): Promise<Character> => {
-      const row = (await this.db
-        .insertInto("character.characters")
-        .values({
-          id: uuidv4(),
-          position: await this.character.position.max(),
-          kind: "character",
-          name: name,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow()) satisfies Selectable<CharactersTable>;
-      return new Character(row);
+    create: (name: string): Promise<Character> => this.createCharacter(name),
+    read: async <K extends keyof CharacterFields>(
+      id: string,
+      ...keys: [K, ...K[]]
+    ): Promise<Pick<CharacterFields, K>> => {
+      assertId(id, "characterId");
+      const unique = validateCharacterKeys(keys) as K[];
+      return this.cachedProjection(id, unique) ?? this.readUncached(id, unique);
+    },
+    readMany: async <K extends keyof CharacterFields>(
+      ids: readonly string[],
+      keys: readonly K[],
+    ): Promise<Array<Pick<CharacterFields, K> & { chaId: string }>> => {
+      const unique = validateCharacterKeys(keys) as K[];
+      for (const id of ids) assertId(id, "characterId");
+      const epoch = this.cacheEpoch;
+      const result = await this.db.executeQuery(
+        this.readStatement(unique, ids),
+      );
+      return result.rows
+        .filter((row) => row.kind === "character")
+        .map((row) => {
+          const values = decodeCharacterReadRow(row, unique);
+          this.observeRead(row, values, epoch);
+          return structuredClone({ ...values, chaId: row.id });
+        });
+    },
+    update: async (id: string, patch: CharacterUpdate): Promise<void> => {
+      assertId(id, "characterId");
+      validateCharacterUpdate(id, patch);
+      if (Object.keys(patch).length === 0) return;
+      const result = await this.db.executeQuery(
+        this.updateStatement(id, encodeCharacterPatch(id, patch)),
+      );
+      if (Number(result.rows[0].updated) === 0)
+        throw new Error(`Character not found: ${id}`);
+      this.ownWrite(id, Number(result.rows[0].storage_revision));
     },
     position: {
       max: async (): Promise<number> => {
-        return (
-          (
-            await this.db
-              .selectFrom("character.characters")
-              .select(({ fn }) => fn.max<number>("position").as("maxPosition"))
-              .executeTakeFirstOrThrow()
-          ).maxPosition ?? -1
-        );
+        const query = this.db
+          .selectFrom("character.characters")
+          .select((eb) =>
+            eb.fn.coalesce(eb.fn.max<number>("position"), eb.lit(-1)).as("max"),
+          )
+          .compile();
+        return Number((await this.db.executeQuery(query)).rows[0].max);
       },
     },
   };
