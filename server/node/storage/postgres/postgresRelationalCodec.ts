@@ -75,13 +75,13 @@ function encodeJson(value?: any): any {
 }
 
 function decodeJson(value?: any): any {
-  if (typeof value === "string") {
+  if (typeof value === "string")
     try {
       return decodePostgresJsonValue(JSON.parse(value));
     } catch (e: any) {
       return decodePostgresJsonValue(value);
     }
-  }
+
   return decodePostgresJsonValue(value);
 }
 
@@ -113,9 +113,8 @@ function extractScalarProperties(
     string,
     any,
   ][]) {
-    if (!own(source, property)) {
-      continue;
-    }
+    if (!own(source, property)) continue;
+
     const value: any = source[property];
     delete source[property];
     if (typeof value === "string" && value.includes("\0")) {
@@ -144,9 +143,8 @@ function encodeSetting(key?: any, value?: any): any {
     boolean_value: null,
     json_value: undefined,
   };
-  if (value === null || value === undefined) {
-    return row;
-  }
+  if (value === null || value === undefined) return row;
+
   if (typeof value === "string" && !value.includes("\0")) {
     row.value_type = "text";
     row.text_value = value;
@@ -467,17 +465,17 @@ function splitChat(row?: any): any {
     source.scriptstate &&
     typeof source.scriptstate === "object" &&
     containsNul(source.scriptstate)
-  ) {
+  )
     attributes.push({
       key: "scriptstate",
       value: encodeJson(source.scriptstate),
     });
-  } else if (source.scriptstate && typeof source.scriptstate === "object") {
+  else if (source.scriptstate && typeof source.scriptstate === "object")
     for (const [key, value] of Object.entries(source.scriptstate) as [
       string,
       any,
-    ][]) {
-      if (typeof value === "string" && !value.includes("\0")) {
+    ][])
+      if (typeof value === "string" && !value.includes("\0"))
         scriptState.push({
           chat_id: row.id,
           key,
@@ -486,7 +484,7 @@ function splitChat(row?: any): any {
           number_value: null,
           boolean_value: null,
         });
-      } else if (typeof value === "number" && Number.isFinite(value)) {
+      else if (typeof value === "number" && Number.isFinite(value))
         scriptState.push({
           chat_id: row.id,
           key,
@@ -495,7 +493,7 @@ function splitChat(row?: any): any {
           number_value: value,
           boolean_value: null,
         });
-      } else if (typeof value === "boolean") {
+      else if (typeof value === "boolean")
         scriptState.push({
           chat_id: row.id,
           key,
@@ -504,7 +502,7 @@ function splitChat(row?: any): any {
           number_value: null,
           boolean_value: value,
         });
-      } else {
+      else {
         attributes.push({
           key: "scriptstate",
           value: encodeJson(source.scriptstate),
@@ -512,8 +510,7 @@ function splitChat(row?: any): any {
         scriptState.length = 0;
         break;
       }
-    }
-  }
+
   const unsafeBookmarkNames: any = containsNul(source.bookmarkNames);
   if (unsafeBookmarkNames)
     attributes.push({
@@ -534,15 +531,14 @@ function splitChat(row?: any): any {
   for (const [property, memoryType] of [
     ["hypaV2Data", "hypa-v2"],
     ["hypaV3Data", "hypa-v3"],
-  ]) {
-    if (own(source, property)) {
+  ])
+    if (own(source, property))
       memory.push({
         chat_id: row.id,
         memory_type: memoryType,
         payload: encodeJson(source[property]),
       });
-    }
-  }
+
   const lore: any = splitLore(
     { chat_id: row.id },
     relationalArray(source, "localLore", attributes),
@@ -604,12 +600,12 @@ function splitMessage(row?: any): any {
   const generationInfo: any = containsNul(source.generationInfo)
     ? null
     : source.generationInfo;
-  if (source.generationInfo && generationInfo === null) {
+  if (source.generationInfo && generationInfo === null)
     attributes.push({
       key: "generationInfo",
       value: encodeJson(source.generationInfo),
     });
-  }
+
   const generation: any = generationInfo
     ? {
         chat_id: row.chatId,
@@ -628,12 +624,12 @@ function splitMessage(row?: any): any {
   const promptInfo: any = containsNul(source.promptInfo)
     ? null
     : source.promptInfo;
-  if (source.promptInfo && promptInfo === null) {
+  if (source.promptInfo && promptInfo === null)
     attributes.push({
       key: "promptInfo",
       value: encodeJson(source.promptInfo),
     });
-  }
+
   const prompt: any = promptInfo
     ? {
         info: {
@@ -671,9 +667,9 @@ function splitMessage(row?: any): any {
     "isComment",
     "generationInfo",
     "promptInfo",
-  ]) {
+  ])
     delete source[key];
-  }
+
   attributes.push(...remainingAttributes(source));
   return { core, attributes, generation, prompt };
 }
@@ -722,16 +718,12 @@ function rebuildCharacter(
   const scalarMap: any = options.shallow
     ? SHALLOW_CHARACTER_SCALARS
     : CHARACTER_SCALARS;
-  for (const [property, column] of Object.entries(scalarMap) as [
-    string,
-    any,
-  ][]) {
-    if (row[column] !== null && row[column] !== undefined) {
+  for (const [property, column] of Object.entries(scalarMap) as [string, any][])
+    if (row[column] !== null && row[column] !== undefined)
       character[property] = CHARACTER_BIGINT_COLUMNS.has(column)
         ? Number(row[column])
         : row[column];
-    }
-  }
+
   character.name ??= "";
   character.chatPage ??= 0;
   character.tags = (related.tags || []).map((item?: any) => item.tag);
@@ -762,11 +754,11 @@ function rebuildCharacter(
       (related.greetings || []).some(
         (item?: any) => item.greeting_type === "group-only",
       )
-    ) {
+    )
       character.group_only_greetings = related.greetings
         .filter((item?: any) => item.greeting_type === "group-only")
         .map((item?: any) => item.content);
-    }
+
     character.bias = (related.biases || []).map((item?: any) => [
       item.phrase,
       Number(item.bias),
@@ -825,15 +817,11 @@ function rebuildChat(
 ): any {
   const chat: any = {};
   const scalarMap: any = options.shallow ? SHALLOW_CHAT_SCALARS : CHAT_SCALARS;
-  for (const [property, column] of Object.entries(scalarMap) as [
-    string,
-    any,
-  ][]) {
-    if (row[column] !== null && row[column] !== undefined) {
+  for (const [property, column] of Object.entries(scalarMap) as [string, any][])
+    if (row[column] !== null && row[column] !== undefined)
       chat[property] =
         column === "last_message_time" ? Number(row[column]) : row[column];
-    }
-  }
+
   chat.name ??= "";
   chat.note ??= "";
   if ((related.bookmarks || []).length) {
@@ -853,19 +841,18 @@ function rebuildChat(
       chat.modules = related.modules.map((item?: any) => item.module_id);
     if ((related.scriptState || []).length) {
       chat.scriptstate = {};
-      for (const item of related.scriptState) {
+      for (const item of related.scriptState)
         chat.scriptstate[item.key] =
           item.value_type === "text"
             ? item.text_value
             : item.value_type === "number"
               ? Number(item.number_value)
               : item.boolean_value;
-      }
     }
-    for (const item of related.memory || []) {
+    for (const item of related.memory || [])
       chat[item.memory_type === "hypa-v2" ? "hypaV2Data" : "hypaV3Data"] =
         decodeJson(item.payload);
-    }
+
     applyAttributes(chat, related.attributes);
   }
 
@@ -906,20 +893,20 @@ function rebuildMessage(
       ["input_tokens", "inputTokens"],
       ["output_tokens", "outputTokens"],
       ["max_context", "maxContext"],
-    ]) {
+    ])
       if (generation[column] !== null)
         message.generationInfo[property] = generation[column];
-    }
+
     const timing: any = {};
     for (const [column, property] of [
       ["stage1_time", "stage1"],
       ["stage2_time", "stage2"],
       ["stage3_time", "stage3"],
       ["stage4_time", "stage4"],
-    ]) {
+    ])
       if (generation[column] !== null)
         timing[property] = Number(generation[column]);
-    }
+
     if (Object.keys(timing).length) message.generationInfo.stageTiming = timing;
   }
   if (related.promptInfo) {
@@ -1076,11 +1063,11 @@ export function decodeCharacterReadRow<K extends keyof CharacterFields>(
     let value: unknown = characterDefault(key);
     const column = characterColumn(key);
     const relation = characterRelation(key);
-    if (column && row[column] != null) {
+    if (column && row[column] != null)
       value = CHARACTER_BIGINT_COLUMNS.has(column)
         ? Number(row[column])
         : row[column];
-    } else if (relation) {
+    else if (relation) {
       const raw = row[key];
       const rows: Record<string, unknown>[] =
         typeof raw === "string" ? JSON.parse(raw) : (raw ?? []);
@@ -1116,7 +1103,10 @@ export interface EncodedCharacterPatch {
   }>;
 }
 
-/** Reuse the legacy relational mapping, with explicit empty/NUL overrides. */
+/**
+ * Reuse the legacy relational mapping, with explicit empty/NUL overrides.
+ * @deprecated Retained for legacy PostgresStorage; use typed table writes in NPostgresStorage.
+ */
 export function encodeCharacterPatch(
   id: string,
   patch: CharacterUpdate,
@@ -1134,14 +1124,14 @@ export function encodeCharacterPatch(
     const relation = characterRelation(key);
     const unsafe = containsNul(value);
     result.attributeKeys.push(key);
-    if (column) {
+    if (column)
       result.columns[column] =
         unsafe || value === undefined
           ? column === "name" || column === "first_message"
             ? ""
             : null
           : value;
-    }
+
     if (relation) {
       const split =
         value === undefined || unsafe
@@ -1158,13 +1148,12 @@ export function encodeCharacterPatch(
       (unsafe ||
         (!column && !relation) ||
         (Array.isArray(value) && value.length === 0))
-    ) {
+    )
       result.attributes.push({
         character_id: id,
         key,
         value: encodePostgresJsonValue(value),
       });
-    }
   }
   return result;
 }

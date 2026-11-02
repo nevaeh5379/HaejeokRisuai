@@ -342,10 +342,10 @@ export function validateCharacterKeys(
 ): (keyof CharacterFields)[] {
   if (keys.length === 0)
     throw new TypeError("At least one character field is required");
-  for (const key of keys) {
+  for (const key of keys)
     if (!KEY_SET.has(key))
       throw new TypeError(`Unknown character field: ${key}`);
-  }
+
   return [...new Set(keys)] as (keyof CharacterFields)[];
 }
 

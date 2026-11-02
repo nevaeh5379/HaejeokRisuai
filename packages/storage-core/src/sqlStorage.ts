@@ -221,6 +221,8 @@ export interface ISqlStorage {
   ): Promise<boolean>;
 
   character: {
+    /** Creates a reference without querying or checking whether the character exists. */
+    ref(id: string): Character;
     /** Loads the canonical handle for the id; rejects if the ID is not a character. */
     load(id: string): Promise<Character>;
     create(name: string): Promise<Character>;

@@ -195,7 +195,6 @@ import {
   CHARACTER_RELATIONS,
   containsNul,
   decodeCharacterReadRow,
-  encodeCharacterPatch,
   type CharacterReadRow,
 } from "./postgresRelationalCodec.ts";
 import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
@@ -203,10 +202,12 @@ import {
   Kysely,
   PostgresDialect as KyselyPostgresDialect,
   sql,
+  Transaction,
   type ExpressionBuilder,
   type PostgresPool,
 } from "kysely";
 import { Pool } from "pg";
+import { characterPatch } from "./characterPatch.ts";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
 type SqlParameter = unknown;
@@ -840,14 +841,6 @@ export class NPostgresStorage implements Pick<
     await this.db.destroy();
   }
 
-  private handle(id: string): Character {
-    return new Character(
-      id,
-      (...keys) => this.character.read(id, ...keys),
-      (patch) => this.character.update(id, patch),
-    );
-  }
-
   private readBase(keys: readonly (keyof CharacterFields)[]) {
     return this.db
       .selectFrom("character.characters as c")
@@ -974,33 +967,24 @@ export class NPostgresStorage implements Pick<
       .compile();
   }
 
-  private updateStatement(
-    id: string,
-    encoded: ReturnType<typeof encodeCharacterPatch>,
-  ) {
-    return this.db
-      .selectFrom(
-        sql<{ updated: number; storage_revision: string | null }>`
-      system.character_apply_update(${id}, ${JSON.stringify(encoded.columns)}::jsonb,
-        ${JSON.stringify(encoded.relations)}::jsonb, ${JSON.stringify(encoded.attributes)}::jsonb,
-        ${encoded.attributeKeys}::text[])`.as("result"),
-      )
-      .selectAll()
-      .compile();
-  }
-
-
   character = {
+    ref: (id: string): Character => {
+      return new Character(
+        id,
+        (...keys) => this.character.read(id, ...keys),
+        (patch) => this.character.update(id, patch),
+      );
+    },
     load: async (id: string): Promise<Character> => {
       const query = this.db
         .selectFrom("character.characters")
         .select(["id", "kind"])
         .where("id", "=", id)
         .compile();
-      const result = await this.db.executeQuery(query);
-      if (result.rows[0]?.kind !== "character")
+
+      if ((await this.db.executeQuery(query)).rows[0]?.kind !== "character")
         throw new Error(`Character not found: ${id}`);
-      return this.handle(id);
+      return this.character.ref(id);
     },
     create: async (name: string): Promise<Character> => {
       const query = this.db
@@ -1012,7 +996,7 @@ export class NPostgresStorage implements Pick<
         .selectAll()
         .compile();
       const { id } = (await this.db.executeQuery(query)).rows[0];
-      return this.handle(id);
+      return this.character.ref(id);
     },
     read: async <K extends keyof CharacterFields>(
       id: string,
@@ -1043,15 +1027,90 @@ export class NPostgresStorage implements Pick<
           return structuredClone({ ...values, chaId: row.id });
         });
     },
+    exists: async (
+      id: string,
+      trx?: Transaction<PostgresDatabase>,
+    ): Promise<boolean> => {
+      let query = (trx ?? this.db)
+        .selectFrom("character.characters")
+        .select("id")
+        .where("id", "=", id)
+        .where("kind", "=", "character");
+
+      if (trx) query = query.forUpdate();
+
+      return (await query.executeTakeFirst()) !== undefined;
+    },
     update: async (id: string, patch: CharacterUpdate): Promise<void> => {
-      assertId(id, "characterId");
       validateCharacterUpdate(id, patch);
       if (Object.keys(patch).length === 0) return;
-      const result = await this.db.executeQuery(
-        this.updateStatement(id, encodeCharacterPatch(id, patch)),
-      );
-      if (Number(result.rows[0].updated) === 0)
-        throw new Error(`Character not found: ${id}`);
+      const encoded = characterPatch(id, patch);
+      await this.db.transaction().execute(async (trx) => {
+        if (!(await this.character.exists(id, trx)))
+          throw new Error(`Character not found: ${id}`);
+
+        await sql`select system.character_begin_revision('character:update')`.execute(
+          trx,
+        );
+
+        await trx
+          .updateTable("character.characters")
+          .set({ ...encoded.columns, updated_at: sql`now()` })
+          .where("id", "=", id)
+          .execute();
+
+        // Delete all patched relations first so asset kinds can share position keys.
+        for (const key of Object.keys(
+          encoded.relations,
+        ) as (keyof typeof encoded.relations)[]) {
+          const relation = CHARACTER_RELATIONS[key];
+          let deletion = trx
+            .deleteFrom(relation.table)
+            .where(sql.ref("character_id"), "=", id);
+          if ("discriminator" in relation)
+            deletion = deletion.where(
+              sql.ref(relation.discriminator[0]),
+              "=",
+              relation.discriminator[1],
+            );
+          await deletion.execute();
+        }
+        for (const key of Object.keys(
+          encoded.relations,
+        ) as (keyof typeof encoded.relations)[]) {
+          const relation = CHARACTER_RELATIONS[key];
+          const rows = encoded.relations[key];
+          if (!rows?.length) continue;
+          let offset = 0;
+          if (relation.table === "character.assets") {
+            const remaining = await trx
+              .selectFrom("character.assets")
+              .select((eb) => eb.fn.max<number>("position").as("position"))
+              .where("character_id", "=", id)
+              .executeTakeFirstOrThrow();
+            offset = (remaining.position ?? -1) + 1;
+          }
+          if (relation.table === "character.assets" && offset)
+            for (const row of rows) row.position += offset;
+          const batchSize = Math.min(BULK_INSERT_BATCH_ROWS, 1000);
+          for (let start = 0; start < rows.length; start += batchSize)
+            await trx
+              .insertInto(relation.table)
+              .values(rows.slice(start, start + batchSize))
+              .execute();
+        }
+        if (encoded.attributeKeys.length)
+          await trx
+            .deleteFrom("character.attributes")
+            .where("character_id", "=", id)
+            .where("key", "in", encoded.attributeKeys)
+            .execute();
+        if (encoded.attributes.length)
+          await trx
+            .insertInto("character.attributes")
+            .values(encoded.attributes)
+            .execute();
+      });
     },
     position: {
       max: async (): Promise<number> => {
