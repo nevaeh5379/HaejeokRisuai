@@ -974,18 +974,6 @@ export class NPostgresStorage implements Pick<
       .compile();
   }
 
-  private async readCharacter<K extends keyof CharacterFields>(
-    id: string,
-    keys: readonly K[],
-  ): Promise<Pick<CharacterFields, K>> {
-    const result = await this.db.executeQuery(this.readStatement(keys, id));
-    const row = result.rows[0];
-    if (row?.kind !== "character")
-      throw new Error(`Character not found: ${id}`);
-    const values = decodeCharacterReadRow(row, keys);
-    return structuredClone(values);
-  }
-
   private updateStatement(
     id: string,
     encoded: ReturnType<typeof encodeCharacterPatch>,
@@ -1032,7 +1020,12 @@ export class NPostgresStorage implements Pick<
     ): Promise<Pick<CharacterFields, K>> => {
       assertId(id, "characterId");
       const unique = validateCharacterKeys(keys) as K[];
-      return this.readCharacter(id, unique);
+      const result = await this.db.executeQuery(this.readStatement(unique, id));
+      const row = result.rows[0];
+      if (row?.kind !== "character")
+        throw new Error(`Character not found: ${id}`);
+      const values = decodeCharacterReadRow(row, unique);
+      return structuredClone(values);
     },
     readMany: async <K extends keyof CharacterFields>(
       ids: readonly string[],
