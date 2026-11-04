@@ -4,7 +4,7 @@ import {
   expandChatBranchesForCompatibility,
 } from "./backupCompatibility";
 import { coldStorageHeader } from "./process/coldstorageData";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 function ids() {

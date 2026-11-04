@@ -5,7 +5,7 @@ import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMig
 import type {
   DatabaseSettings,
   groupChat,
-  Chat,
+  ChatState as Chat,
   Message,
   RisuPersona,
   botPreset,

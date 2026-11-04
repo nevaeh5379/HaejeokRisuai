@@ -1,4 +1,4 @@
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import { requireChatTarget, type ChatTarget } from "./chatTarget";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { globalAuthorNoteStore } from "./stores/domain/globalAuthorNoteStore";
@@ -24,10 +24,11 @@ class NoteSourceService {
     )
       throw new AuthorNoteError("missing", source.noteId);
 
-    
     // const { chat } = requireChatTarget(target);
 
-    const chat = characterStore.getById(target.characterId)!.chats.find(chat => chat.id === target.chatId);
+    const chat = characterStore
+      .getById(target.characterId)!
+      .chats.find((chat) => chat.id === target.chatId);
     if (source.mode === "local") delete chat.globalAuthorNoteId;
     else chat.globalAuthorNoteId = source.noteId;
     characterStore.markChatDirty(target.chatId);

@@ -1,5 +1,5 @@
 import type {
-  Chat,
+  ChatState as Chat,
   Message,
   groupChat,
   botPreset,

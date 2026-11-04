@@ -5,7 +5,7 @@ import {
 import { applyAuthorNotes } from "@risuai/protocol/src/authorNoteSql.ts";
 import { readNote, resolveNote } from "../../src/ts/authorNote";
 import { globalAuthorNoteStore } from "../../src/ts/stores/domain/globalAuthorNoteStore";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 
 export async function probeAuthorNoteBrowser() {

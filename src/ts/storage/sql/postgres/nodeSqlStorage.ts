@@ -11,7 +11,7 @@ import type {
   DatabaseSettings,
   Message,
   groupChat,
-  Chat,
+  ChatState as Chat,
   RisuPersona,
   botPreset,
   loreBook,

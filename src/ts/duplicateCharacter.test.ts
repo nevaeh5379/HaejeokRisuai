@@ -4,7 +4,7 @@ import { duplicateCharacter, exportAllChats, exportChat } from "./characters";
 import { selectedCharID } from "./stores.svelte";
 import type {
   groupChat,
-  Chat,
+  ChatState as Chat,
   Message,
 } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";

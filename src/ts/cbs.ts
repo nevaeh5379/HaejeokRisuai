@@ -1,5 +1,5 @@
 import type {
-  Chat,
+  ChatState as Chat,
   groupChat,
   loreBook,
 } from "@risuai/protocol/domain/database.ts";

@@ -3,7 +3,7 @@ import type {
   BtwSession,
   BtwSessionConfig,
   botPreset,
-  Chat,
+  ChatState as Chat,
   groupChat,
   Message,
   MessagePresetInfo,

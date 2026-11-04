@@ -28,7 +28,7 @@
     import { appVer } from "../../ts/appVersion";
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
     import type { SqlChatBranchGraphData } from "@risuai/storage-core/sqlStorage";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel, isTauriWindows } from "src/ts/platform";
     import {

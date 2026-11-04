@@ -14,7 +14,10 @@ import {
 } from "./hypamemoryv2";
 import type { DisplayMode as ModalDisplayMode } from "@risuai/protocol/domain/hypaV3DisplayMode.ts";
 import { parseChatML } from "src/ts/parser/chatML";
-import type { Chat, groupChat } from "@risuai/protocol/domain/database.ts";
+import type {
+  ChatState as Chat,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import { type OpenAIChat } from "@risuai/chat-core/types.ts";

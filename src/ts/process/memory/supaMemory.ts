@@ -1,6 +1,9 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
-import type { Chat, groupChat } from "@risuai/protocol/domain/database.ts";
+import type {
+  ChatState as Chat,
+  groupChat,
+} from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import type { ChatExecutionTarget } from "src/ts/chatTarget";

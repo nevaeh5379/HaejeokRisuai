@@ -2,7 +2,7 @@ import { readNote } from "../../authorNote";
 import { get } from "svelte/store";
 import type {
   groupChat,
-  Chat,
+  ChatState as Chat,
   MessagePresetInfo,
 } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";

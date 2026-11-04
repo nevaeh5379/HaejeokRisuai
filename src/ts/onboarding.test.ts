@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 const vars = vi.hoisted(() => ({ get: vi.fn(() => "null"), set: vi.fn() }));
 vi.mock("./parser/chatVar.svelte", () => ({

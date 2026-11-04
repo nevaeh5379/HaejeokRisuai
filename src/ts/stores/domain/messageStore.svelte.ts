@@ -1,4 +1,7 @@
-import type { Message, Chat } from "@risuai/protocol/domain/database.ts";
+import type {
+  Message,
+  ChatState as Chat,
+} from "@risuai/protocol/domain/database.ts";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { characterStore } from "./characterStore.svelte";
 import { settingsStore } from "./settingsStore.svelte";

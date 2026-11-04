@@ -1,5 +1,9 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import type { Chat, ChatBranchReason, Message } from "@risuai/protocol/domain/database.ts";
+import type {
+  ChatState as Chat,
+  ChatBranchReason,
+  Message,
+} from "@risuai/protocol/domain/database.ts";
 import type { SqlChatBranchGraphData } from "@risuai/storage-core/sqlStorage";
 
 export interface ChatGraphTerminal {
@@ -112,8 +116,7 @@ export function buildChatGraphPackedLanes(
       chain.start = Math.min(chain.start, flow);
       chain.end = Math.max(chain.end, flow);
       const childEdges = children.get(currentId) ?? [];
-      const primary =
-        childEdges.find((child) => child.active) ?? childEdges[0];
+      const primary = childEdges.find((child) => child.active) ?? childEdges[0];
       for (const child of childEdges) {
         if (child.id === primary?.id) continue;
         if (!chainIdByNodeId.has(child.id)) chain.forkChildren.push(child.id);
@@ -219,9 +222,7 @@ export function buildChatGraphGitRows(
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const orderById = new Map(nodes.map((node, index) => [node.id, index]));
   const children = new Map<string, string[]>();
-  const indegree = new Map<string, number>(
-    nodes.map((node) => [node.id, 0]),
-  );
+  const indegree = new Map<string, number>(nodes.map((node) => [node.id, 0]));
   const parentOf = new Map<string, string>();
   for (const edge of graph.edges) {
     if (!indegree.has(edge.from) || !indegree.has(edge.to)) continue;
@@ -601,7 +602,8 @@ export function buildChatMessageGraph(
         visitedOriginalIds.add(targetId);
         ensureMessage(targetId);
 
-        const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
+        const collapseThreshold =
+          density === "branches" ? 1 : MIN_COLLAPSED_RUN;
         if (hiddenIds.length >= collapseThreshold) {
           const first = mutableNodes.get(hiddenIds[0])!;
           const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
@@ -668,7 +670,6 @@ export function buildChatMessageGraph(
     displayRootIds.push(nodeId);
     renderFromMessage(nodeId);
   }
-
 
   // Hierarchical compact tree layout using depth contours (Reingold-Tilford variant).
   // Single-child chain nodes store only a compact {tailId, length} record instead
@@ -840,8 +841,7 @@ export function buildChatMessageGraph(
         contourLength(rootId),
       );
       for (let d = 0; d < overlap; d++) {
-        const gap =
-          (globalRightContour[d] ?? 0) - (leftAt(rootId, d) ?? 0) + 1;
+        const gap = (globalRightContour[d] ?? 0) - (leftAt(rootId, d) ?? 0) + 1;
         if (gap > shift) shift = gap;
       }
       rootPositions.set(rootId, shift);
@@ -863,7 +863,11 @@ export function buildChatMessageGraph(
 
   // Assign absolute coordinates (iterative DFS: safe for long linear chains)
   const positions = new Map<string, { x: number; y: number }>();
-  const assignPositions = (startNodeId: string, absX: number, depth: number) => {
+  const assignPositions = (
+    startNodeId: string,
+    absX: number,
+    depth: number,
+  ) => {
     const stack: { nodeId: string; absX: number; depth: number }[] = [
       { nodeId: startNodeId, absX, depth },
     ];

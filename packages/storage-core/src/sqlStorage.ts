@@ -1,7 +1,11 @@
 import type {
+  Chat,
+  ChatFields,
+  ChatUpdate,
+} from "../../protocol/domain/chat.ts";
+import type {
   DatabaseSettings,
   groupChat,
-  Chat,
   Message,
   RisuPersona,
   botPreset,
@@ -75,10 +79,6 @@ export interface SqlStorageSyncSummary {
     messages: number;
     total: number;
   };
-}
-
-export interface SqlChatLoadOptions {
-  messageLimit?: number;
 }
 
 export interface SqlMessagePage {
@@ -182,7 +182,7 @@ export interface BotPresetSummary {
  *  - `loadStartupData()` returns SettingsStore-owned settings and lightweight
  *    character shells as separate domains.
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
- *  - `chat.load(id)` returns a full chat *with* its message array.
+ *  - `chat.load(id)` returns a stateless handle; messages use the message APIs.
  *  - Domain loaders (`persona.list`, `preset.list`/`preset.load`, …) fetch one domain at
  *    a time, allowing the adapter to keep unloaded domains out of memory.
  */
@@ -223,7 +223,36 @@ export interface ISqlStorage {
   };
 
   chat: {
-    load(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
+    /** Creates a handle without querying or checking existence. */
+    ref(id: string): Chat;
+    /** Checks existence and returns a handle; rejects for a missing chat. */
+    load(id: string): Promise<Chat>;
+    /** Reads only requested fields; does not hydrate messages or unrelated large fields. */
+    read<K extends keyof ChatFields>(
+      id: string,
+      ...keys: [K, ...K[]]
+    ): Promise<Pick<ChatFields, K>>;
+    /** Atomic patch: omitted fields survive; supplied collections replace only that field.
+     * Explicit undefined clears an optional field. Uses the shared revision-guarded write path. */
+    update(id: string, patch: ChatUpdate): Promise<void>;
+    count(characterId: string): Promise<number>;
+    /** Bounded range ordered by position then ID. Always returns ID and position.
+     * No field values besides the explicitly requested keys are hydrated. */
+    list<K extends keyof ChatFields = never>(
+      characterId: string,
+      options: { offset: number; limit: number },
+      ...keys: K[]
+    ): Promise<Array<Pick<ChatFields, K> & { id: string; position: number }>>;
+    /** Appends if position is omitted. Parent and initial chat state are persisted atomically. */
+    create(input: {
+      characterId: string;
+      name: string;
+      position?: number;
+    }): Promise<Chat>;
+    /** Deletes the chat and its owned records atomically. Rejects for a missing chat. */
+    delete(id: string): Promise<void>;
+    /** Moves within the same character, updating affected sibling positions atomically. */
+    move(id: string, position: number): Promise<void>;
     /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
     listRecent(
       limit?: number,

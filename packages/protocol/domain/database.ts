@@ -1,3 +1,4 @@
+import type { ChatFields } from "./chat.ts";
 import type { character } from "./legacy/character.ts";
 import type { PresetSettings } from "./presetSchema.ts";
 import type { PluginMetadata } from "./pluginTypes.ts";
@@ -16,12 +17,10 @@ import type {
   ModuleSandboxGroup,
 } from "./modules.ts";
 export type { RisuModule, ModuleFolder, ModuleSandboxGroup };
-import type { SerializableHypaV2Data } from "./hypaV2Data.ts";
 import type { LLMFlagValue as LLMFlags } from "../modelFlags.ts";
 import type { LLMFormatValue as LLMFormat } from "../modelFormat.ts";
 import type { LLMTokenizerValue as LLMTokenizer } from "../modelTokenizer.ts";
 import type { HypaModel } from "./hypaModel.ts";
-import type { SerializableHypaV3Data } from "./hypaV3Data.ts";
 import type { Hotkey } from "./hotkeys.ts";
 import type { OpenAIChat } from "../../chat-core/types.ts";
 import type { Loadout } from "./loadout.ts";
@@ -641,7 +640,7 @@ export interface groupChat {
   image?: string;
   detailsLoaded?: boolean;
   firstMessage: string;
-  chats: Chat[];
+  chats: ChatState[];
   chatFolders: ChatFolder[];
   chatPage: number;
   name: string;
@@ -914,49 +913,25 @@ export interface BtwSession {
   config: BtwSessionConfig;
 }
 
-export interface Chat {
-  message: Message[];
-  note: string;
-  globalAuthorNoteId?: string;
-  name: string;
-  localLore: loreBook[];
-  sdData?: string;
-  supaMemoryData?: string;
-  hypaV2Data?: SerializableHypaV2Data;
-  lastMemory?: string;
-  suggestMessages?: string[];
-  isStreaming?: boolean;
-  activeStreamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode;
-  scriptstate?: { [key: string]: string | number | boolean };
-  modules?: string[];
+/** Materialized application state during migration to stateless Chat handles.
+ * This includes fork-specific and UI fields and is not an upstream compatibility contract. */
+export interface ChatState extends Omit<
+  ChatFields,
+  "id" | "characterId" | "position"
+> {
   id?: string;
-  bindedPersona?: string;
-  fmIndex?: number;
-  hypaV3Data?: SerializableHypaV3Data;
-  folderId?: string;
-  /** @deprecated Session-level branching from the first implementation. */
+  message: Message[];
+  /** @deprecated Session-level branching, retained for migration only. */
   branch?: ChatBranchInfo;
-  /** Active pointer for the persistent parent-linked branch graph. */
-  activeBranchId?: string;
-  /** @deprecated Migration input only. Runtime branches live in persistent SQL graph tables. */
+  /** @deprecated Runtime branches live in persistent SQL graph tables. */
   branchState?: ChatBranchState;
-  lastDate?: number;
-  bookmarks?: string[];
-  bookmarkNames?: { [chatId: string]: string };
-  useLocallySetGlobalVariables?: boolean;
-  GLGlobalVariables?: { [key: string]: string };
-  onboardingDone?: boolean;
   messagesLoaded?: boolean;
-  /** Absolute index of message[0] when only a recent SQL page is hydrated. */
+  /** Absolute position of the first hydrated message. */
   messageOffset?: number;
   messageTotal?: number;
   messagesFullyLoaded?: boolean;
-  /** Transient guard while generation needs the complete message array. */
   preventMessageCompaction?: boolean;
   detailsLoaded?: boolean;
-  /** Persistent side conversations opened through /btw. */
-  btwSessions?: BtwSession[];
-  activeBtwSessionId?: string;
 }
 
 export interface ChatFolder {

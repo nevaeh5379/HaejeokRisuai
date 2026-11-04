@@ -2,7 +2,7 @@ import { createSqlMessageMutations } from "../sqlCommitCoordinator";
 import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import type {
   botPreset,
-  Chat,
+  ChatState as Chat,
   customscript,
   DatabaseSettings,
   groupChat,

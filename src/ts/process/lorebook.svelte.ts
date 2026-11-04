@@ -2,7 +2,7 @@ import { get } from "svelte/store";
 import { getChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { selectedCharID } from "../stores.svelte";
 import type {
-  Chat,
+  ChatState as Chat,
   Message,
   loreBook,
 } from "@risuai/protocol/domain/database.ts";

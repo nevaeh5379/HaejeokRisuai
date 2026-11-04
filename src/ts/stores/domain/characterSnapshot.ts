@@ -1,5 +1,5 @@
 import isEqual from "lodash/isEqual";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import {
   sqlChatData,
   sqlMessageData,

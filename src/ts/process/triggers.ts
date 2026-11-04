@@ -6,7 +6,7 @@ import { AuthorNoteError } from "../../../packages/protocol/src/authorNotes.ts";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { parseChatML } from "../parser/chatML";
 import { risuChatParser } from "../parser/parser.svelte";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import { tokenize } from "../tokenizer";

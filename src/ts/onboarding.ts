@@ -2,7 +2,7 @@ import type { ChatExecutionTarget } from "./chatTarget";
 import { v4 } from "uuid";
 import type {
   CharacterOnboarding,
-  Chat,
+  ChatState as Chat,
   groupChat,
   OnboardingQuestion,
 } from "@risuai/protocol/domain/database.ts";

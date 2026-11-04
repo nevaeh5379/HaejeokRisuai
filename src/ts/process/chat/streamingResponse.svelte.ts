@@ -1,6 +1,6 @@
 import type {
   groupChat,
-  Chat,
+  ChatState as Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
   StreamingDisplayOptimizationMode,

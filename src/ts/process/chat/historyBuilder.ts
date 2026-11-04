@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type {
-  Chat,
+  ChatState as Chat,
   groupChat,
   Message,
 } from "@risuai/protocol/domain/database.ts";

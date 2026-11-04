@@ -19,7 +19,7 @@ import {
 } from "../parser/parser.svelte";
 import { LuaEngine, LuaFactory } from "wasmoon";
 import type {
-  Chat,
+  ChatState as Chat,
   groupChat,
   triggerscript,
 } from "@risuai/protocol/domain/database.ts";

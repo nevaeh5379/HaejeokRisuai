@@ -1,7 +1,7 @@
 import type { IllustrationOverrides } from "../../src/illustration.ts";
 import type { OnnxModelFiles } from "../onnxModelFiles.ts";
 import type {
-  Chat,
+  ChatState as Chat,
   ChatFolder,
   loreBook,
   customscript,

@@ -7,7 +7,7 @@
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
     import Chat from "./Chat.svelte";
-import type { Chat as ChatSession, Message } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as ChatSession, Message } from "@risuai/protocol/domain/database.ts";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
     import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chat/runtimeState";

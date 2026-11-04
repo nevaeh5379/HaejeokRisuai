@@ -4,7 +4,7 @@ import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/files/assetPersistence";
 import type {
   groupChat,
-  Chat,
+  ChatState as Chat,
   loreBook,
   Message,
 } from "@risuai/protocol/domain/database.ts";

@@ -8,7 +8,7 @@ import {
   alertWait,
 } from "../alert";
 import { get } from "svelte/store";
-import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { saveImage } from "../storage/files/assetPersistence";
 import { selectedCharID } from "../stores.svelte";

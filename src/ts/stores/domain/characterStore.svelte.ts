@@ -1,4 +1,7 @@
-import type { groupChat, Chat } from "@risuai/protocol/domain/database.ts";
+import type {
+  groupChat,
+  ChatState as Chat,
+} from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";

@@ -12,7 +12,7 @@ import {
   alertWait,
 } from "../alert";
 import type {
-  Chat,
+  ChatState as Chat,
   customscript,
   groupChat,
   loreBook,

@@ -8,7 +8,10 @@ import {
   getChatBranchesFromPersistentGraph,
   type ChatGraphTimeline,
 } from "./branches";
-import type { Chat, Message } from "@risuai/protocol/domain/database.ts";
+import type {
+  ChatState as Chat,
+  Message,
+} from "@risuai/protocol/domain/database.ts";
 
 function message(chatId: string, role: Message["role"], data: string): Message {
   return { chatId, role, data };
@@ -287,9 +290,17 @@ describe("buildChatMessageGraph", () => {
 
       // Add rerolls at various turns
       if (turn % 3 === 1) {
-        const rerollMsg = message(`c-${turn}-reroll`, "char", `char ${turn} reroll`);
+        const rerollMsg = message(
+          `c-${turn}-reroll`,
+          "char",
+          `char ${turn} reroll`,
+        );
         timelines.push(
-          timeline(`reroll-${turn}`, [...mainMessages.slice(0, -1), rerollMsg], false)
+          timeline(
+            `reroll-${turn}`,
+            [...mainMessages.slice(0, -1), rerollMsg],
+            false,
+          ),
         );
       }
     }
@@ -304,7 +315,9 @@ describe("buildChatMessageGraph", () => {
     const parentNodes = graph.nodes.filter((n) => n.branchPoint);
     for (const parent of parentNodes) {
       const childEdges = graph.edges.filter((e) => e.from === parent.id);
-      const childNodes = childEdges.map((e) => graph.nodes.find((n) => n.id === e.to)!);
+      const childNodes = childEdges.map((e) =>
+        graph.nodes.find((n) => n.id === e.to)!,
+      );
       if (childNodes.length >= 2) {
         const minChildX = Math.min(...childNodes.map((c) => c.x));
         const maxChildX = Math.max(...childNodes.map((c) => c.x));
@@ -346,7 +359,12 @@ describe("buildChatGraphPackedLanes", () => {
   });
 
   it("reuses lanes for branches that never overlap in flow order", () => {
-    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+    const withTime = (
+      id: string,
+      role: Message["role"],
+      data: string,
+      time: number,
+    ) => ({
       ...message(id, role, data),
       time,
     });
@@ -377,7 +395,12 @@ describe("buildChatGraphPackedLanes", () => {
 
 describe("buildChatGraphGitRows", () => {
   it("assigns every node its own row ordered by message time", () => {
-    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+    const withTime = (
+      id: string,
+      role: Message["role"],
+      data: string,
+      time: number,
+    ) => ({
       ...message(id, role, data),
       time,
     });
@@ -423,7 +446,12 @@ describe("buildChatGraphGitRows", () => {
   });
 
   it("keeps parents above children even with out-of-order timestamps", () => {
-    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+    const withTime = (
+      id: string,
+      role: Message["role"],
+      data: string,
+      time: number,
+    ) => ({
       ...message(id, role, data),
       time,
     });
