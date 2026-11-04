@@ -8,7 +8,6 @@ import type {
   loreBook,
   customscript,
 } from "../../protocol/domain/database.ts";
-import type { character } from "../../protocol/domain/legacy/character.ts";
 import type { Database } from "../../protocol/domain/legacy/database.ts";
 import type {
   AuthorNoteMetadata,
@@ -39,7 +38,6 @@ import type {
 import type {
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
-  DbVendor,
 } from "../../protocol/storageConfig.ts";
 import type {
   Character,
@@ -132,15 +130,13 @@ export interface SqlCreateChatBranchInput {
   createdAt: number;
 }
 
-export interface SqlCharacterMetadata {
+/** Lightweight list row; image is an asset reference, never loaded image data. */
+export interface SqlCharacterListItem {
   chaId: string;
+  position: number;
   name: string;
   image: string | null;
   type: "character" | "group";
-  trashTime: number | null;
-  creationTime: number | null;
-  modificationTime: number | null;
-  lastInteractionTime: number | null;
 }
 
 export interface SqlChatMetadata {
@@ -186,8 +182,6 @@ export interface BotPresetSummary {
  *  - `loadStartupData()` returns SettingsStore-owned settings and lightweight
  *    character shells as separate domains.
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
- *  - `character.document(id)` returns a full character (with chats list but without
- *    message arrays).
  *  - `chat.load(id)` returns a full chat *with* its message array.
  *  - Domain loaders (`persona.list`, `preset.list`/`preset.load`, …) fetch one domain at
  *    a time, allowing the adapter to keep unloaded domains out of memory.
@@ -312,6 +306,13 @@ export interface ISqlStorage {
   ): Promise<boolean>;
 
   character: {
+    /** Number of stored character and group rows, without hydrating documents. */
+    count(): Promise<number>;
+    /** Bounded range ordered by position, then ID; no chats or detailed fields. */
+    list(options: {
+      offset: number;
+      limit: number;
+    }): Promise<SqlCharacterListItem[]>;
     searchByTag(
       tag: string,
       limit?: number,
@@ -320,16 +321,6 @@ export interface ISqlStorage {
       name: string,
       limit?: number,
     ): Promise<NodePostgresCharacterSearchResult[]>;
-    document(characterId: string): Promise<character | groupChat | null>;
-    /** Lightweight character hydration for interactive selection. Chat rows may be summaries. */
-    forSelection(characterId: string): Promise<character | groupChat | null>;
-    /**
-     * Loads only the asset-bearing character fields (image, emotionImages,
-     * additionalAssets, ccAssets, customBackground, gptSoVitsConfig, vits)
-     * without hydrating chats or other metadata. Used by storage analyzers.
-     */
-    assetFields(characterId: string): Promise<Partial<character> | null>;
-
     /** Creates a reference without querying or checking whether the character exists. */
     ref(id: string): Character;
     /** Loads the canonical handle for the id; rejects if the ID is not a character. */
