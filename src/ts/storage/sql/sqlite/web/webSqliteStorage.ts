@@ -23,7 +23,7 @@ import type {
   SqlChatBranchSummary,
   SqlCreateChatBranchInput,
   StoredBotPreset,
-  SqlRecentChatMetadata,
+  RecentChat,
 } from "@risuai/storage-core/sqlStorage";
 import type {
   NodePostgresRevision,
@@ -637,12 +637,12 @@ export class WebSqliteStorage implements ISqlStorage {
     listRecent: async (
       limit = 50,
       activeChatId?: string,
-    ): Promise<SqlRecentChatMetadata[]> => {
+    ): Promise<RecentChat[]> => {
       return (await sqliteEntity.listRecentChats(
         this.selectRows.bind(this) as SqliteSelectRows,
         limit,
         activeChatId,
-      )) as SqlRecentChatMetadata[];
+      )) as RecentChat[];
     },
   };
 

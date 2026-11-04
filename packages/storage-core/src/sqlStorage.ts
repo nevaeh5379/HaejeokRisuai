@@ -4,8 +4,6 @@ import type {
   ChatUpdate,
 } from "../../protocol/domain/chat.ts";
 import type {
-  DatabaseSettings,
-  groupChat,
   Message,
   RisuPersona,
   botPreset,
@@ -52,15 +50,10 @@ import type {
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
 
-export interface SqlStartupDataResult {
-  status: "ready" | "empty";
+/** Lightweight metadata only; reading this must not enumerate domain records. */
+export interface State {
   revision: number;
-  /** Only SettingsStore-owned values are present here. */
-  settings: Partial<DatabaseSettings>;
-  /** Lightweight character shells owned by CharacterStore. */
-  characters: (character | groupChat)[];
-  /** Settings intentionally omitted from startup and loaded on first access. */
-  deferredSettingKeys?: string[];
+  initialized: boolean;
 }
 
 export interface SqlDatabaseSnapshotResult {
@@ -147,7 +140,7 @@ export interface SqlChatMetadata {
   lastDate: number | null;
 }
 
-export interface SqlRecentChatMetadata {
+export interface RecentChat {
   characterId: string;
   characterName: string;
   characterImage: string | null;
@@ -179,8 +172,7 @@ export interface BotPresetSummary {
  * call sites.
  *
  * Domain loading contract:
- *  - `loadStartupData()` returns SettingsStore-owned settings and lightweight
- *    character shells as separate domains.
+ *  - Initial loading is composed by the app from state, settings and character count APIs.
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
  *  - `chat.load(id)` returns a stateless handle; messages use the message APIs.
  *  - Domain loaders (`persona.list`, `preset.list`/`preset.load`, …) fetch one domain at
@@ -257,7 +249,7 @@ export interface ISqlStorage {
     listRecent(
       limit?: number,
       activeChatId?: string,
-    ): Promise<SqlRecentChatMetadata[]>;
+    ): Promise<RecentChat[]>;
   };
 
   message: {
@@ -309,6 +301,8 @@ export interface ISqlStorage {
 
   isEnabled(): boolean;
   getRevision(): number;
+  /** Reads authoritative metadata for initial loading and cross-query consistency checks. */
+  getState(): Promise<State>;
 
   // ── Lifecycle / config ──────────────────────────────────────────────
 
@@ -323,7 +317,6 @@ export interface ISqlStorage {
 
   // ── Startup / snapshot / save ───────────────────────────────────────
 
-  loadStartupData(): Promise<SqlStartupDataResult | null>;
   getStorageSyncSummary(): Promise<SqlStorageSyncSummary | null>;
   exportSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
 

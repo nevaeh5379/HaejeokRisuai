@@ -1,6 +1,6 @@
 import { getCharImage } from "../characterImage";
 import { resolveRecentChatActiveTarget } from "../recentChatActivity";
-import type { SqlRecentChatMetadata } from "@risuai/storage-core/sqlStorage";
+import type { RecentChat } from "@risuai/storage-core/sqlStorage";
 import { getSqlRuntime } from "../storage/sql/sqlRuntime";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -100,8 +100,8 @@ async function loadWidgetArtwork(
   }
 }
 
-function localRecentChats(limit: number): SqlRecentChatMetadata[] {
-  const rows: SqlRecentChatMetadata[] = [];
+function localRecentChats(limit: number): RecentChat[] {
+  const rows: RecentChat[] = [];
   const activeTarget = resolveRecentChatActiveTarget(
     characterStore.characters,
     characterStore.selectedId,
@@ -141,7 +141,7 @@ function localRecentChats(limit: number): SqlRecentChatMetadata[] {
 
 export async function loadAndroidRecentChats(
   limit = SHORTCUT_LIMIT,
-): Promise<SqlRecentChatMetadata[]> {
+): Promise<RecentChat[]> {
   const storage = getSqlRuntime().storage;
   if (!storage?.chat.listRecent) return localRecentChats(limit);
   try {
@@ -166,7 +166,7 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
     const widgetLimit = getAndroidWidgetBotCount();
     const scanLimit = Math.max(RECENT_SCAN_LIMIT, widgetLimit * 2);
     const recent = await loadAndroidRecentChats(scanLimit);
-    const widgetChats: SqlRecentChatMetadata[] = [];
+    const widgetChats: RecentChat[] = [];
     const seenCharacters = new Set<string>();
     for (const chat of recent) {
       if (seenCharacters.has(chat.characterId)) continue;

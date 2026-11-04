@@ -23,7 +23,7 @@ import type {
   BotPresetSummary,
   SqlStartupDataResult,
   SqlDatabaseSnapshotResult,
-  SqlRecentChatMetadata,
+  RecentChat,
   SqlChatBranchSummary,
   SqlCreateChatBranchInput,
   StoredBotPreset,
@@ -479,12 +479,12 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     listRecent: async (
       limit = 50,
       activeChatId?: string,
-    ): Promise<SqlRecentChatMetadata[]> => {
+    ): Promise<RecentChat[]> => {
       return (await sqliteEntity.listRecentChats(
         this.selectRows.bind(this) as SqliteSelectRows,
         limit,
         activeChatId,
-      )) as SqlRecentChatMetadata[];
+      )) as RecentChat[];
     },
   };
 

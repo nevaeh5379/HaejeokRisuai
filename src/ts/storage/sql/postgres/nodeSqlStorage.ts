@@ -24,7 +24,7 @@ import type {
   INodeSqlStorageAdmin,
   SqlStartupDataResult,
   SqlDatabaseSnapshotResult,
-  SqlRecentChatMetadata,
+  RecentChat,
   SqlChatBranchSummary,
   SqlChatBranchGraphData,
   SqlChatBranchGraphPage,
@@ -635,9 +635,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     listRecent: async (
       limit?: number,
       activeChatId?: string,
-    ): Promise<SqlRecentChatMetadata[]> => {
+    ): Promise<RecentChat[]> => {
       if (!(await this.ensureEnabled())) return [];
-      return await this.readClient.listRecentChats<SqlRecentChatMetadata>(
+      return await this.readClient.listRecentChats<RecentChat>(
         limit,
         activeChatId,
       );
