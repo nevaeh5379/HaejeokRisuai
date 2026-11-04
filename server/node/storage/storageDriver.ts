@@ -59,7 +59,7 @@ async function instantiateVendorStorage(
       enabled: options.enabled !== false,
     });
   }
-  const { PostgresStorage } = await import("./postgres/postgresStorage.ts");
+  const { PostgresStorage } = await import("./postgres/storage.ts");
   return new PostgresStorage({
     connectionString: params.connectionString || "",
     poolMax,
@@ -242,7 +242,7 @@ async function createStorageDriver(options: any = {}): Promise<any> {
   }
 
   // 기본: postgres
-  const { PostgresStorage } = await import("./postgres/postgresStorage.ts");
+  const { PostgresStorage } = await import("./postgres/storage.ts");
   return new PostgresStorage(options);
 }
 
@@ -451,7 +451,7 @@ async function createServerStorage(
   }
 
   // postgres
-  const { PostgresStorage } = await import("./postgres/postgresStorage.ts");
+  const { PostgresStorage } = await import("./postgres/storage.ts");
   let connectionString: any = "";
   if (postgresConfig && postgresConfig.enabled) {
     connectionString = postgresConfig.connectionString;

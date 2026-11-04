@@ -2,7 +2,7 @@ import { loadMssql } from "../../util/runtimeModules.ts";
 const __dirname = import.meta.dirname;
 // Azure SQL Database / Microsoft SQL Server Storage Driver for RisuAI
 // PostgresStorage / OracleStorage 인터페이스와 100% 호환.
-// postgresRelationalCodec.cjs / postgresJsonCodec.cjs / postgresSettingsCodec.cjs 재사용.
+// relationalCodec.ts / jsonCodec.ts / settingsCodec.ts 재사용.
 
 ("use strict");
 import {
@@ -25,7 +25,7 @@ import {
 import {
   decodePostgresJsonValue,
   encodePostgresJsonValue,
-} from "../postgres/postgresJsonCodec.ts";
+} from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
   rebuildChat,
@@ -34,12 +34,9 @@ import {
   splitChat,
   splitMessage,
   splitLore,
-} from "../postgres/postgresRelationalCodec.ts";
-import {
-  rebuildSettings,
-  splitSetting,
-} from "../postgres/postgresSettingsCodec.ts";
-import { projectSettings } from "../postgres/postgresSettingRelations.ts";
+} from "../postgres/relationalCodec.ts";
+import { rebuildSettings, splitSetting } from "../postgres/settingsCodec.ts";
+import { projectSettings } from "../postgres/settingRelations.ts";
 import {
   StorageRevisionConflictError,
   StoragePayloadError,

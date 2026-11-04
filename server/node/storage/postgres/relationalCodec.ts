@@ -11,7 +11,7 @@ import type {
 import {
   decodePostgresJsonValue,
   encodePostgresJsonValue,
-} from "./postgresJsonCodec.ts";
+} from "./jsonCodec.ts";
 
 const CHARACTER_SCALARS: any = {
   name: "name",

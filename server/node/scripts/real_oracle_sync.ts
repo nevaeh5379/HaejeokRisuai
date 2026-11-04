@@ -11,7 +11,7 @@ import {
   splitCharacter,
   splitChat,
   splitMessage,
-} from "../storage/postgres/postgresRelationalCodec.ts";
+} from "../storage/postgres/relationalCodec.ts";
 
 const unpackr = new Unpackr({
   int64AsType: "number",

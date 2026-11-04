@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
-import { NPostgresStorage } from "./postgresStorage.ts";
+import { NPostgresStorage } from "./storage.ts";
 
 const url = process.env.NPG_SMOKE_URL as string;
 

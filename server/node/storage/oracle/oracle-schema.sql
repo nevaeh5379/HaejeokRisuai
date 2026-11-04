@@ -3,7 +3,7 @@
 -- PostgreSQL의 system./character./chat./cold. 스키마를
 -- 단일 Oracle 스키마 내의 접두어 테이블로 매핑.
 --
--- 스키마 버전: 2 (postgres-schema.sql과 동일)
+-- 스키마 버전: 2 (schema.sql과 동일)
 -- 레이아웃: relational-schema-v2
 
 -- ============================================================

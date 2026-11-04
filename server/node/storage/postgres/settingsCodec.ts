@@ -9,7 +9,7 @@ import type {
   SettingValueRow,
   SettingValueType,
 } from "../relationalRows.ts";
-import { canUsePostgresText } from "./postgresJsonCodec.ts";
+import { canUsePostgresText } from "./jsonCodec.ts";
 
 /** Member columns of one `system.setting_values` row. */
 type SettingMemberColumns = Pick<

@@ -126,7 +126,7 @@ import {
   decodePostgresJsonValue,
   encodePostgresScript,
   encodePostgresJsonValue,
-} from "./postgresJsonCodec.ts";
+} from "./jsonCodec.ts";
 import {
   rebuildCharacter,
   rebuildChat,
@@ -134,9 +134,9 @@ import {
   splitCharacter,
   splitChat,
   splitMessage,
-} from "./postgresRelationalCodec.ts";
-import { projectSettings } from "./postgresSettingRelations.ts";
-import { rebuildSettings, splitSetting } from "./postgresSettingsCodec.ts";
+} from "./relationalCodec.ts";
+import { projectSettings } from "./settingRelations.ts";
+import { rebuildSettings, splitSetting } from "./settingsCodec.ts";
 import {
   DEFERRED_SETTING_KEYS,
   DEFERRED_STARTUP_SETTING_KEYS,
@@ -166,7 +166,7 @@ import {
 } from "../sqlBranchMigration.ts";
 import { exportDatabaseSnapshotWith } from "../sqlSnapshot.ts";
 import { syncModuleRecords } from "../sqlSyncDomain.ts";
-import { PostgresDialect } from "./postgresDialect.ts";
+import { PostgresDialect } from "./dialect.ts";
 import {
   buildChatBranchGraph,
   buildRestorePreview,
@@ -196,7 +196,7 @@ import {
   containsNul,
   decodeCharacterReadRow,
   type CharacterReadRow,
-} from "./postgresRelationalCodec.ts";
+} from "./relationalCodec.ts";
 import type { ISqlStorage } from "../../../../packages/storage-core/src/sqlStorage.ts";
 import {
   Kysely,
@@ -1185,7 +1185,7 @@ class PostgresStorage extends SqlStorageBase {
   async loadPostgresSchemaSql(): Promise<string> {
     if (!this.postgresSchemaSql)
       this.postgresSchemaSql = await fs.readFile(
-        path.join(__dirname, "postgres-schema.sql"),
+        path.join(__dirname, "schema.sql"),
         "utf8",
       );
 
@@ -1268,7 +1268,7 @@ class PostgresStorage extends SqlStorageBase {
             `);
 
     const triggerSql = await fs.readFile(
-      path.join(__dirname, "postgres-last-message-time.sql"),
+      path.join(__dirname, "last-message-time.sql"),
       "utf8",
     );
     await query(triggerSql);

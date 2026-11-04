@@ -2,7 +2,7 @@
 
 /**
  * PostgreSQL dialect: `UNNEST` bulk inserts, `ON CONFLICT` upserts, `USING`
- * deletes. The statement shapes are the ones `postgresStorage.ts` already
+ * deletes. The statement shapes are the ones `storage.ts` already
  * emitted, moved here so the shared modules can call them.
  */
 

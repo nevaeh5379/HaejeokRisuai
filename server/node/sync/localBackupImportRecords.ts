@@ -1,7 +1,7 @@
 import {
   encodePostgresJsonValue,
   decodePostgresJsonValue,
-} from "../storage/postgres/postgresJsonCodec.ts";
+} from "../storage/postgres/jsonCodec.ts";
 import { loadMssql, loadOracle } from "./../util/runtimeModules.ts";
 type SqlVendor = "postgres" | "oracle" | "azure";
 

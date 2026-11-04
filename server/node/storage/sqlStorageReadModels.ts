@@ -28,8 +28,8 @@ import type {
   TokenUsageRow,
 } from "./relationalRows.ts";
 import { decodePresetData, mapBranchRow } from "./relationalRows.ts";
-import { rebuildSettings } from "./postgres/postgresSettingsCodec.ts";
-import { rebuildMessage } from "./postgres/postgresRelationalCodec.ts";
+import { rebuildSettings } from "./postgres/settingsCodec.ts";
+import { rebuildMessage } from "./postgres/relationalCodec.ts";
 
 /** Driver-specific decoding of the audit row snapshots. */
 type RowDecoder = (value: unknown) => unknown;

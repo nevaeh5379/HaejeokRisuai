@@ -1,6 +1,6 @@
 // Relational row types shared by the SQL storage drivers.
 //
-// The relational schema (`postgres-schema.sql`, `oracle-schema.sql`,
+// The relational schema (`schema.sql`, `oracle-schema.sql`,
 // `azure-schema.sql`) declares the same logical columns in every dialect, and
 // all vendors decode through the same codecs, so the in-memory row shapes live
 // here instead of being restated per driver.
@@ -9,7 +9,7 @@
 // 사용하므로, 메모리 상의 행 타입은 드라이버마다 반복하지 않고 여기서 공유합니다.
 
 import type { PluginMetadata } from "../../../packages/protocol/domain/pluginTypes.ts";
-import { SETTING_RELATION_DEFINITIONS as RAW_SETTING_RELATION_DEFINITIONS } from "./postgres/postgresSettingRelations.ts";
+import { SETTING_RELATION_DEFINITIONS as RAW_SETTING_RELATION_DEFINITIONS } from "./postgres/settingRelations.ts";
 
 /** A single row as returned by any of the supported SQL drivers. */
 export type SqlStorageRow = Record<string, unknown>;

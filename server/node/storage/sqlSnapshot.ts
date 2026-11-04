@@ -57,8 +57,8 @@ import {
   rebuildCharacter,
   rebuildChat,
   rebuildMessage,
-} from "./postgres/postgresRelationalCodec.ts";
-import { rebuildSettings } from "./postgres/postgresSettingsCodec.ts";
+} from "./postgres/relationalCodec.ts";
+import { rebuildSettings } from "./postgres/settingsCodec.ts";
 import { SNAPSHOT_TABLES } from "./sqlTables.ts";
 
 /** Snapshot response shape shared by the three drivers. */

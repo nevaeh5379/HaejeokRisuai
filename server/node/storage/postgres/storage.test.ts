@@ -2,10 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-import {
-  encodePostgresScript,
-  decodePostgresScript,
-} from "./postgresJsonCodec.ts";
+import { encodePostgresScript, decodePostgresScript } from "./jsonCodec.ts";
 import {
   DEFERRED_SETTING_KEYS,
   buildUpsertClause,
@@ -17,8 +14,8 @@ import {
   validateColdStorageKeys,
   validateColdStorageValue,
   validateSyncPayload,
-} from "./postgresStorage.ts";
-import { rebuildSettings, splitSetting } from "./postgresSettingsCodec.ts";
+} from "./storage.ts";
+import { rebuildSettings, splitSetting } from "./settingsCodec.ts";
 
 describe("PostgreSQL storage sync finalize concurrency", () => {
   it("round trips plugin scripts containing NUL or unpaired surrogates", () => {

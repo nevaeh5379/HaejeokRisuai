@@ -5,9 +5,9 @@ import {
   decodePostgresJsonValue,
   encodePostgresScript,
   decodePostgresScript,
-} from "./postgresJsonCodec";
+} from "./jsonCodec";
 
-describe("postgresJsonCodec", () => {
+describe("jsonCodec", () => {
   it("canUsePostgresText accurately validates UTF-8 strings without null bytes", () => {
     expect(canUsePostgresText("simple ASCII")).toBe(true);
     expect(canUsePostgresText("한글 및 다국어 텍스트")).toBe(true);

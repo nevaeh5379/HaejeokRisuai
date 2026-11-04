@@ -19,7 +19,7 @@ import type {
   SyncProgressCallback,
 } from "./relationalRows.ts";
 import { pluginApiVersion } from "./relationalRows.ts";
-import { rebuildSettings } from "./postgres/postgresSettingsCodec.ts";
+import { rebuildSettings } from "./postgres/settingsCodec.ts";
 
 const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
 const MAX_COLD_STORAGE_CHATS_PER_CHARACTER = 100000;

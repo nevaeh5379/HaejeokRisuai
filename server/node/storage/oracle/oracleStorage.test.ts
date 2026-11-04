@@ -12,7 +12,7 @@ import {
   toOracleColumn,
   wrapConnectionForEmptyStrings,
 } from "./oracleStorage.ts";
-import { splitSetting } from "../postgres/postgresSettingsCodec.ts";
+import { splitSetting } from "../postgres/settingsCodec.ts";
 
 describe("Oracle empty-string bind normalization", () => {
   it("replaces empty strings with the sentinel in flat bind arrays", () => {

@@ -11,8 +11,8 @@ import {
   CHARACTER_FIELD_COLUMNS,
   CHARACTER_RELATIONS,
   containsNul,
-} from "./postgresRelationalCodec.ts";
-import { encodePostgresJsonValue } from "./postgresJsonCodec.ts";
+} from "./relationalCodec.ts";
+import { encodePostgresJsonValue } from "./jsonCodec.ts";
 
 type RelationKey = keyof typeof CHARACTER_RELATIONS;
 type RelationRows = {

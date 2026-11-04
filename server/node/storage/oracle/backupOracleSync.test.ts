@@ -16,9 +16,9 @@ import {
   splitCharacter,
   splitChat,
   splitMessage,
-} from "../postgres/postgresRelationalCodec.ts";
-import { splitSetting } from "../postgres/postgresSettingsCodec.ts";
-import { projectSettings } from "../postgres/postgresSettingRelations.ts";
+} from "../postgres/relationalCodec.ts";
+import { splitSetting } from "../postgres/settingsCodec.ts";
+import { projectSettings } from "../postgres/settingRelations.ts";
 
 const packr = new Packr({ int64AsType: "number", useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });

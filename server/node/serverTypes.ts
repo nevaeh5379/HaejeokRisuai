@@ -1,4 +1,4 @@
-import type { PostgresStorageContract } from "./storage/postgres/postgresStorage.ts";
+import type { PostgresStorageContract } from "./storage/postgres/storage.ts";
 import type { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.ts";
 import type { PluginStorageRouteDependencies } from "./api/database/plugins/routes.ts";
 import type { Request as ExpressRequest } from "express";

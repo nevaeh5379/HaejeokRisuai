@@ -24,10 +24,7 @@ import type {
 } from "./relationalRows.ts";
 import { asRows } from "./relationalRows.ts";
 import type { MessageSplit } from "./relationalRows.ts";
-import {
-  rebuildMessage,
-  splitMessage,
-} from "./postgres/postgresRelationalCodec.ts";
+import { rebuildMessage, splitMessage } from "./postgres/relationalCodec.ts";
 import {
   buildLegacyBranchMigrationPlan,
   type LegacyBranchMigrationPlan,

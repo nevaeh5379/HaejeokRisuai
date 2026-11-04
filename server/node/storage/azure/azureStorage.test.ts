@@ -20,11 +20,8 @@ import {
   rebuildCharacter,
   rebuildChat,
   rebuildMessage,
-} from "../postgres/postgresRelationalCodec.ts";
-import {
-  splitSetting,
-  rebuildSettings,
-} from "../postgres/postgresSettingsCodec.ts";
+} from "../postgres/relationalCodec.ts";
+import { splitSetting, rebuildSettings } from "../postgres/settingsCodec.ts";
 
 describe("AzureStorage Driver & StorageDriver Integration", async () => {
   it("resolves azure vendor properly from options and environment", async () => {

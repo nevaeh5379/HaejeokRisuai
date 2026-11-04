@@ -2,7 +2,7 @@
 -- Azure SQL Database / Microsoft SQL Server용 관계형 스키마.
 -- system, character, chat, cold 4개 스키마 분리 및 감사 로그 지원.
 --
--- 스키마 버전: 2 (postgres-schema.sql과 동일)
+-- 스키마 버전: 2 (schema.sql과 동일)
 -- 레이아웃: relational-schema-v2
 
 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'system') EXEC('CREATE SCHEMA [system]');

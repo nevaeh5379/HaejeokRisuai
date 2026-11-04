@@ -17,7 +17,7 @@ function readSource(vendor: string, name: string): string {
 
 describe("persistent branch schema parity", () => {
   it("defines branch graph tables for PostgreSQL", () => {
-    const sql = readSource("postgres", "postgres-schema.sql");
+    const sql = readSource("postgres", "schema.sql");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS chat.branches");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS chat.active_branches");
     expect(sql).toContain(
@@ -26,7 +26,7 @@ describe("persistent branch schema parity", () => {
   });
 
   it("keeps PostgreSQL composite message references restrictive instead of nulling chat_id", () => {
-    const sql = readSource("postgres", "postgres-schema.sql");
+    const sql = readSource("postgres", "schema.sql");
     expect(sql).not.toMatch(
       /FOREIGN KEY \(chat_id, (?:fork_message_id|head_message_id|parent_message_id)\)[^;\n]*ON DELETE SET NULL/,
     );
@@ -72,12 +72,12 @@ describe("persistent branch schema parity", () => {
 
 describe("PostgreSQL branch runtime safety", () => {
   it("does not issue concurrent queries on the same pg client", () => {
-    const source = readSource("postgres", "postgresStorage.ts");
+    const source = readSource("postgres", "storage.ts");
     expect(source).not.toMatch(/Promise\.all\([\s\S]{0,300}client\.query/);
   });
 
   it("detaches child and head references even when the removed link row is missing", () => {
-    const source = readSource("postgres", "postgresStorage.ts");
+    const source = readSource("postgres", "storage.ts");
     expect(source).toMatch(
       /SET parent_message_id = \(\s*SELECT removed\.parent_message_id/,
     );
@@ -92,7 +92,7 @@ describe("PostgreSQL branch runtime safety", () => {
 
 describe("legacy branch migration wiring", () => {
   for (const [label, vendor, file] of [
-    ["PostgreSQL", "postgres", "postgresStorage.ts"],
+    ["PostgreSQL", "postgres", "storage.ts"],
     ["Azure SQL", "azure", "azureStorage.ts"],
     ["Oracle", "oracle", "oracleStorage.ts"],
   ] as const) {
@@ -124,7 +124,7 @@ describe("legacy branch migration wiring", () => {
   }
 
   for (const [label, vendor, file] of [
-    ["PostgreSQL", "postgres", "postgresStorage.ts"],
+    ["PostgreSQL", "postgres", "storage.ts"],
     ["Azure SQL", "azure", "azureStorage.ts"],
     ["Oracle", "oracle", "oracleStorage.ts"],
   ] as const) {
@@ -142,7 +142,7 @@ describe("legacy branch migration wiring", () => {
   });
 
   it("does not synthesize a PostgreSQL root when any branch already exists", () => {
-    const source = readSource("postgres", "postgresStorage.ts");
+    const source = readSource("postgres", "storage.ts");
     expect(source).toMatch(
       /NOT EXISTS \([\s\S]{0,160}FROM chat\.branches existing WHERE existing\.chat_id = chats\.id/,
     );

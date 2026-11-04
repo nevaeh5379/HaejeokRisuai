@@ -17,10 +17,7 @@ import {
 } from "./sqlStorageCommon.ts";
 import type { SettingScalarRow, SettingValueRow } from "./relationalRows.ts";
 import { asRows } from "./relationalRows.ts";
-import {
-  rebuildSettings,
-  splitSetting,
-} from "./postgres/postgresSettingsCodec.ts";
+import { rebuildSettings, splitSetting } from "./postgres/settingsCodec.ts";
 
 /** Position bump applied before reordering, large enough to avoid collisions. */
 const POSITION_BUMP = 1000000000;

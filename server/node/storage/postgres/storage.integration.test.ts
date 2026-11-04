@@ -10,10 +10,7 @@ import {
 } from "../../../../src/ts/storage/sql/pluginStorageValueCodec";
 
 const require = createRequire(import.meta.url);
-import {
-  PostgresRevisionConflictError,
-  PostgresStorage,
-} from "./postgresStorage.ts";
+import { PostgresRevisionConflictError, PostgresStorage } from "./storage.ts";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const describePostgres = connectionString ? describe : describe.skip;

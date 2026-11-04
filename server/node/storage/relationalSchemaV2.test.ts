@@ -6,7 +6,7 @@ const schema = (name: string) =>
 
 describe("relational schema metadata and setting trees", () => {
   it.each([
-    ["PostgreSQL", "postgres/postgres-schema.sql"],
+    ["PostgreSQL", "postgres/schema.sql"],
     ["Oracle", "oracle/oracle-schema.sql"],
     ["Azure SQL", "azure/azure-schema.sql"],
   ])(
@@ -22,7 +22,7 @@ describe("relational schema metadata and setting trees", () => {
   );
 
   it("keeps plugin custom values as the intentional JSON exception", () => {
-    expect(schema("postgres/postgres-schema.sql")).toMatch(
+    expect(schema("postgres/schema.sql")).toMatch(
       /plugin_custom_storage[\s\S]{0,250}value JSONB NOT NULL/i,
     );
     expect(schema("oracle/oracle-schema.sql")).toMatch(
@@ -33,10 +33,10 @@ describe("relational schema metadata and setting trees", () => {
     );
   });
   it("keeps last-message trigger DDL in SQL resources", () => {
-    expect(schema("postgres/postgres-last-message-time.sql")).toMatch(
+    expect(schema("postgres/last-message-time.sql")).toMatch(
       /CREATE TRIGGER messages_last_message_time_after_insert/i,
     );
-    expect(schema("postgres/postgres-last-message-time.sql")).toMatch(
+    expect(schema("postgres/last-message-time.sql")).toMatch(
       /REFERENCING NEW TABLE AS new_rows/i,
     );
     expect(schema("azure/azure-last-message-time.sql")).toMatch(

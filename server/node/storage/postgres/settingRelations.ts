@@ -1,4 +1,4 @@
-import { canUsePostgresText } from "./postgresJsonCodec.ts";
+import { canUsePostgresText } from "./jsonCodec.ts";
 
 const DEFINITIONS: any = [
   {

@@ -1,8 +1,8 @@
 import { loadOracle } from "../../util/runtimeModules.ts";
 const __dirname = import.meta.dirname;
 // Oracle Storage 구현체 (PostgresStorage 인터페이스 호환)
-// PostgreSQL의 postgresStorage.cts를 Oracle 23c+ (Autonomous Database) 방언으로 구현.
-// postgresRelationalCodec.cjs / postgresJsonCodec.cjs / postgresSettingsCodec.cjs 재사용.
+// PostgreSQL의 storage.ts를 Oracle 23c+ (Autonomous Database) 방언으로 구현.
+// relationalCodec.ts / jsonCodec.ts / settingsCodec.ts 재사용.
 //
 // 주요 차이점:
 // - pg.Pool → oracledb.createPool (walletLocation + walletPassword)
@@ -248,7 +248,7 @@ import {
 import {
   decodePostgresJsonValue,
   encodePostgresJsonValue,
-} from "../postgres/postgresJsonCodec.ts";
+} from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
   rebuildChat,
@@ -258,12 +258,9 @@ import {
   splitChat,
   splitMessage,
   splitLore,
-} from "../postgres/postgresRelationalCodec.ts";
-import {
-  rebuildSettings,
-  splitSetting,
-} from "../postgres/postgresSettingsCodec.ts";
-import { projectSettings } from "../postgres/postgresSettingRelations.ts";
+} from "../postgres/relationalCodec.ts";
+import { rebuildSettings, splitSetting } from "../postgres/settingsCodec.ts";
+import { projectSettings } from "../postgres/settingRelations.ts";
 import {
   StorageRevisionConflictError,
   StoragePayloadError,
@@ -493,7 +490,7 @@ function assertSqlIdentifier(value: unknown): string {
 }
 
 // oracledb OUT_FORMAT_OBJECT는 컬럼명을 대문자로 반환.
-// postgresRelationalCodec.cjs는 소문자 컬럼명을 가정하므로 변환 필요.
+// relationalCodec.ts는 소문자 컬럼명을 가정하므로 변환 필요.
 /** Lowercase every column of one Oracle row (OUT_FORMAT_OBJECT uppercases). */
 function lowercaseRowKeys(row: unknown): SqlStorageRow {
   if (!isSqlRow(row)) return {};
