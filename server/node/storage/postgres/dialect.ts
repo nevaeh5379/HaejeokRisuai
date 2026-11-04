@@ -1,6 +1,8 @@
 "use strict";
 
 /**
+ * TODO: Remove after PostgresStorage is replaced by the Kysely implementation.
+ *
  * PostgreSQL dialect: `UNNEST` bulk inserts, `ON CONFLICT` upserts, `USING`
  * deletes. The statement shapes are the ones `storage.ts` already
  * emitted, moved here so the shared modules can call them.
