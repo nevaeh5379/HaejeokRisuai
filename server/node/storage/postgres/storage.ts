@@ -122,10 +122,10 @@ import {
   runStartupStage,
 } from "../../http/startupDiagnostics.ts";
 import {
-  decodePostgresScript,
-  decodePostgresJsonValue,
-  encodePostgresScript,
-  encodePostgresJsonValue,
+  decodeScript,
+  decodeJsonValue,
+  encodeScript,
+  encodeJsonValue,
 } from "./jsonCodec.ts";
 import {
   rebuildCharacter,
@@ -990,7 +990,7 @@ export class NPostgresStorage implements Pick<
       const query = this.db
         .selectFrom(
           sql<{ id: string; storage_revision: string }>`
-        system.character_apply_create(${JSON.stringify(encodePostgresJsonValue(name))}::jsonb)
+        system.character_apply_create(${JSON.stringify(encodeJsonValue(name))}::jsonb)
       `.as("result"),
         )
         .selectAll()
@@ -1896,7 +1896,7 @@ class PostgresStorage extends SqlStorageBase {
         const legacy = rows["cold.archive_attributes"].find(
           (item) => item.key === "legacy",
         );
-        data = legacy ? decodePostgresJsonValue(legacy.value) : [];
+        data = legacy ? decodeJsonValue(legacy.value) : [];
       } else {
         const presence = (
           entityType: ColdFieldPresenceRow["entity_type"],
@@ -2249,7 +2249,7 @@ class PostgresStorage extends SqlStorageBase {
         {
           archive_id: key,
           key: "legacy",
-          value: encodePostgresJsonValue(splitValue.data),
+          value: encodeJsonValue(splitValue.data),
         },
       ];
     else if (character)
@@ -3089,7 +3089,7 @@ class PostgresStorage extends SqlStorageBase {
             authorNoteSql.exportAuthorNotes(
               authorNoteDatabase("postgres", client),
             ),
-          decodeScript: decodePostgresScript,
+          decodeScript,
         },
       );
       await client.query("COMMIT");
@@ -3233,7 +3233,7 @@ class PostgresStorage extends SqlStorageBase {
       if (core.image !== null && core.image !== undefined)
         assets.image = core.image;
       for (const row of attributesRes.rows)
-        assets[row.key] = decodePostgresJsonValue(row.value);
+        assets[row.key] = decodeJsonValue(row.value);
 
       if (emotionsRes.rows.length)
         assets.emotionImages = emotionsRes.rows.map((item) => [
@@ -3318,7 +3318,7 @@ class PostgresStorage extends SqlStorageBase {
       },
       readLinearMessages: () =>
         this._loadLinearMessagesForBranchMigration(client, chatId),
-      decodeState: decodePostgresJsonValue,
+      decodeState: decodeJsonValue,
       newId: () => crypto.randomUUID(),
     });
   }
@@ -4123,7 +4123,7 @@ class PostgresStorage extends SqlStorageBase {
       [pluginId],
     );
     const script = result.rows[0]?.script;
-    return script == null ? null : decodePostgresScript(script);
+    return script == null ? null : decodeScript(script);
   }
 
   async loadPluginCustomStorage() {
@@ -5118,7 +5118,7 @@ class PostgresStorage extends SqlStorageBase {
              VALUES ($1,$2,NOW())
              ON CONFLICT (plugin_id) DO UPDATE SET
               script=EXCLUDED.script, updated_at=NOW()`,
-            [script.id, encodePostgresScript(script.script)],
+            [script.id, encodeScript(script.script)],
           );
 
         for (const update of payload.plugins.enabled || [])
@@ -6823,8 +6823,8 @@ export {
   PostgresRevisionConflictError,
   PostgresStorage,
   buildUpsertClause,
-  decodePostgresJsonValue,
-  encodePostgresJsonValue,
+  decodeJsonValue,
+  encodeJsonValue,
   normalizeColdStorageKey,
   validateColdStorageKeys,
   validateColdStorageValue,

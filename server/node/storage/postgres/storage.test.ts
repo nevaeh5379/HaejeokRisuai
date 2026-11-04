@@ -2,12 +2,12 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-import { encodePostgresScript, decodePostgresScript } from "./jsonCodec.ts";
+import { encodeScript, decodeScript } from "./jsonCodec.ts";
 import {
   DEFERRED_SETTING_KEYS,
   buildUpsertClause,
-  decodePostgresJsonValue,
-  encodePostgresJsonValue,
+  decodeJsonValue,
+  encodeJsonValue,
   PostgresPayloadError,
   PostgresStorage,
   normalizeColdStorageKey,
@@ -20,15 +20,13 @@ import { rebuildSettings, splitSetting } from "./settingsCodec.ts";
 describe("PostgreSQL storage sync finalize concurrency", () => {
   it("round trips plugin scripts containing NUL or unpaired surrogates", () => {
     for (const script of ["plain script", "a\0b", "a\ud800b"]) {
-      const stored = encodePostgresScript(script);
+      const stored = encodeScript(script);
       expect(stored).not.toContain("\0");
-      expect(decodePostgresScript(stored)).toBe(script);
+      expect(decodeScript(stored)).toBe(script);
     }
-    expect(encodePostgresScript("plain script")).toBe("plain script");
-    const reservedPrefix = encodePostgresScript("\0").split(":")[0] + ":";
-    expect(decodePostgresScript(encodePostgresScript(reservedPrefix))).toBe(
-      reservedPrefix,
-    );
+    expect(encodeScript("plain script")).toBe("plain script");
+    const reservedPrefix = encodeScript("\0").split(":")[0] + ":";
+    expect(decodeScript(encodeScript(reservedPrefix))).toBe(reservedPrefix);
   });
 
   it("loads encoded plugin scripts as their original source", async () => {
@@ -37,7 +35,7 @@ describe("PostgreSQL storage sync finalize concurrency", () => {
     });
     storage.pool = {
       query: vi.fn(async () => ({
-        rows: [{ script: encodePostgresScript("before\0after") }],
+        rows: [{ script: encodeScript("before\0after") }],
       })),
     };
     expect(await storage.loadPluginScript("plugin-id")).toBe("before\0after");
@@ -190,17 +188,17 @@ describe("PostgreSQL sync payload validation", () => {
       collision: { [reservedTag]: "user data" },
     };
 
-    const encoded = encodePostgresJsonValue(original);
+    const encoded = encodeJsonValue(original);
     expect(JSON.stringify(encoded)).not.toContain("\\u0000");
-    expect(decodePostgresJsonValue(encoded)).toEqual(original);
+    expect(decodeJsonValue(encoded)).toEqual(original);
     expect((encoded as typeof original).ordinary).toBe("queryable text");
   });
 
   it("does not copy ordinary JSON trees that need no PostgreSQL encoding", () => {
     const ordinary = { nested: [{ text: "plain", count: 2 }] };
 
-    expect(encodePostgresJsonValue(ordinary)).toBe(ordinary);
-    expect(decodePostgresJsonValue(ordinary)).toBe(ordinary);
+    expect(encodeJsonValue(ordinary)).toBe(ordinary);
+    expect(decodeJsonValue(ordinary)).toBe(ordinary);
   });
 
   it("decomposes structured settings into typed relational rows without JSON payloads", () => {

@@ -245,10 +245,7 @@ import {
   runStartupStage,
   sanitizeSensitiveText,
 } from "../../http/startupDiagnostics.ts";
-import {
-  decodePostgresJsonValue,
-  encodePostgresJsonValue,
-} from "../postgres/jsonCodec.ts";
+import { decodeJsonValue, encodeJsonValue } from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
   rebuildChat,
@@ -2237,7 +2234,7 @@ class OracleStorage extends SqlStorageBase {
       if (charRow.image !== null && charRow.image !== undefined)
         fields.image = charRow.image;
       for (const row of attributes) {
-        fields[row.key] = decodePostgresJsonValue(row.value);
+        fields[row.key] = decodeJsonValue(row.value);
       }
       if (emotions.length) {
         fields.emotionImages = emotions.map((item) => [
@@ -2374,8 +2371,7 @@ class OracleStorage extends SqlStorageBase {
       },
       readLinearMessages: () =>
         this._loadLinearMessagesForBranchMigration(conn, chatId),
-      decodeState: (value) =>
-        decodePostgresJsonValue(decodeLegacyBranchState(value)),
+      decodeState: (value) => decodeJsonValue(decodeLegacyBranchState(value)),
       newId: () => crypto.randomUUID(),
     });
   }

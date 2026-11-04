@@ -1,25 +1,25 @@
 import { describe, it, expect } from "vitest";
 import {
-  canUsePostgresText,
-  encodePostgresJsonValue,
-  decodePostgresJsonValue,
-  encodePostgresScript,
-  decodePostgresScript,
+  canUseText,
+  encodeJsonValue,
+  decodeJsonValue,
+  encodeScript,
+  decodeScript,
 } from "./jsonCodec";
 
 describe("jsonCodec", () => {
-  it("canUsePostgresText accurately validates UTF-8 strings without null bytes", () => {
-    expect(canUsePostgresText("simple ASCII")).toBe(true);
-    expect(canUsePostgresText("한글 및 다국어 텍스트")).toBe(true);
-    expect(canUsePostgresText("emoji 🌸✨")).toBe(true);
-    expect(canUsePostgresText("null\0byte")).toBe(false);
-    expect(canUsePostgresText(String.fromCharCode(0xd800))).toBe(false);
-    expect(canUsePostgresText(String.fromCharCode(0xdc00))).toBe(false);
-    expect(canUsePostgresText(123)).toBe(false);
-    expect(canUsePostgresText(null)).toBe(false);
+  it("canUseText accurately validates UTF-8 strings without null bytes", () => {
+    expect(canUseText("simple ASCII")).toBe(true);
+    expect(canUseText("한글 및 다국어 텍스트")).toBe(true);
+    expect(canUseText("emoji 🌸✨")).toBe(true);
+    expect(canUseText("null\0byte")).toBe(false);
+    expect(canUseText(String.fromCharCode(0xd800))).toBe(false);
+    expect(canUseText(String.fromCharCode(0xdc00))).toBe(false);
+    expect(canUseText(123)).toBe(false);
+    expect(canUseText(null)).toBe(false);
   });
 
-  it("encodePostgresJsonValue and decodePostgresJsonValue round-trip normal objects without mutating", () => {
+  it("encodeJsonValue and decodeJsonValue round-trip normal objects without mutating", () => {
     const input = {
       name: "Ojosama",
       age: 18,
@@ -30,10 +30,10 @@ describe("jsonCodec", () => {
       },
     };
 
-    const encoded = encodePostgresJsonValue(input);
+    const encoded = encodeJsonValue(input);
     expect(encoded).toBe(input); // Copy-on-write returns original reference when no encoding is needed
 
-    const decoded = decodePostgresJsonValue(encoded);
+    const decoded = decodeJsonValue(encoded);
     expect(decoded).toBe(input); // Copy-on-write returns original reference
   });
 
@@ -43,29 +43,26 @@ describe("jsonCodec", () => {
       poisoned: "text with \0 null byte",
     };
 
-    const encoded = encodePostgresJsonValue(objWithNull) as Record<
-      string,
-      unknown
-    >;
+    const encoded = encodeJsonValue(objWithNull) as Record<string, unknown>;
     expect(encoded).not.toBe(objWithNull);
     expect(typeof encoded.clean).toBe("string");
     expect(typeof encoded.poisoned).toBe("object");
 
-    const decoded = decodePostgresJsonValue(encoded) as Record<string, unknown>;
+    const decoded = decodeJsonValue(encoded) as Record<string, unknown>;
     expect(decoded.clean).toBe("regular text");
     expect(decoded.poisoned).toBe("text with \0 null byte");
   });
 
   it("handles script encoding and decoding with UTF-16 fallback", () => {
     const regularScript = "console.log('clean script');";
-    expect(encodePostgresScript(regularScript)).toBe(regularScript);
-    expect(decodePostgresScript(regularScript)).toBe(regularScript);
+    expect(encodeScript(regularScript)).toBe(regularScript);
+    expect(decodeScript(regularScript)).toBe(regularScript);
 
     const scriptWithNull = "const x = '\0';";
-    const encodedScript = encodePostgresScript(scriptWithNull) as string;
+    const encodedScript = encodeScript(scriptWithNull) as string;
     expect(
       encodedScript.startsWith("__risu_pg_script_utf16le_v1_8e81b0b9__:"),
     ).toBe(true);
-    expect(decodePostgresScript(encodedScript)).toBe(scriptWithNull);
+    expect(decodeScript(encodedScript)).toBe(scriptWithNull);
   });
 });

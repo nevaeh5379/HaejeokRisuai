@@ -1,4 +1,4 @@
-import { encodePostgresJsonValue } from "../../jsonCodec.ts";
+import { encodeJsonValue } from "../../jsonCodec.ts";
 import type { CharacterUpdate } from "../../../../../../packages/protocol/domain/character.ts";
 import type { Insertable } from "kysely";
 import type { CharacterTables } from "../../../../../../packages/protocol/tables/character.ts";
@@ -63,7 +63,7 @@ const relationMappers: RelationMappers = {
     script_type: script.type ?? null,
     flag: null,
     able_flag: null,
-    trigger_payload: JSON.stringify(encodePostgresJsonValue(script)),
+    trigger_payload: JSON.stringify(encodeJsonValue(script)),
   }),
   additionalAssets: ([name, uri, extension]) => ({
     asset_source: "additional",
@@ -99,7 +99,7 @@ const relationMappers: RelationMappers = {
     cache_payload:
       entry.loreCache === undefined
         ? null
-        : JSON.stringify(encodePostgresJsonValue(entry.loreCache)),
+        : JSON.stringify(encodeJsonValue(entry.loreCache)),
   }),
 };
 

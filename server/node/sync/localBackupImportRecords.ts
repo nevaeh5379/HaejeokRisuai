@@ -1,6 +1,6 @@
 import {
-  encodePostgresJsonValue,
-  decodePostgresJsonValue,
+  encodeJsonValue,
+  decodeJsonValue,
 } from "../storage/postgres/jsonCodec.ts";
 import { loadMssql, loadOracle } from "./../util/runtimeModules.ts";
 type SqlVendor = "postgres" | "oracle" | "azure";
@@ -128,15 +128,11 @@ export class LocalBackupImportRecordStore {
    * decode = decodeRecord(pgJson^-1), applied LIFO.
    */
   private encodePayload(record: RestoreRecord): string {
-    return JSON.stringify(
-      encodePostgresJsonValue(this.adapter.encodeRecord(record)),
-    );
+    return JSON.stringify(encodeJsonValue(this.adapter.encodeRecord(record)));
   }
 
   private decodePayload(payload: string): RestoreRecord {
-    return this.adapter.decodeRecord(
-      decodePostgresJsonValue(JSON.parse(payload)),
-    );
+    return this.adapter.decodeRecord(decodeJsonValue(JSON.parse(payload)));
   }
 
   private async postgresPool(): Promise<PostgresClient> {

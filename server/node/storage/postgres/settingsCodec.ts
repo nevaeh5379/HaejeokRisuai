@@ -9,7 +9,7 @@ import type {
   SettingValueRow,
   SettingValueType,
 } from "../relationalRows.ts";
-import { canUsePostgresText } from "./jsonCodec.ts";
+import { canUseText } from "./jsonCodec.ts";
 
 /** Member columns of one `system.setting_values` row. */
 type SettingMemberColumns = Pick<
@@ -65,7 +65,7 @@ function encodeMember(
   if (position !== null) {
     return { member_key: null, encoded_member_key: null, position };
   }
-  if (canUsePostgresText(key)) {
+  if (canUseText(key)) {
     return { member_key: key, encoded_member_key: null, position: null };
   }
   return {
@@ -109,7 +109,7 @@ function encodeValueRow(
     return { ...columns, value_type: "object", ...UNSET_VALUE_COLUMNS };
   }
   if (typeof value === "string") {
-    if (canUsePostgresText(value)) {
+    if (canUseText(value)) {
       return {
         ...columns,
         value_type: "text",

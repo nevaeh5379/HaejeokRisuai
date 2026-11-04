@@ -1,4 +1,4 @@
-import { canUsePostgresText } from "./jsonCodec.ts";
+import { canUseText } from "./jsonCodec.ts";
 
 const DEFINITIONS: any = [
   {
@@ -323,7 +323,7 @@ for (const definition of DEFINITIONS) {
 }
 
 function text(value?: any): any {
-  return typeof value === "string" && canUsePostgresText(value) ? value : null;
+  return typeof value === "string" && canUseText(value) ? value : null;
 }
 
 function scalarText(value?: any): any {

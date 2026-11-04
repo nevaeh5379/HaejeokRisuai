@@ -22,10 +22,7 @@ import {
   readStorageStartupSettings,
   runStartupStage,
 } from "../../http/startupDiagnostics.ts";
-import {
-  decodePostgresJsonValue,
-  encodePostgresJsonValue,
-} from "../postgres/jsonCodec.ts";
+import { decodeJsonValue, encodeJsonValue } from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
   rebuildChat,
@@ -1295,7 +1292,7 @@ class AzureStorage extends SqlStorageBase {
     for (const row of attrsRes.recordset) {
       const raw = row.value;
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      fields[row.key] = decodePostgresJsonValue(parsed);
+      fields[row.key] = decodeJsonValue(parsed);
     }
     if (emotionsRes.recordset.length) {
       fields.emotionImages = emotionsRes.recordset.map((item) => [
@@ -1373,8 +1370,7 @@ class AzureStorage extends SqlStorageBase {
       },
       readLinearMessages: () =>
         this._loadLinearMessagesForBranchMigration(target, chatId),
-      decodeState: (value) =>
-        decodePostgresJsonValue(decodeLegacyBranchState(value)),
+      decodeState: (value) => decodeJsonValue(decodeLegacyBranchState(value)),
       newId: () => crypto.randomUUID(),
     });
   }

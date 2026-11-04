@@ -8,10 +8,7 @@ import type {
   CharactersTable,
   CharacterTables,
 } from "../../../../packages/protocol/tables/character.ts";
-import {
-  decodePostgresJsonValue,
-  encodePostgresJsonValue,
-} from "./jsonCodec.ts";
+import { decodeJsonValue, encodeJsonValue } from "./jsonCodec.ts";
 
 const CHARACTER_SCALARS: any = {
   name: "name",
@@ -71,18 +68,18 @@ function own(object?: any, key?: any): any {
 }
 
 function encodeJson(value?: any): any {
-  return encodePostgresJsonValue(value);
+  return encodeJsonValue(value);
 }
 
 function decodeJson(value?: any): any {
   if (typeof value === "string")
     try {
-      return decodePostgresJsonValue(JSON.parse(value));
+      return decodeJsonValue(JSON.parse(value));
     } catch (e: any) {
-      return decodePostgresJsonValue(value);
+      return decodeJsonValue(value);
     }
 
-  return decodePostgresJsonValue(value);
+  return decodeJsonValue(value);
 }
 
 export function containsNul(value: unknown, seen = new Set<object>()): boolean {
@@ -1077,7 +1074,7 @@ export function decodeCharacterReadRow<K extends keyof CharacterFields>(
       }
     }
     if (Object.hasOwn(attributes, key))
-      value = decodePostgresJsonValue(attributes[key]);
+      value = decodeJsonValue(attributes[key]);
     if (key === "viewScreen" && value !== "emotion" && value !== "imggen")
       value = "none";
     if (key === "chaId") value = row.id;
@@ -1152,7 +1149,7 @@ export function encodeCharacterPatch(
       result.attributes.push({
         character_id: id,
         key,
-        value: encodePostgresJsonValue(value),
+        value: encodeJsonValue(value),
       });
   }
   return result;

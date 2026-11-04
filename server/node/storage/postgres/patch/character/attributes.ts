@@ -9,7 +9,7 @@ import {
   CHARACTER_RELATIONS,
   containsNul,
 } from "../../relationalCodec.ts";
-import { encodePostgresJsonValue } from "../../jsonCodec.ts";
+import { encodeJsonValue } from "../../jsonCodec.ts";
 
 export type Rows = Insertable<CharacterTables["character.attributes"]>[];
 export type Keys = (keyof CharacterFields)[];
@@ -32,7 +32,7 @@ export const Attributes = {
         attributes.push({
           character_id: id,
           key,
-          value: JSON.stringify(encodePostgresJsonValue(value)),
+          value: JSON.stringify(encodeJsonValue(value)),
         });
     }
     return { attributes, attributeKeys };
