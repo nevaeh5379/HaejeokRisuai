@@ -7,7 +7,7 @@ import {
   alertStore,
   alertProgress,
 } from "../alert";
-import type { Database } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { createDatabaseSnapshot } from "../storage/database/databaseSnapshot";
 
 import { forageStorage, getUncleanables, openURL } from "../globalApi.svelte";

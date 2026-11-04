@@ -6,7 +6,8 @@ import {
   resolveSelectedChatTarget,
   type ChatExecutionTarget,
 } from "src/ts/chatTarget";
-import type { Database, Message } from "@risuai/protocol/domain/database.ts";
+import type { Message } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 import { selectedCharID } from "./stores.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";

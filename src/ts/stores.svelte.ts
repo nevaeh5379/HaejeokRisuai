@@ -58,7 +58,7 @@ type PluginSafetyError = {
 };
 type Character = import("@risuai/protocol/domain/database.ts").character;
 type GroupChat = import("@risuai/protocol/domain/database.ts").groupChat;
-type Database = import("@risuai/protocol/domain/database.ts").Database;
+type Database = import("@risuai/protocol/domain/legacy/database.ts").Database;
 type SimpleCharacter = import("./parser/parser.svelte").simpleCharacterArgument;
 type HubType = import("./hubCatalog").hubType;
 

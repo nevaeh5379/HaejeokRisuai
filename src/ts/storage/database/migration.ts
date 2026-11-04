@@ -1,4 +1,4 @@
-import type { Database } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { normalizeDatabaseDefaults } from "./databaseDefaults";
 import { restoreUpstreamPluginStorage } from "@risuai/backup-core/upstreamPluginStorage";
 import { getColdStorageItem } from "../../process/coldstorage.svelte";

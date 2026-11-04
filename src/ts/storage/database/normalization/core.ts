@@ -2,7 +2,7 @@ import {
   defaultJailbreak,
   defaultMainPrompt,
 } from "@risuai/protocol/domain/defaultPrompts.ts";
-import type { Database } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,

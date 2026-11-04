@@ -36,11 +36,11 @@ import {
   type QueryLog,
 } from "./sqliteTestHarness";
 import type {
-  Database,
   character,
   Chat,
   Message,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";

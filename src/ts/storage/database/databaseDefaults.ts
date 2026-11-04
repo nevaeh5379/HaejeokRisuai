@@ -1,11 +1,10 @@
 import { readLegacyPresetFields } from "../presets/legacyPresetCompatibility";
 import type {
   botPreset,
-  Database,
   DatabaseSettings,
-  PortableDatabase,
   StreamingDisplayOptimizationMode,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { safeStructuredClone } from "../../polyfill";
 import { presetTemplate } from "../presets/presetDefaults";
 import { SETTINGS_STORE_EXCLUDED_KEYS } from "../sql/sqlDeferredSettings";
@@ -162,7 +161,7 @@ function normalizeAggregateDomains(data: Database): void {
     data.selectedPersona = 0;
   }
 
-  const portable = data as Database & Partial<PortableDatabase>;
+  const portable = data;
   if (!Array.isArray(portable.botPresets) || portable.botPresets.length === 0) {
     portable.botPresets = [
       {

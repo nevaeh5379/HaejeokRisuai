@@ -5,7 +5,7 @@ import {
   ensureAllDomains,
   type CoreDomainKey,
 } from "./domainRegistry.svelte";
-import type { PortableDatabase } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 describe("Domain Registry and Contract", () => {
   it("implements all required domain keys in DOMAIN_REGISTRY", () => {
@@ -25,7 +25,7 @@ describe("Domain Registry and Contract", () => {
   });
 
   it("collects module icon and assets correctly in all scope", () => {
-    const mockDb: PortableDatabase = {
+    const mockDb: Database = {
       username: "Tester",
       userIcon: "assets/user.png",
       customBackground: "assets/bg.png",
@@ -71,7 +71,7 @@ describe("Domain Registry and Contract", () => {
   });
 
   it("ensures missing domains are populated via ensureAllDomains", async () => {
-    const sparseDb: PortableDatabase = {
+    const sparseDb: Database = {
       username: "Bob",
       userIcon: "assets/bob.png",
       customBackground: "",

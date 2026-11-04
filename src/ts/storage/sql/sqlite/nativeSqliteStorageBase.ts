@@ -5,14 +5,16 @@ import type {
   character,
   Chat,
   customscript,
-  CanonicalDatabase,
-  Database as DatabaseType,
   DatabaseSettings,
   groupChat,
   loreBook,
   Message,
   RisuPersona,
 } from "@risuai/protocol/domain/database.ts";
+import type {
+  Database,
+  Database as DatabaseType,
+} from "@risuai/protocol/domain/legacy/database.ts";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
@@ -912,7 +914,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       revision: this.currentRevision,
       legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
       loadChatMessages: (chatId) => this.message.list(chatId),
-    })) as SqlDatabaseSnapshotResult;
+    })) as unknown as SqlDatabaseSnapshotResult;
   }
 
   protected async commitInternal(

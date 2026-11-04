@@ -1,12 +1,11 @@
 import type {
   Chat,
-  Database,
-  PortableDatabase,
   Message,
   character,
   groupChat,
   botPreset,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { v4 as uuidv4 } from "uuid";
 import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";
 
@@ -203,7 +202,7 @@ export function buildSqlReplaceCommit(
     deletes: [],
     clear: true,
   };
-  const portableDatabase = database as Database & Partial<PortableDatabase>;
+  const portableDatabase = database;
   const portablePresets = Array.isArray(portableDatabase.botPresets)
     ? portableDatabase.botPresets
     : [];

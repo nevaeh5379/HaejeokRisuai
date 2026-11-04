@@ -8,7 +8,6 @@ import localforage from "localforage";
 const SHARED_TEXT_ENCODER = new TextEncoder();
 import { getNodeClientSessionId } from "../../../network/nodeClientSession";
 import type {
-  Database,
   DatabaseSettings,
   Message,
   character,
@@ -19,6 +18,7 @@ import type {
   loreBook,
   customscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {
   INodeSqlStorageAdmin,

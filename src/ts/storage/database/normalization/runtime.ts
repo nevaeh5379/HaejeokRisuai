@@ -9,10 +9,8 @@ import {
   normalizeChatLoadPages,
 } from "../../../chatLoadPages";
 import { number, object, string } from "valibot";
-import type {
-  Database,
-  StreamingDisplayOptimizationMode,
-} from "@risuai/protocol/domain/database.ts";
+import type { StreamingDisplayOptimizationMode } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import {
   defaultArray,
   defaultBoolean,

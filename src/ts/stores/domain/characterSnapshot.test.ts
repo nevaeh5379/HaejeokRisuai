@@ -30,11 +30,8 @@ import * as util from "../../util";
 import { selectedCharID } from "../../stores.svelte";
 import type { DatabaseSync } from "node:sqlite";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type {
-  character,
-  PortableDatabase,
-  botPreset,
-} from "@risuai/protocol/domain/database.ts";
+import type { character, botPreset } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 describe.each([
   { name: "Web", make: makeWebStorage },
@@ -382,7 +379,7 @@ describe.each([
 
   async function seedThreeCharacters() {
     characterStore.dispose();
-    const fixture = buildFullDatabase() as PortableDatabase;
+    const fixture = buildFullDatabase() as Database;
     fixture.botPresets = [{ name: "preserved preset" } as botPreset];
     fixture.plugins = [
       { name: "preserved plugin", script: "source", enabled: false } as never,

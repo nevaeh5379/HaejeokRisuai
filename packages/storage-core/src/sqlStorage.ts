@@ -1,6 +1,4 @@
 import type {
-  Database,
-  CanonicalDatabase,
   DatabaseSettings,
   character,
   groupChat,
@@ -11,6 +9,7 @@ import type {
   loreBook,
   customscript,
 } from "../../protocol/domain/database.ts";
+import type { Database } from "../../protocol/domain/legacy/database.ts";
 import type {
   AuthorNoteMetadata,
   AuthorNoteRow,
@@ -64,8 +63,8 @@ export interface SqlStartupDataResult {
 
 export interface SqlDatabaseSnapshotResult {
   revision: number;
-  /** Canonical aggregate for storage/backup work; legacy persona mirrors are absent. */
-  database: CanonicalDatabase | null;
+  /** Legacy aggregate export for compatibility; persona mirrors may be absent. */
+  database: Database | null;
 }
 
 export interface SqlStorageSyncSummary {

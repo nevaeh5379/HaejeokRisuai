@@ -1,6 +1,7 @@
 <script lang="ts">
     import { changeChar, getCharImage, removeChar } from "../../ts/characters";
-import type { Database, character, groupChat } from "@risuai/protocol/domain/database.ts";
+    import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
+    import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
     import { characterStore } from 'src/ts/stores/domain';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";

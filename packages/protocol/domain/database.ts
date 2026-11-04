@@ -531,30 +531,7 @@ export interface PresetStoreData {
   activeBotPresetId?: string;
 }
 
-/**
- * Complete portable database shape, composed from each store's ownership
- * contract plus compatibility-only persona mirrors.
- */
-export interface Database
-  extends
-    DatabaseSettings,
-    CharacterStoreData,
-    PersonaStoreData,
-    ModuleStoreData,
-    PresetStoreData,
-    LegacyPersonaMirrorData {
-  /** Internal serialization boundary; live data belongs to the independent note store. */
-  globalAuthorNotes?: import("../src/authorNotes.ts").AuthorNoteRow[];
-  globalAuthorNoteSettings?: { allowScriptWrite: boolean };
-}
-
 export type LegacyPersonaMirrorKey = keyof LegacyPersonaMirrorData;
-
-/** Canonical SQL snapshots never persist legacy persona mirrors. */
-export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey> & {
-  botPresets?: botPreset[];
-  botPresetsId?: number;
-};
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
 export type DomainStoreSettingKey =
@@ -564,12 +541,6 @@ export type DomainStoreSettingKey =
   | keyof ModuleStoreData
   | keyof PresetStoreData
   | LegacyPersonaMirrorKey;
-
-/** External backup/preset files retain the legacy ordered array boundary. */
-export type PortableDatabase = Database & {
-  botPresets: botPreset[];
-  botPresetsId: number;
-};
 
 export interface CustomSideBarItem {
   id: string;

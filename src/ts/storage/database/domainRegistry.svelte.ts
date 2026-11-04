@@ -1,12 +1,11 @@
 import type {
-  PortableDatabase,
-  Database,
   character,
   groupChat,
   RisuPersona,
   RisuModule,
   botPreset,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { personaStore } from "../../stores/domain/personaStore.svelte";
@@ -22,10 +21,7 @@ export interface DomainAssetInfo {
   name: string;
 }
 
-export type DatabaseDraft = Partial<Database> & {
-  botPresets?: botPreset[];
-  botPresetsId?: number;
-};
+export type DatabaseDraft = Partial<Database>;
 
 export interface DomainHandler<T = unknown> {
   readonly key: CoreDomainKey;
@@ -33,7 +29,7 @@ export interface DomainHandler<T = unknown> {
     data: T,
     scope: BackupAssetScope,
     addAsset: (key: string | undefined, category: string, name: string) => void,
-    db: PortableDatabase,
+    db: Database,
   ): void;
   ensureDomain(db: DatabaseDraft): void;
 }
@@ -200,7 +196,7 @@ export const SettingsDomainHandler: DomainHandler<Partial<Database>> = {
 };
 
 /**
- * Core domain keys of the canonical database schema.
+ * Core domain keys of the legacy aggregate database shape.
  * Adding a domain key without registering its handler will cause a compile error.
  */
 export type CoreDomainKey =
@@ -231,7 +227,7 @@ export function ensureAllDomains(db: DatabaseDraft): DatabaseDraft {
  * Collects all backup assets across all registered domain handlers.
  */
 export function collectAllDomainAssets(
-  db: PortableDatabase,
+  db: Database,
   scope: BackupAssetScope,
 ): Map<string, { charName: string; assetName: string }> {
   const assets = new Map<string, { charName: string; assetName: string }>();

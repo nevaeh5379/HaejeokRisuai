@@ -1,6 +1,6 @@
 import { IMAGE_PROVIDER_IDS } from "@risuai/protocol/src/imageGeneration.ts";
 import { defaultAutoSuggestPrompt } from "@risuai/protocol/domain/defaultPrompts.ts";
-import type { Database } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import {
   defaultBoolean,
   defaultNumber,

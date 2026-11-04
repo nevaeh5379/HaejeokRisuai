@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Database } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,

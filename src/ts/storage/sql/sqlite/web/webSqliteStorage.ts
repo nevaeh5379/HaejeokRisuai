@@ -3,8 +3,6 @@ import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
-  CanonicalDatabase,
-  Database,
   DatabaseSettings,
   character,
   groupChat,
@@ -15,6 +13,7 @@ import type {
   loreBook,
   customscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {
   ISqlStorage,
@@ -1048,7 +1047,7 @@ export class WebSqliteStorage implements ISqlStorage {
       revision: this.currentRevision,
       legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
       loadChatMessages: (chatId) => this.message.list(chatId),
-    })) as SqlDatabaseSnapshotResult;
+    })) as unknown as SqlDatabaseSnapshotResult;
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {

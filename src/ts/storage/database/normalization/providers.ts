@@ -1,7 +1,8 @@
 import { defaultColorScheme } from "@risuai/protocol/domain/colorScheme.ts";
 import { fallback, object, picklist, type InferOutput } from "valibot";
 import { LLMFormat } from "../../../model/types";
-import type { botPreset, Database } from "@risuai/protocol/domain/database.ts";
+import type { botPreset } from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import {
   oobaDefaults,
   ainDefaults,

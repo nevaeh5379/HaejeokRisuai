@@ -13,7 +13,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import type { Database as DatabaseType } from "@risuai/protocol/domain/database.ts";
+import type { Database as DatabaseType } from "@risuai/protocol/domain/legacy/database.ts";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
 import { readSqliteQueryStream } from "./capacitorSqliteQueryStream";
@@ -287,7 +287,10 @@ export class CapacitorSqliteStorage
   ): Promise<boolean> {
     onProgress?.("Building SQL restore plan...", 0.01);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const rootCommit = buildSqlReplaceRootCommit(database, this.currentRevision);
+    const rootCommit = buildSqlReplaceRootCommit(
+      database,
+      this.currentRevision,
+    );
     await this.writeQueue.run(async () => {
       if (!this._enabled || !this.isStorageReady()) {
         throw new Error("SQLite storage is not enabled");

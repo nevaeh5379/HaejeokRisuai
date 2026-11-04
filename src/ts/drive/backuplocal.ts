@@ -24,12 +24,7 @@ import {
   encodeRisuSaveLegacyAsync,
 } from "../storage/backup/risuSave";
 import { normalizeDatabaseDefaults } from "../storage/database/databaseDefaults";
-import type {
-  CanonicalDatabase,
-  Database,
-  LegacyPersonaMirrorKey,
-  PortableDatabase,
-} from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -262,7 +257,7 @@ export const normalizeLocalBackupAssetPath = normalizeBackupAssetPath;
 export type LocalBackupMode = Exclude<BackupCoreLocalBackupMode, "partial">;
 
 export function buildPortableLocalBackupDatabase(
-  db: PortableDatabase,
+  db: Database,
   mode: LocalBackupMode,
   coldStorageValues?: ColdStorageValueMap,
 ): Record<string, any> {
@@ -494,13 +489,9 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   }
 }
 
-type BackupDatabaseDraft = CanonicalDatabase &
-  Partial<Pick<Database, LegacyPersonaMirrorKey>> &
-  Partial<Pick<PortableDatabase, "botPresets" | "botPresetsId">>;
-
 async function loadFullSqlBackupSnapshot(
   onProgress?: (msg: string) => void,
-): Promise<BackupDatabaseDraft> {
+): Promise<Database> {
   const storage = await getSqlStorage();
   if (!storage.isEnabled()) {
     const ok = await storage.init();
@@ -521,14 +512,14 @@ async function loadFullSqlBackupSnapshot(
 
 export async function createBackupDatabaseSnapshot(
   onProgress?: (msg: string) => void,
-): Promise<PortableDatabase> {
+): Promise<Database> {
   await flushDurableStores();
 
   const db = await loadFullSqlBackupSnapshot(onProgress);
 
   ensureAllDomains(db);
 
-  const normalized = normalizePortableBackupSnapshot(db) as PortableDatabase;
+  const normalized = normalizePortableBackupSnapshot(db) as Database;
   const branchStorage = await getSqlBranchStorage();
   return (await attachPortableDatabaseBranchGraphs(
     normalized,
@@ -542,7 +533,7 @@ export async function createBackupDatabaseSnapshot(
           branchStorage.branch.messages(id, branchId, { mode: "full" }),
       );
     },
-  )) as PortableDatabase;
+  )) as Database;
 }
 
 import {
@@ -613,7 +604,7 @@ function reportBackupAssetProgress(current: number, total: number): void {
 
 async function writeLocalBackupAssets(
   writer: LocalWriter,
-  db: PortableDatabase,
+  db: Database,
   options: LocalBackupExportOptions,
   precomputedAssetMap?: BackupAssetMap,
 ): Promise<{
@@ -729,7 +720,7 @@ async function writeLocalBackupAssets(
 }
 
 async function collectBackupColdStorage(
-  db: PortableDatabase,
+  db: Database,
 ): Promise<ColdStorageBackupCollection<ColdStorageBackupPayload> | null> {
   return await prepareColdStorageBackup({
     database: db,
@@ -738,7 +729,7 @@ async function collectBackupColdStorage(
     ): Promise<ColdStorageBackupCollection<ColdStorageBackupPayload>> =>
       await collectColdStorageBackupPayloads(db, onProgress),
     confirm: async (
-      database: PortableDatabase,
+      database: Database,
       unavailableKeys: readonly string[],
     ): Promise<boolean> =>
       await confirmIncompleteColdStorageOperation(
@@ -997,7 +988,7 @@ async function saveStreamingLocalBackupWithOptions(
     const { missingAssets, assetMap } = await writeLocalBackupAssets(
       writer,
       // Asset selection has already been reduced to its bounded key map.
-      {} as PortableDatabase,
+      {} as Database,
       options,
       inventory.assetMap,
     );
@@ -1343,7 +1334,7 @@ async function restoreLocalBackupSourceUnlocked(
         decodedDatabase ??
         ((await decodeRisuSave(db as Uint8Array)) as Database);
       const prepared = preparePortableDatabaseForBranchRestore(
-        normalizePortableBackupSnapshot(decodedDb as BackupDatabaseDraft),
+        normalizePortableBackupSnapshot(decodedDb as Database),
       );
       const dbData = prepared.database as Database;
       const portableBranchGraphs = prepared.branchGraphs;
@@ -1357,10 +1348,8 @@ async function restoreLocalBackupSourceUnlocked(
           ? dbData.personas.length
           : null,
         modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
-        botPresets: Array.isArray(
-          (dbData as Database & Partial<PortableDatabase>).botPresets,
-        )
-          ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
+        botPresets: Array.isArray(dbData.botPresets)
+          ? dbData.botPresets!.length
           : null,
         promptTemplate: Array.isArray(dbData.promptTemplate)
           ? dbData.promptTemplate.length

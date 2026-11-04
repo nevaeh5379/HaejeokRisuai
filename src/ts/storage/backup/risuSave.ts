@@ -3,10 +3,7 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { presetTemplate } from "../presets/presetDefaults";
-import type {
-  Database,
-  PortableDatabase,
-} from "@risuai/protocol/domain/database.ts";
+import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
   LEGACY_RAW_DATABASE_HEADER_BYTES,
@@ -147,7 +144,7 @@ const risuSaveCacheForage = localforage.createInstance({
 });
 
 export class RisuSaveDecoder {
-  async decode(data: Uint8Array): Promise<PortableDatabase> {
+  async decode(data: Uint8Array): Promise<Database> {
     const blocks: {
       name: string;
       type: RisuSaveType;
@@ -159,7 +156,7 @@ export class RisuSaveDecoder {
       } | null>;
     }[] = [];
     let offset = magicRisuSaveHeader.length;
-    let db: PortableDatabase = {} as PortableDatabase;
+    let db: Database = {} as Database;
     const loadedBlocks = new Set<string>();
     while (offset < data.length) {
       try {
