@@ -105,8 +105,8 @@ export class PluginCustomStorageSubsystem {
     const existingLoad = this.loads.get(key);
     if (existingLoad) return existingLoad;
     const storage = this.storage || (await getSqlStorage());
-    const pending = storage
-      .loadPluginCustomStorageKey(key)
+    const pending = storage.pluginCustomStorage
+      .get(key)
       .then((value) => {
         if (this.pendingClear || this.pendingDeletes.has(key)) {
           return undefined;

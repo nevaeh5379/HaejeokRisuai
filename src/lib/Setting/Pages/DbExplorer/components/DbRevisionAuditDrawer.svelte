@@ -68,8 +68,8 @@
         error = ''
         try {
             const storage = getNodeStorage().sql
-            if (typeof storage.getRevisionDetails === 'function') {
-                details = await storage.getRevisionDetails(revision.id)
+            if (typeof storage.revision.details === 'function') {
+                details = await storage.revision.details(revision.id)
             } else {
                 details = null
             }

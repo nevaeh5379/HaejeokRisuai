@@ -69,7 +69,7 @@ class DeferredSettingsLoader {
     const pending = (async () => {
       const { storage, hydrateSettingKey } = this.requireInitialized();
       try {
-        const value = await storage.loadSettingKey(key);
+        const value = await storage.setting.get(key);
         if (generation !== this.generation) return;
         if (!this.unloadedKeys.has(key)) return;
         hydrateSettingKey(key, value, value !== undefined);
@@ -157,19 +157,19 @@ class DeferredSettingsLoader {
       const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
 
       if (domain === "loreBook") {
-        const loreBooks = await storage.loadLorebooks();
+        const loreBooks = await storage.lorebook.list();
         if (generation !== this.generation) return;
         hydrateRemoteSettingKey("loreBook", loreBooks);
         continue;
       }
       if (domain === "scripts") {
-        const scripts = await storage.loadScripts();
+        const scripts = await storage.script.list();
         if (generation !== this.generation) return;
         hydrateRemoteSettingKey("globalscript", scripts);
         continue;
       }
 
-      const prompts = await storage.loadPrompts();
+      const prompts = await storage.prompt.load();
       if (generation !== this.generation) return;
       for (const key of loadedKeys) {
         const exists = Object.prototype.hasOwnProperty.call(prompts, key);
@@ -183,7 +183,7 @@ class DeferredSettingsLoader {
       if (generation !== this.generation) return;
       if (!this.isLoaded(key)) continue;
       const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
-      const value = await storage.loadSettingKey(key);
+      const value = await storage.setting.get(key);
       if (generation !== this.generation) return;
       hydrateRemoteSettingKey(key, value, value !== undefined);
     }
@@ -198,21 +198,21 @@ class DeferredSettingsLoader {
       const { storage, hydrateSettingKey } = this.requireInitialized();
       try {
         if (domain === "loreBook") {
-          const loreBooks = await storage.loadLorebooks();
+          const loreBooks = await storage.lorebook.list();
           if (generation !== this.generation) return;
           hydrateSettingKey("loreBook", loreBooks);
           this.markLoaded(["loreBook"]);
           return;
         }
         if (domain === "scripts") {
-          const scripts = await storage.loadScripts();
+          const scripts = await storage.script.list();
           if (generation !== this.generation) return;
           hydrateSettingKey("globalscript", scripts);
           this.markLoaded(["globalscript"]);
           return;
         }
 
-        const prompts = await storage.loadPrompts();
+        const prompts = await storage.prompt.load();
         if (generation !== this.generation) return;
         for (const key of PROMPT_SETTING_KEYS) {
           if (!this.unloadedKeys.has(key)) continue;

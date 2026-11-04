@@ -42,7 +42,7 @@ import type { Database, character, groupChat } from "@risuai/protocol/domain/dat
         if (storage && storage.sql.isEnabled()) {
             tagSearching = true;
             try {
-                tagResults = await storage.sql.searchCharactersByTag(tag, 100);
+                tagResults = await storage.sql.character.searchByTag(tag, 100);
             } catch {
                 tagResults = [];
             } finally {

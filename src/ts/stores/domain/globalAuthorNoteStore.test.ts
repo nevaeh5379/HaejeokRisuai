@@ -40,7 +40,7 @@ describe.each([
     return { ...harness, store };
   }
   function blockMetadataRead(storage: ISqlStorage) {
-    const readMetadata = storage.getGlobalAuthorNote.bind(storage);
+    const readMetadata = storage.authorNote.get.bind(storage);
     let finishRead!: () => void;
     let readStarted!: () => void;
     const blocked = new Promise<void>((resolve) => {
@@ -49,14 +49,12 @@ describe.each([
     const started = new Promise<void>((resolve) => {
       readStarted = resolve;
     });
-    vi.spyOn(storage, "getGlobalAuthorNote").mockImplementationOnce(
-      async (id) => {
-        const metadata = await readMetadata(id);
-        readStarted();
-        await blocked;
-        return metadata;
-      },
-    );
+    vi.spyOn(storage.authorNote, "get").mockImplementationOnce(async (id) => {
+      const metadata = await readMetadata(id);
+      readStarted();
+      await blocked;
+      return metadata;
+    });
     return { started, finishRead };
   }
   it("queries metadata without content, keeps content uncached, and waits for committed writes", async () => {
@@ -76,9 +74,7 @@ describe.each([
     );
     await loaded.getContent();
     await loaded.setContent("persisted");
-    expect((await storage.readGlobalAuthorNote(note.id))?.content).toBe(
-      "persisted",
-    );
+    expect((await storage.authorNote.read(note.id))?.content).toBe("persisted");
     expect(await note.getContent()).toBe("persisted");
     expect("content" in loaded).toBe(false);
   });
@@ -87,7 +83,7 @@ describe.each([
     const other = new SqlGlobalAuthorNoteStore();
     await other.init(storage);
     const note = await store.create("before", "content");
-    const reads = vi.spyOn(storage, "getGlobalAuthorNote");
+    const reads = vi.spyOn(storage.authorNote, "get");
     const [first, second] = await Promise.all([
       store.get(note.id),
       store.get(note.id),
@@ -295,7 +291,7 @@ describe.each([
     database.globalAuthorNoteSettings = { allowScriptWrite: true };
     database.characters[0].chats[0].globalAuthorNoteId = "imported";
     await storage.replaceDatabase(database);
-    expect((await storage.readGlobalAuthorNote("imported"))?.contentHash).toBe(
+    expect((await storage.authorNote.read("imported"))?.contentHash).toBe(
       await hashAuthorNote("body"),
     );
     const snapshot = (await storage.exportDatabaseSnapshot())!.database!;
@@ -360,7 +356,7 @@ describe.each([
       },
     ];
     await storage.commit(commit);
-    expect(await storage.readGlobalAuthorNote("compound")).toMatchObject({
+    expect(await storage.authorNote.read("compound")).toMatchObject({
       name: "renamed",
       content: "2",
     });
@@ -380,7 +376,7 @@ describe.each([
     await expect(storage.commit(failing)).rejects.toMatchObject({
       code: "conflict",
     });
-    expect(await storage.readGlobalAuthorNote("compound")).toMatchObject({
+    expect(await storage.authorNote.read("compound")).toMatchObject({
       name: "renamed",
       content: "2",
     });

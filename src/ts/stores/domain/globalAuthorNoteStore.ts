@@ -65,7 +65,7 @@ class NoteObject implements GlobalAuthorNote {
   }
   getContent(): Promise<string> {
     return this.run(async () => {
-      const row = await this.storage.readGlobalAuthorNote(this.id);
+      const row = await this.storage.authorNote.read(this.id);
       this.store.assertCurrent(this.storage, this.generation);
       if (!row) throw new AuthorNoteError("missing", this.id);
       this.hash = row.contentHash;
@@ -142,7 +142,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
   async list(): Promise<readonly GlobalAuthorNote[]> {
     const storage = this.requireStorage();
     const generation = this.generation;
-    const rows = await storage.listGlobalAuthorNotes();
+    const rows = await storage.authorNote.list();
     this.assertCurrent(storage, generation);
     return rows.map((row) => new NoteObject(this, storage, generation, row));
   }
@@ -162,7 +162,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
             // Capacity eviction must not fail an already requested SQL read.
             ignoreFetchAbort: true,
             fetchMethod: async (key) => {
-              const metadata = await storage.getGlobalAuthorNote(key);
+              const metadata = await storage.authorNote.get(key);
               this.assertCurrent(storage, generation);
               return metadata ?? undefined;
             },
@@ -212,7 +212,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     );
   }
   getAllowScriptWrite(): Promise<boolean> {
-    return this.requireStorage().getGlobalAuthorNoteScriptWrite();
+    return this.requireStorage().authorNote.scriptWrite();
   }
   setAllowScriptWrite(allowScriptWrite: boolean): Promise<void> {
     return this.track(

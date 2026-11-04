@@ -40,6 +40,8 @@ describe("CharacterStore", () => {
   beforeEach(() => {
     committed = [];
     mockStorage = {
+      character: { document: vi.fn(async () => null) },
+
       chat: { load: vi.fn(async () => null) },
       message: {
         list: vi.fn(async () => []),
@@ -51,7 +53,6 @@ describe("CharacterStore", () => {
         })),
       },
       getRevision: vi.fn(() => committed.length),
-      loadCharacter: vi.fn(async () => null),
 
       commit: vi.fn(async (commit: SqlCommit) => {
         committed.push(structuredClone(commit));
@@ -93,13 +94,13 @@ describe("CharacterStore", () => {
     loaded.detailsLoaded = true;
     loaded.chats[0].id = "chat-selection-loader";
     const selectionLoader = vi.fn(async () => loaded);
-    (mockStorage as any).loadCharacterForSelection = selectionLoader;
+    (mockStorage as any).character.forSelection = selectionLoader;
     characterStore.init([shallow], mockStorage);
 
     await characterStore.ensureCharacterDetails(shallow.chaId!);
 
     expect(selectionLoader).toHaveBeenCalledWith(shallow.chaId);
-    expect(mockStorage.loadCharacter).not.toHaveBeenCalled();
+    expect(mockStorage.character.document).not.toHaveBeenCalled();
   });
 
   it("refreshes the remote character index while keeping cold entries lazy", async () => {
@@ -119,7 +120,7 @@ describe("CharacterStore", () => {
         added,
       ],
     }));
-    mockStorage.loadCharacter = vi.fn(async (id: string) =>
+    mockStorage.character.document = vi.fn(async (id: string) =>
       id === warm.chaId ? refreshedWarm : null,
     );
     characterStore.init([warm, removed], mockStorage);
@@ -160,7 +161,7 @@ describe("CharacterStore", () => {
     loaded.detailsLoaded = true;
     loaded.chats[0].id = "chat-lazy-1";
     loaded.chats[1].id = "chat-lazy-2";
-    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    vi.mocked(mockStorage.character.document).mockResolvedValue(loaded);
     characterStore.init([shallow], mockStorage);
 
     await characterStore.ensureCharacterDetails(shallow.chaId!);
@@ -183,7 +184,7 @@ describe("CharacterStore", () => {
     loaded.chatPage = 1;
     loaded.chats[0].id = "chat-startup-old";
     loaded.chats[1].id = "chat-startup-active";
-    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    vi.mocked(mockStorage.character.document).mockResolvedValue(loaded);
     characterStore.init([shallow], mockStorage);
 
     await characterStore.ensureCharacterDetails(shallow.chaId!);
@@ -208,7 +209,7 @@ describe("CharacterStore", () => {
     loaded.chats[2].id = "chat-stable-new";
 
     let resolveLoad!: (value: character) => void;
-    vi.mocked(mockStorage.loadCharacter).mockImplementationOnce(
+    vi.mocked(mockStorage.character.document).mockImplementationOnce(
       () => new Promise<character>((resolve) => (resolveLoad = resolve)),
     );
     characterStore.init([shallow], mockStorage);
@@ -243,7 +244,7 @@ describe("CharacterStore", () => {
     loaded.chats[0].scriptstate = { $persisted: "keep" };
     loaded.chats[0].GLGlobalVariables = { localToggle: "keep" };
     loaded.chats[0].useLocallySetGlobalVariables = true;
-    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    vi.mocked(mockStorage.character.document).mockResolvedValue(loaded);
     characterStore.init([shallow], mockStorage);
 
     await characterStore.ensureCharacterDetails(shallow.chaId!);
@@ -884,9 +885,7 @@ describe("CharacterStore", () => {
       loaded.chats[0].id = "chat-rehydrate-0";
       loaded.chats[0].detailsLoaded = false;
       (loaded as any).globalLore = [{ key: "restored" }];
-      (mockStorage as any).loadCharacterForSelection = vi.fn(
-        async () => loaded,
-      );
+      (mockStorage as any).character.forSelection = vi.fn(async () => loaded);
 
       await characterStore.ensureCharacterDetails(evictedId);
 

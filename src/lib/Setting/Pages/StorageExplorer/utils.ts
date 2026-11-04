@@ -135,12 +135,12 @@ export async function runStorageAnalysis(
   // only needs asset-bearing fields, so use the targeted asset-field loader
   // instead of hydrating every character's full tree (chats included).
   const sqlStorage = (characterStore as any).storage;
-  if (sqlStorage?.loadCharacterAssetFields) {
+  if (sqlStorage?.character.assetFields) {
     await Promise.allSettled(
       characters
         .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
         .map(async (c: any) => {
-          const assets = await sqlStorage.loadCharacterAssetFields(c.chaId);
+          const assets = await sqlStorage.character.assetFields(c.chaId);
           if (assets && typeof assets === "object") {
             Object.assign(c, assets);
           }

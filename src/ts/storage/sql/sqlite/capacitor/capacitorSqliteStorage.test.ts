@@ -188,7 +188,7 @@ describe("CapacitorSqliteStorage", () => {
 
     const stats = (storage as any).__bridgeStats;
     stats.queryStreamCalls = 0;
-    const selected = await storage.loadCharacterForSelection(
+    const selected = await storage.character.forSelection(
       source.characters[0].chaId,
     );
 
@@ -246,7 +246,7 @@ describe("CapacitorSqliteStorage", () => {
       pluginId: plugins[0].id,
       script,
     });
-    expect(await storage.loadPluginCustomStorage()).toEqual(
+    expect(await storage.pluginCustomStorage.load()).toEqual(
       source.pluginCustomStorage,
     );
     const startup = await storage.loadStartupData();
@@ -384,18 +384,18 @@ describe("CapacitorSqliteStorage", () => {
       database.prepare("SELECT COUNT(*) AS count FROM characters").get(),
     ).toEqual({ count: 2 });
     expect(
-      (await storage.loadPersonas()).map((persona) => persona.name),
+      (await storage.persona.list()).map((persona) => persona.name),
     ).toEqual(["One", "Two", "Three"]);
-    expect((await storage.loadModules()).map((module) => module.name)).toEqual([
+    expect((await storage.module.list()).map((module) => module.name)).toEqual([
       "First module",
       "Second module",
     ]);
-    const presets = await storage.listBotPresets();
+    const presets = await storage.preset.list();
     expect(presets.map((preset) => preset.name)).toEqual([
       "First preset",
       "Second preset",
     ]);
-    expect((await storage.loadPrompts()).mainPrompt).toBe("restored prompt");
+    expect((await storage.prompt.load()).mainPrompt).toBe("restored prompt");
     database.close();
   });
 
@@ -449,7 +449,7 @@ describe("CapacitorSqliteStorage", () => {
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM characters").get(),
     ).toEqual({ count: characterCount });
-    const personas = await storage.loadPersonas();
+    const personas = await storage.persona.list();
     expect(personas).toHaveLength(personaCount);
     expect([
       personas[0].name,
@@ -460,12 +460,12 @@ describe("CapacitorSqliteStorage", () => {
       `Stress persona ${Math.floor(personaCount / 2)}`,
       `Stress persona ${personaCount - 1}`,
     ]);
-    const modules = await storage.loadModules();
+    const modules = await storage.module.list();
     expect(modules).toHaveLength(moduleCount);
     expect(modules[moduleCount - 1].name).toBe(
       `Stress module ${moduleCount - 1}`,
     );
-    const presets = await storage.listBotPresets();
+    const presets = await storage.preset.list();
     expect(presets).toHaveLength(presetCount);
     expect(presets[0].name).toBe("Stress preset 0");
     expect(presets[Math.floor(presetCount / 2)].name).toBe(
@@ -474,7 +474,7 @@ describe("CapacitorSqliteStorage", () => {
     expect(presets[presetCount - 1].name).toBe(
       `Stress preset ${presetCount - 1}`,
     );
-    expect((await storage.loadPrompts()).mainPrompt).toBe(
+    expect((await storage.prompt.load()).mainPrompt).toBe(
       "stress restored prompt",
     );
     database.close();

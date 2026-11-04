@@ -240,7 +240,7 @@ describe("WebSqliteStorage", () => {
     const legacy = createEmptySqlCommit(0, "legacy-modules");
     legacy.root.upserts.push({ key: "modules", value: [first, second] });
     await storage.commit(legacy);
-    expect(await storage.loadModules()).toEqual([first, second]);
+    expect(await storage.module.list()).toEqual([first, second]);
 
     const created = { id: "module-c", name: "C" };
     const migrate = createEmptySqlCommit(1, "modules");
@@ -251,7 +251,7 @@ describe("WebSqliteStorage", () => {
     };
     await storage.commit(migrate);
 
-    expect(await storage.loadModules()).toEqual([first, second, created]);
+    expect(await storage.module.list()).toEqual([first, second, created]);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM module_records").get(),
     ).toEqual({ count: 3 });
@@ -273,7 +273,7 @@ describe("WebSqliteStorage", () => {
     };
     await storage.commit(delta);
 
-    expect(await storage.loadModules()).toEqual([updated, second, created]);
+    expect(await storage.module.list()).toEqual([updated, second, created]);
     const statements = batchSpy.mock.calls[0][0] as Array<{
       sql: string;
       bind?: unknown[];
@@ -441,21 +441,21 @@ describe("WebSqliteStorage", () => {
     expect(
       Object.prototype.hasOwnProperty.call(loaded?.settings ?? {}, "username"),
     ).toBe(false);
-    expect(await storage.loadPluginCustomStorageKey("plugin")).toEqual({
+    expect(await storage.pluginCustomStorage.get("plugin")).toEqual({
       nested: [1, null, "three"],
     });
-    expect(await storage.loadPersonas()).toEqual(source.personas);
-    expect(await storage.loadModules()).toEqual(source.modules);
-    expect(await storage.loadLorebooks()).toEqual(source.loreBook);
-    const character = await storage.loadCharacter("char-roundtrip");
+    expect(await storage.persona.list()).toEqual(source.personas);
+    expect(await storage.module.list()).toEqual(source.modules);
+    expect(await storage.lorebook.list()).toEqual(source.loreBook);
+    const character = await storage.character.document("char-roundtrip");
     expect(character?.name).toBe("Roundtrip");
     expect(character?.chats[0].messagesLoaded).toBe(false);
     const chat = await storage.chat.load("chat-roundtrip");
     expect(chat?.message).toEqual(source.characters[0].chats[0].message);
-    const summaries = await storage.listBotPresets();
+    const summaries = await storage.preset.list();
     expect(summaries).toHaveLength(1);
     expect(
-      (await storage.loadBotPreset(summaries[0].id))?.moduleIntergration,
+      (await storage.preset.load(summaries[0].id))?.moduleIntergration,
     ).toBe("module-a");
     database.close();
   });
@@ -549,13 +549,13 @@ describe("TauriSqliteStorage", () => {
     `);
     const storage = makeTauriStorage(database);
 
-    const tables = await storage.listDbTables();
+    const tables = await storage.table.list();
     expect(
       tables.find((table) => table.name === "system_settings"),
     ).toMatchObject({
       rowCount: 1,
     });
-    const page = await storage.getDbTableData("system_settings", {
+    const page = await storage.table.data("system_settings", {
       search: "explorer-key",
       limit: 10,
     });

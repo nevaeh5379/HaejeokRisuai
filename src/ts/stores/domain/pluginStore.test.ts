@@ -27,8 +27,10 @@ describe("PluginStore", () => {
   beforeEach(() => {
     records = [plugin("plugin-1", "Before")];
     storage = {
+      setting: { get: vi.fn(async () => undefined) },
+
       getRevision: vi.fn(() => 0),
-      loadSettingKey: vi.fn(async () => undefined),
+
       commit: vi.fn(async (_commit: SqlCommit) => ({ revision: 1 })),
       plugin: {
         load: vi.fn(async () => null),

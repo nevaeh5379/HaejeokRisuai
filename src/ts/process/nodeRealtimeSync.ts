@@ -152,7 +152,7 @@ async function loadSettingValues(
     for (let i = offset; i < end; i++) {
       const key = keys[i];
       promises.push(
-        storage.loadSettingKey(key).then((value) => {
+        storage.setting.get(key).then((value) => {
           values.set(key, value);
         }),
       );
@@ -238,7 +238,7 @@ async function applyDatabaseChange(
     for (let i = offset; i < end; i++) {
       const key = pluginStorageUpsertKeys[i];
       promises.push(
-        storage.loadPluginCustomStorageKey(key).then((value) => {
+        storage.pluginCustomStorage.get(key).then((value) => {
           if (value === undefined)
             settingsStore.hydrateRemotePluginCustomStorageDelete(key);
           else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);

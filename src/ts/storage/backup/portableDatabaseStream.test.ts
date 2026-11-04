@@ -11,6 +11,56 @@ import {
 function createStorage(overrides: Record<string, unknown> = {}) {
   let summaryReads = 0;
   const storage = {
+    coldStorage: {
+      list: vi.fn(async () => ({ items: [] })),
+      get: vi.fn(async () => null),
+    },
+
+    pluginCustomStorage: {
+      keys: vi.fn(async () => ["plugin-1"]),
+      get: vi.fn(async () => ({ retained: true })),
+    },
+
+    preset: {
+      list: vi.fn(async () => [
+        {
+          id: "preset-1",
+          position: 0,
+          name: "Preset",
+          image: "",
+          apiType: "openai",
+          aiModel: "model",
+          hash: "hash",
+        },
+      ]),
+      load: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
+    },
+
+    module: { list: vi.fn(async () => [{ id: "module-1", name: "Module" }]) },
+
+    setting: {
+      keys: vi.fn(async () => ["personas", "activeBotPresetId"]),
+      get: vi.fn(async (key: string) =>
+        key === "personas"
+          ? [{ name: "User", icon: "assets/user.png", personaPrompt: "" }]
+          : "preset-1",
+      ),
+    },
+
+    character: {
+      document: vi.fn(async () => ({
+        chaId: "character-1",
+        type: "character",
+        name: "Character",
+        image: "assets/character.png",
+        chatPage: 0,
+        detailsLoaded: true,
+        chats: [{ id: "chat-1", name: "Chat", message: [] }],
+      })),
+    },
+
+    authorNote: { list: async () => [], scriptWrite: async () => false },
+
     chat: {
       load: vi.fn(async () => ({
         id: "chat-1",
@@ -115,44 +165,11 @@ function createStorage(overrides: Record<string, unknown> = {}) {
         },
       ],
     })),
-    listSettingKeys: vi.fn(async () => ["personas", "activeBotPresetId"]),
-    loadSettingKey: vi.fn(async (key: string) =>
-      key === "personas"
-        ? [{ name: "User", icon: "assets/user.png", personaPrompt: "" }]
-        : "preset-1",
-    ),
-    loadModules: vi.fn(async () => [{ id: "module-1", name: "Module" }]),
-    listBotPresets: vi.fn(async () => [
-      {
-        id: "preset-1",
-        position: 0,
-        name: "Preset",
-        image: "",
-        apiType: "openai",
-        aiModel: "model",
-        hash: "hash",
-      },
-    ]),
-    loadBotPreset: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
-    listGlobalAuthorNotes: async () => [],
-    getGlobalAuthorNoteScriptWrite: async () => false,
+
     plugin: {
       loadAll: vi.fn(async () => []),
       script: { load: vi.fn(async () => null) },
     },
-    listPluginCustomStorageKeys: vi.fn(async () => ["plugin-1"]),
-    loadPluginCustomStorageKey: vi.fn(async () => ({ retained: true })),
-    listColdStorageItems: vi.fn(async () => ({ items: [] })),
-    getColdStorageItem: vi.fn(async () => null),
-    loadCharacter: vi.fn(async () => ({
-      chaId: "character-1",
-      type: "character",
-      name: "Character",
-      image: "assets/character.png",
-      chatPage: 0,
-      detailsLoaded: true,
-      chats: [{ id: "chat-1", name: "Chat", message: [] }],
-    })),
 
     exportDatabaseSnapshot: vi.fn(() => {
       throw new Error("aggregate snapshot must not be called");
@@ -248,14 +265,21 @@ describe("portable database streaming backup", () => {
       (_, index) => `setting-${index}`,
     );
     const { storage } = createStorage({
-      listSettingKeys: vi.fn(async () => settingKeys),
-      loadSettingKeys: vi.fn(
-        async (keys: string[]) => new Map(keys.map((key) => [key, { key }])),
-      ),
-      listPluginCustomStorageKeys: vi.fn(async () => []),
-      loadModules: vi.fn(async () => []),
-      listBotPresets: vi.fn(async () => []),
-      listColdStorageItems: vi.fn(async () => ({ items: [] })),
+      coldStorage: { list: vi.fn(async () => ({ items: [] })) },
+
+      preset: { list: vi.fn(async () => []) },
+
+      module: { list: vi.fn(async () => []) },
+
+      pluginCustomStorage: { keys: vi.fn(async () => []) },
+
+      setting: {
+        keys: vi.fn(async () => settingKeys),
+        getMany: vi.fn(
+          async (keys: string[]) => new Map(keys.map((key) => [key, { key }])),
+        ),
+      },
+
       loadStartupData: vi.fn(async () => ({
         status: "ready",
         revision: 7,

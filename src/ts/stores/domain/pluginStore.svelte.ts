@@ -1,5 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
-import type { PluginMetadata, PluginScript } from "@risuai/protocol/domain/pluginTypes.ts";
+import type {
+  PluginMetadata,
+  PluginScript,
+} from "@risuai/protocol/domain/pluginTypes.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
@@ -217,9 +220,9 @@ class PluginStore
   }
 
   async replaceCompatibilityPlugins(
-    plugins: readonly (
-      Omit<PluginMetadata, "id" | "position"> & { script: string }
-    )[],
+    plugins: readonly (Omit<PluginMetadata, "id" | "position"> & {
+      script: string;
+    })[],
   ): Promise<void> {
     const metadata = plugins.map((plugin, position) => {
       const { script: _script, ...data } = plugin;
@@ -329,8 +332,7 @@ class PluginStore
     const currentIds = snapshot.map((plugin) => plugin.id);
     const currentIdSet = new Set(currentIds);
     const upserts = snapshot.filter(
-      (plugin) =>
-        this.committed.get(plugin.id) !== snapshotFingerprint(plugin),
+      (plugin) => this.committed.get(plugin.id) !== snapshotFingerprint(plugin),
     );
     const deletes: string[] = [];
     for (const id of this.committed.keys()) {
@@ -383,7 +385,7 @@ class PluginStore
   }
 
   private async migrateLegacyPlugins(storage: ISqlStorage): Promise<void> {
-    const legacy = await storage.loadSettingKey("plugins");
+    const legacy = await storage.setting.get("plugins");
     if (!Array.isArray(legacy) || legacy.length === 0) return;
 
     const metadata: PluginMetadata[] = [];

@@ -288,7 +288,7 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
   (storage as any).dbPath = "/tmp/test.db";
   (storage as any)._enabled = true;
   (storage as any).initialized = true;
-  (storage as any).revision = 0;
+  (storage as any).currentRevision = 0;
   (storage as any).__invoke = invoke;
   (storage as any).__log = log;
   (storage as any).executeNativeTransaction = async (
@@ -506,7 +506,7 @@ export function makeCapacitorStorage(
   (storage as any).dbOpen = true;
   (storage as any)._enabled = true;
   (storage as any).initialized = true;
-  (storage as any).revision = 0;
+  (storage as any).currentRevision = 0;
   (storage as any).__log = log;
   (storage as any).__bridgeStats = bridgeStats;
   (storage as any).createRestoreStream = () => {

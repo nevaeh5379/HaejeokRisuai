@@ -265,7 +265,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
         { pluginId: plugin.id, script },
       );
     }
-    expect(await targetHarness.storage.loadPluginCustomStorage()).toEqual(
+    expect(await targetHarness.storage.pluginCustomStorage.load()).toEqual(
       source.pluginCustomStorage,
     );
     sourceHarness.database.close();
@@ -309,7 +309,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       pluginId: installed[0].id,
       script: plugin.script,
     });
-    expect(await storage.loadSettingKey("plugins")).toBeUndefined();
+    expect(await storage.setting.get("plugins")).toBeUndefined();
     database.close();
   });
 
@@ -335,12 +335,12 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(db.characters[0].chats[0].messagesFullyLoaded).toBe(true);
     expect(db.characters[0].chats[0].messageOffset).toBe(0);
     expect(db.characters[0].chats[0].messageTotal).toBe(2);
-    expect(await storage.loadPersonas()).toEqual(source.personas);
-    expect(await storage.loadLorebooks()).toEqual(source.loreBook);
-    expect(await storage.loadModules()).toEqual(source.modules);
-    expect(await storage.loadScripts()).toEqual(source.globalscript);
+    expect(await storage.persona.list()).toEqual(source.personas);
+    expect(await storage.lorebook.list()).toEqual(source.loreBook);
+    expect(await storage.module.list()).toEqual(source.modules);
+    expect(await storage.script.list()).toEqual(source.globalscript);
 
-    const char = await storage.loadCharacter("char-1");
+    const char = await storage.character.document("char-1");
     expect(char?.name).toBe("Alpha");
     expect(char?.detailsLoaded).toBe(true);
     expect(char?.chats.map((c) => c.id)).toEqual(["chat-1", "chat-2"]);
@@ -396,7 +396,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     );
     await storage.commit(commit);
     queryLog.clear();
-    const keys = await storage.listSettingKeys?.();
+    const keys = await storage.setting.keys?.();
     expect(keys).toEqual(
       expect.arrayContaining(["alpha-setting", "beta-setting"]),
     );
@@ -537,7 +537,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     await seed(storage);
     queryLog.clear();
 
-    const character = await storage.loadCharacter("char-1");
+    const character = await storage.character.document("char-1");
     expect(character?.detailsLoaded).toBe(true);
     expect(character?.chats).toHaveLength(2);
     expect(character?.chats[0].messagesLoaded).toBe(false);
@@ -1141,7 +1141,7 @@ describe.each(backendFactories)("$name N+1 defense", ({ make }) => {
     await seed(storage);
     queryLog.clear();
 
-    const loader = (storage as any).loadCharacterForSelection?.bind(storage);
+    const loader = (storage as any).character.forSelection?.bind(storage);
     if (!loader) {
       throw new Error(
         `${(storage as any).backendKind}: loadCharacterForSelection missing (Phase 3 contract)`,

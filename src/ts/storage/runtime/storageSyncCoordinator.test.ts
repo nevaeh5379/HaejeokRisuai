@@ -25,8 +25,18 @@ import {
 
 function sourceSql(revision = 7): ISqlStorage {
   return {
-    listGlobalAuthorNotes: async () => [],
-    getGlobalAuthorNoteScriptWrite: async () => false,
+    coldStorage: { list: async () => ({ items: [] }) },
+
+    preset: { list: async () => [] },
+
+    module: { list: async () => [] },
+
+    pluginCustomStorage: { keys: async () => [] },
+
+    setting: { keys: async () => [] },
+
+    authorNote: { list: async () => [], scriptWrite: async () => false },
+
     plugin: { loadAll: async () => [], script: { load: async () => null } },
     getRevision: () => revision,
     getStorageSyncSummary: async () => ({
@@ -34,11 +44,7 @@ function sourceSql(revision = 7): ISqlStorage {
       initialized: true,
       records: { settings: 0, characters: 0, chats: 0, messages: 0, total: 0 },
     }),
-    listSettingKeys: async () => [],
-    listPluginCustomStorageKeys: async () => [],
-    loadModules: async () => [],
-    listBotPresets: async () => [],
-    listColdStorageItems: async () => ({ items: [] }),
+
     loadStartupData: async () => ({ characters: [] }),
   } as unknown as ISqlStorage;
 }

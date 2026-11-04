@@ -84,6 +84,348 @@ import {
 } from "./sqliteStorageUtils";
 
 export abstract class NativeSqliteStorageBase implements ISqlStorage {
+  table = {
+    list: async (): Promise<NodePostgresTableInfo[]> => {
+      if (!this._enabled && !(await this.init())) return [];
+      return await sqliteAdmin.listTables(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        this.selectRowSets.bind(this) as SqliteSelectRowSets,
+      );
+    },
+    data: async (
+      table: string,
+      options: {
+        offset?: number;
+        limit?: number;
+        sortColumn?: string;
+        sortOrder?: "asc" | "desc";
+        search?: string;
+        columns?: string[];
+      } = {},
+    ): Promise<NodePostgresTableData> => {
+      if (!this._enabled && !(await this.init())) {
+        throw new Error(`${this.backendName} is not available`);
+      }
+      return await sqliteAdmin.getTableData(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        this.selectRowSets.bind(this) as SqliteSelectRowSets,
+        table,
+        options,
+      );
+    },
+  };
+
+  stats = {
+    tokenUsage: async (): Promise<NodePostgresTokenUsage[]> => {
+      return await sqliteAdmin.getTokenUsage(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    botChats: async (): Promise<NodePostgresBotChatStats[]> => {
+      return await sqliteAdmin.getBotChatStats(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  revision = {
+    list: async (limit?: number): Promise<NodePostgresRevision[]> => {
+      return await sqliteRevisions.list(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        limit,
+      );
+    },
+    details: async (
+      revisionId: number,
+    ): Promise<NodePostgresRevisionDetails | null> => {
+      return await sqliteRevisions.getDetails(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        revisionId,
+      );
+    },
+    diff: async (
+      baseId: number,
+      targetId: number,
+    ): Promise<NodePostgresRevisionDiff | null> => {
+      return sqliteRevisions.getDiff(baseId, targetId);
+    },
+    previewRestore: async (
+      revisionId: number,
+    ): Promise<NodePostgresRestorePreview | null> => {
+      return sqliteRevisions.previewRestore(this.currentRevision, revisionId);
+    },
+    restore: async (
+      revisionId: number,
+    ): Promise<{ revision: number; revisionId: number }> => {
+      return { revision: this.currentRevision, revisionId };
+    },
+  };
+
+  pluginCustomStorage = {
+    load: async (): Promise<Record<string, unknown> | null> => {
+      return (await sqlitePlugin.loadCustomStorage(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      )) as Record<string, unknown> | null;
+    },
+    keys: async (): Promise<string[]> => {
+      return await sqlitePlugin.listCustomStorageKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    get: async (key: string): Promise<unknown> => {
+      return await sqlitePlugin.loadCustomStorageKey(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        key,
+      );
+    },
+  };
+
+  script = {
+    list: async (): Promise<customscript[]> => {
+      return (
+        ((await this.loadSettingValue("globalscript")) as
+          customscript[] | undefined) ?? []
+      );
+    },
+  };
+
+  prompt = {
+    load: async (): Promise<Record<string, unknown>> => {
+      return await sqliteDocument.loadPrompts(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  module = {
+    list: async (): Promise<RisuModule[]> => {
+      return await sqliteDocument.loadModules<RisuModule>(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  lorebook = {
+    list: async (): Promise<{ name: string; data: loreBook[] }[]> => {
+      return (
+        ((await this.loadSettingValue("loreBook")) as
+          | {
+              name: string;
+              data: loreBook[];
+            }[]
+          | undefined) ?? []
+      );
+    },
+  };
+
+  preset = {
+    list: async (): Promise<BotPresetSummary[]> => {
+      return await sqliteDocument.listBotPresets(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    load: async (id: string): Promise<StoredBotPreset | null> => {
+      return await sqliteDocument.loadBotPreset<botPreset>(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        id,
+      );
+    },
+  };
+
+  setting = {
+    getMany: async (keys: string[]): Promise<Map<string, unknown>> => {
+      return await sqliteDocument.loadSettingValues(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        keys,
+      );
+    },
+    keys: async (): Promise<string[]> => {
+      return await sqliteDocument.listSettingKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    get: async (key: string): Promise<unknown> => {
+      return this.loadSettingValue(key);
+    },
+  };
+
+  persona = {
+    list: async (): Promise<RisuPersona[]> => {
+      return (
+        ((await this.loadSettingValue("personas")) as
+          RisuPersona[] | undefined) ?? []
+      );
+    },
+  };
+
+  coldStorage = {
+    set: async (key: string, value: unknown): Promise<boolean> => {
+      return this.writeQueue.run(async () => {
+        const statements: SqliteStatement[] = [];
+        await sqliteCommit.writeColdStorage(
+          async (sql, bind = []) => {
+            statements.push({ sql, bind });
+          },
+          key,
+          value,
+        );
+        await this.executeNativeTransaction(null, statements);
+        return true;
+      });
+    },
+    get: async (key: string): Promise<unknown | null> => {
+      return await sqliteColdStorage.getItem(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        this.loadNodeValue.bind(this),
+        key,
+      );
+    },
+    list: async (): Promise<{ items: string[] }> => {
+      return await sqliteColdStorage.listItems(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    remove: async (keys: string[]): Promise<number> => {
+      const statement = sqliteColdStorage.buildDelete(keys);
+      if (!statement) return 0;
+      return this.writeQueue.run(async () => {
+        await this.executeNativeTransaction(null, [statement]);
+        return keys.length;
+      });
+    },
+    prune: async (retainedKeys: string[]): Promise<number> => {
+      return this.writeQueue.run(async () => {
+        const toDelete = await sqliteColdStorage.findPruneKeys(
+          this.selectRows.bind(this) as SqliteSelectRows,
+          retainedKeys,
+        );
+        const statement = sqliteColdStorage.buildDelete(toDelete);
+        if (!statement) return 0;
+        await this.executeNativeTransaction(null, [statement]);
+        return toDelete.length;
+      });
+    },
+  };
+
+  authorNote = {
+    list: async () => {
+      return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
+    },
+    get: async (id: string) => {
+      return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
+    },
+    read: async (id: string) => {
+      return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
+    },
+    scriptWrite: async () => {
+      return authorNoteSql.allowAuthorNoteScriptWrite(
+        this.authorNoteDatabase(),
+      );
+    },
+  };
+
+  character = {
+    searchByTag: async (
+      tag: string,
+      limit: number = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      return await sqliteAdmin.searchCharacters(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        "tag",
+        tag,
+        limit,
+      );
+    },
+    searchByName: async (
+      name: string,
+      limit: number = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      return await sqliteAdmin.searchCharacters(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        "name",
+        name,
+        limit,
+      );
+    },
+
+    document: async (
+      characterId: string,
+    ): Promise<character | groupChat | null> => {
+      return (await sqliteEntity.loadCharacterDocument(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        characterId,
+      )) as unknown as character | groupChat | null;
+    },
+    assetFields: async (
+      characterId: string,
+    ): Promise<Partial<character> | null> => {
+      const row = await this.selectOne<{ id: string }>(
+        "SELECT id FROM characters WHERE id = ?",
+        [characterId],
+      );
+      if (!row) return null;
+      const query = sqliteEntity.buildCharacterAssetFieldsQuery(characterId);
+      const rows = await this.selectRows(query.sql, query.bind);
+      const assets = rows.length
+        ? (nodeCodec.rebuild(rows as any) as Record<string, unknown>)
+        : {};
+      return assets as Partial<character>;
+    },
+    forSelection: async (
+      characterId: string,
+    ): Promise<character | groupChat | null> => {
+      // Interactive selection only needs the character tree plus chat summary
+      // rows. Hydrating every chat's extension nodes here would defeat lazy
+      // loading on character switches. Keep the three independent reads in one
+      // backend batch so Capacitor crosses the JS/native bridge only once.
+      const [characterRows, characterNodeRows, chatRowsRaw] =
+        await this.selectRowSets([
+          {
+            sql: "SELECT id FROM characters WHERE id = ?",
+            bind: [characterId],
+          },
+          {
+            sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+                FROM character_extension_nodes
+               WHERE character_id = ?
+               ORDER BY node_id`,
+            bind: [characterId],
+          },
+          {
+            sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+            bind: [characterId],
+          },
+        ]);
+      if (characterRows.length === 0) return null;
+      const fullChar = (
+        characterNodeRows.length ? nodeCodec.rebuild(characterNodeRows) : {}
+      ) as any;
+      const chatRows = chatRowsRaw as Array<{
+        id: string;
+        name: string;
+        note: string;
+        folder_id: string | null;
+        last_message_time: number | null;
+      }>;
+      fullChar.chaId = characterId;
+      fullChar.detailsLoaded = true;
+      fullChar.chats = chatRows.map((chatRow) => ({
+        id: chatRow.id,
+        name: chatRow.name ?? "",
+        note: chatRow.note ?? "",
+        folderId: chatRow.folder_id ?? undefined,
+        lastDate: chatRow.last_message_time ?? undefined,
+        message: [],
+        messagesLoaded: false,
+        messagesFullyLoaded: false,
+        detailsLoaded: false,
+      })) as Chat[];
+      return fullChar;
+    },
+  };
+
   chat = {
     load: async (
       chatId: string,
@@ -345,7 +687,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     this,
     this.selectRows.bind(this) as SqliteSelectRows,
   );
-  protected revision = 0;
+  protected currentRevision = 0;
   protected readonly writeQueue = new AsyncSerialQueue();
   protected _enabled = false;
   private initialized = false;
@@ -407,7 +749,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       const hadLastMessageTimeTrigger = existingSchema
         ? await this.hasLastMessageTimeTrigger()
         : false;
-      if (existingSchema) this.revision = existingSchema.revision;
+      if (existingSchema) this.currentRevision = existingSchema.revision;
       // The schema is intentionally idempotent. Reapply it on startup so
       // additive DDL such as triggers reaches existing relational-schema-v3
       // databases without forcing a destructive schema-version migration.
@@ -470,7 +812,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     const rows = await this.selectRows<{ revision: number }>(
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
-    if (rows.length > 0) this.revision = Number(rows[0].revision) || 0;
+    if (rows.length > 0) this.currentRevision = Number(rows[0].revision) || 0;
   }
 
   private async ensurePerformanceIndexes(): Promise<void> {
@@ -529,7 +871,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     }
     const projection = await sqliteStartup.loadProjection(
       this.selectRowSets.bind(this) as SqliteSelectRowSets,
-      this.revision,
+      this.currentRevision,
       DEFERRED_STARTUP_SETTING_KEYS,
       SETTINGS_STORE_EXCLUDED_KEYS,
     );
@@ -567,7 +909,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     return (await sqliteSnapshot.exportDatabase({
       selectRows: this.selectRows.bind(this) as SqliteSelectRows,
       selectRowSets: this.selectRowSets.bind(this) as SqliteSelectRowSets,
-      revision: this.revision,
+      revision: this.currentRevision,
       legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
       loadChatMessages: (chatId) => this.message.list(chatId),
     })) as SqlDatabaseSnapshotResult;
@@ -642,7 +984,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       statements,
       onProgress,
     );
-    this.revision = revision;
+    this.currentRevision = revision;
     return {
       revision,
       ...(authorNotes.length
@@ -657,27 +999,12 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     };
   }
 
-  async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    return this.writeQueue.run(async () => {
-      const statements: SqliteStatement[] = [];
-      await sqliteCommit.writeColdStorage(
-        async (sql, bind = []) => {
-          statements.push({ sql, bind });
-        },
-        key,
-        value,
-      );
-      await this.executeNativeTransaction(null, statements);
-      return true;
-    });
-  }
-
   isEnabled(): boolean {
     return this._enabled;
   }
 
   getRevision(): number {
-    return this.revision;
+    return this.currentRevision;
   }
 
   async getStorageSyncSummary() {
@@ -687,7 +1014,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     }
     return await sqliteStartup.getSyncSummary(
       this.selectRows.bind(this) as SqliteSelectRows,
-      this.revision,
+      this.currentRevision,
     );
   }
 
@@ -754,7 +1081,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean> {
     onProgress?.("Preparing local database...", 0);
-    const commit = buildSqlReplaceCommit(database, this.revision);
+    const commit = buildSqlReplaceCommit(database, this.currentRevision);
     onProgress?.("Preparing SQL transaction...", 0.05);
     await this.writeQueue.run(() =>
       this.commitInternal(commit, (completed, total) => {
@@ -767,85 +1094,6 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     );
     onProgress?.("Database sync complete", 1);
     return true;
-  }
-
-  async loadCharacter(
-    characterId: string,
-  ): Promise<character | groupChat | null> {
-    return (await sqliteEntity.loadCharacterDocument(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      characterId,
-    )) as unknown as character | groupChat | null;
-  }
-
-  async loadCharacterAssetFields(
-    characterId: string,
-  ): Promise<Partial<character> | null> {
-    const row = await this.selectOne<{ id: string }>(
-      "SELECT id FROM characters WHERE id = ?",
-      [characterId],
-    );
-    if (!row) return null;
-    const query = sqliteEntity.buildCharacterAssetFieldsQuery(characterId);
-    const rows = await this.selectRows(query.sql, query.bind);
-    const assets = rows.length
-      ? (nodeCodec.rebuild(rows as any) as Record<string, unknown>)
-      : {};
-    return assets as Partial<character>;
-  }
-
-  async loadCharacterForSelection(
-    characterId: string,
-  ): Promise<character | groupChat | null> {
-    // Interactive selection only needs the character tree plus chat summary
-    // rows. Hydrating every chat's extension nodes here would defeat lazy
-    // loading on character switches. Keep the three independent reads in one
-    // backend batch so Capacitor crosses the JS/native bridge only once.
-    const [characterRows, characterNodeRows, chatRowsRaw] =
-      await this.selectRowSets([
-        {
-          sql: "SELECT id FROM characters WHERE id = ?",
-          bind: [characterId],
-        },
-        {
-          sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                     object_key_encoded, value_type, text_value, encoded_text_value,
-                     number_value, boolean_value
-                FROM character_extension_nodes
-               WHERE character_id = ?
-               ORDER BY node_id`,
-          bind: [characterId],
-        },
-        {
-          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-          bind: [characterId],
-        },
-      ]);
-    if (characterRows.length === 0) return null;
-    const fullChar = (
-      characterNodeRows.length ? nodeCodec.rebuild(characterNodeRows) : {}
-    ) as any;
-    const chatRows = chatRowsRaw as Array<{
-      id: string;
-      name: string;
-      note: string;
-      folder_id: string | null;
-      last_message_time: number | null;
-    }>;
-    fullChar.chaId = characterId;
-    fullChar.detailsLoaded = true;
-    fullChar.chats = chatRows.map((chatRow) => ({
-      id: chatRow.id,
-      name: chatRow.name ?? "",
-      note: chatRow.note ?? "",
-      folderId: chatRow.folder_id ?? undefined,
-      lastDate: chatRow.last_message_time ?? undefined,
-      message: [],
-      messagesLoaded: false,
-      messagesFullyLoaded: false,
-      detailsLoaded: false,
-    })) as Chat[];
-    return fullChar;
   }
 
   private async loadLinearMessages(chatId: string): Promise<Message[]> {
@@ -861,7 +1109,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
 
   private async loadLegacyChatExtension(
     chatId: string,
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     const rows = await this.selectRows(
       `SELECT node_id, parent_node_id, node_order, object_key,
               object_key_encoded, value_type, text_value, encoded_text_value,
@@ -925,47 +1173,10 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     );
   }
 
-  async loadPersonas(): Promise<RisuPersona[]> {
-    return (
-      ((await this.loadSettingValue("personas")) as
-        RisuPersona[] | undefined) ?? []
-    );
-  }
-
   /**
    * Reads several setting keys in one grouped query so native backends avoid
    * one bridge round trip per startup setting.
    */
-  async loadSettingKeys(keys: string[]): Promise<Map<string, unknown>> {
-    return await sqliteDocument.loadSettingValues(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      keys,
-    );
-  }
-
-  async listBotPresets(): Promise<BotPresetSummary[]> {
-    return await sqliteDocument.listBotPresets(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    return await sqliteDocument.loadBotPreset<botPreset>(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      id,
-    );
-  }
-
-  async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
-    return (
-      ((await this.loadSettingValue("loreBook")) as
-        | {
-            name: string;
-            data: loreBook[];
-          }[]
-        | undefined) ?? []
-    );
-  }
 
   protected authorNoteDatabase(): authorNoteSql.AuthorNoteSql {
     return {
@@ -975,202 +1186,5 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
         throw new Error("Read-only note connection");
       },
     };
-  }
-  async listGlobalAuthorNotes() {
-    return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
-  }
-  async getGlobalAuthorNote(id: string) {
-    return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
-  }
-  async readGlobalAuthorNote(id: string) {
-    return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
-  }
-  async getGlobalAuthorNoteScriptWrite() {
-    return authorNoteSql.allowAuthorNoteScriptWrite(this.authorNoteDatabase());
-  }
-
-  async loadModules(): Promise<RisuModule[]> {
-    return await sqliteDocument.loadModules<RisuModule>(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadPrompts(): Promise<Record<string, any>> {
-    return await sqliteDocument.loadPrompts(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadScripts(): Promise<customscript[]> {
-    return (
-      ((await this.loadSettingValue("globalscript")) as
-        customscript[] | undefined) ?? []
-    );
-  }
-
-  async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    return (await sqlitePlugin.loadCustomStorage(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    )) as Record<string, any> | null;
-  }
-
-  async listPluginCustomStorageKeys(): Promise<string[]> {
-    return await sqlitePlugin.listCustomStorageKeys(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadPluginCustomStorageKey(key: string): Promise<any> {
-    return await sqlitePlugin.loadCustomStorageKey(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      key,
-    );
-  }
-
-  async listSettingKeys(): Promise<string[]> {
-    return await sqliteDocument.listSettingKeys(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadSettingKey(key: string): Promise<any> {
-    return this.loadSettingValue(key);
-  }
-
-  async getColdStorageItem(key: string): Promise<unknown | null> {
-    return await sqliteColdStorage.getItem(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      this.loadNodeValue.bind(this),
-      key,
-    );
-  }
-
-  async listColdStorageItems(): Promise<{ items: string[] }> {
-    return await sqliteColdStorage.listItems(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async removeColdStorageItems(keys: string[]): Promise<number> {
-    const statement = sqliteColdStorage.buildDelete(keys);
-    if (!statement) return 0;
-    return this.writeQueue.run(async () => {
-      await this.executeNativeTransaction(null, [statement]);
-      return keys.length;
-    });
-  }
-
-  async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    return this.writeQueue.run(async () => {
-      const toDelete = await sqliteColdStorage.findPruneKeys(
-        this.selectRows.bind(this) as SqliteSelectRows,
-        retainedKeys,
-      );
-      const statement = sqliteColdStorage.buildDelete(toDelete);
-      if (!statement) return 0;
-      await this.executeNativeTransaction(null, [statement]);
-      return toDelete.length;
-    });
-  }
-
-  async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    return await sqliteRevisions.list(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      limit,
-    );
-  }
-
-  async getRevisionDetails(
-    revisionId: number,
-  ): Promise<NodePostgresRevisionDetails | null> {
-    return await sqliteRevisions.getDetails(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      revisionId,
-    );
-  }
-
-  async getRevisionDiff(
-    baseId: number,
-    targetId: number,
-  ): Promise<NodePostgresRevisionDiff | null> {
-    return sqliteRevisions.getDiff(baseId, targetId);
-  }
-
-  async previewRestoreRevision(
-    revisionId: number,
-  ): Promise<NodePostgresRestorePreview | null> {
-    return sqliteRevisions.previewRestore(this.revision, revisionId);
-  }
-
-  async restoreRevision(
-    revisionId: number,
-  ): Promise<{ revision: number; revisionId: number }> {
-    return { revision: this.revision, revisionId };
-  }
-
-  async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return await sqliteAdmin.getTokenUsage(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    return await sqliteAdmin.getBotChatStats(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async listDbTables(): Promise<NodePostgresTableInfo[]> {
-    if (!this._enabled && !(await this.init())) return [];
-    return await sqliteAdmin.listTables(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      this.selectRowSets.bind(this) as SqliteSelectRowSets,
-    );
-  }
-
-  async getDbTableData(
-    table: string,
-    options: {
-      offset?: number;
-      limit?: number;
-      sortColumn?: string;
-      sortOrder?: "asc" | "desc";
-      search?: string;
-      columns?: string[];
-    } = {},
-  ): Promise<NodePostgresTableData> {
-    if (!this._enabled && !(await this.init())) {
-      throw new Error(`${this.backendName} is not available`);
-    }
-    return await sqliteAdmin.getTableData(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      this.selectRowSets.bind(this) as SqliteSelectRowSets,
-      table,
-      options,
-    );
-  }
-
-  async searchCharactersByTag(
-    tag: string,
-    limit: number = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await sqliteAdmin.searchCharacters(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      "tag",
-      tag,
-      limit,
-    );
-  }
-
-  async searchCharactersByName(
-    name: string,
-    limit: number = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await sqliteAdmin.searchCharacters(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      "name",
-      name,
-      limit,
-    );
   }
 }

@@ -68,16 +68,21 @@ describe("preset documents and file boundaries", () => {
       ],
     ]);
     storage = {
+      setting: { get: vi.fn(async () => "one") },
+
+      preset: {
+        list: vi.fn(async () =>
+          [...documents.values()].map(({ id, name, image }) => ({
+            id,
+            name,
+            image,
+          })),
+        ),
+        load: vi.fn(async (id) => structuredClone(documents.get(id))),
+      },
+
       getRevision: () => 0,
-      listBotPresets: vi.fn(async () =>
-        [...documents.values()].map(({ id, name, image }) => ({
-          id,
-          name,
-          image,
-        })),
-      ),
-      loadSettingKey: vi.fn(async () => "one"),
-      loadBotPreset: vi.fn(async (id) => structuredClone(documents.get(id))),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         for (const entry of commit.presets?.upserts ?? [])
           documents.set(entry.id, { ...entry.data, id: entry.id });

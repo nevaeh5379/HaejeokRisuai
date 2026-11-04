@@ -45,8 +45,8 @@ class PersonaStore
     this.disposeObserver();
     this.storage = storage;
     const [storedPersonas, selected] = await Promise.all([
-      storage.loadPersonas(),
-      storage.loadSettingKey("selectedPersona"),
+      storage.persona.list(),
+      storage.setting.get("selectedPersona"),
     ]);
     const personas =
       storedPersonas.length > 0
@@ -58,7 +58,9 @@ class PersonaStore
     if (
       selected !== undefined &&
       selected !== null &&
-      (!Number.isSafeInteger(selected) || selected < 0)
+      (typeof selected !== "number" ||
+        !Number.isSafeInteger(selected) ||
+        selected < 0)
     ) {
       throw new TypeError(
         `Invalid selected persona index: ${String(selected)}`,

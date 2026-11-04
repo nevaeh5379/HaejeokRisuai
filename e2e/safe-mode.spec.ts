@@ -49,7 +49,7 @@ test("safe mode skips plugin loading and preserves enabled settings", async ({
     return {
       enabled,
       stillEnabled: pluginStore.plugins[0].enabled,
-      probe: await storage.loadPluginCustomStorageKey("safeModeProbe"),
+      probe: await storage.pluginCustomStorage.get("safeModeProbe"),
     };
   });
   expect(result).toEqual({
@@ -66,9 +66,7 @@ test("safe mode skips plugin loading and preserves enabled settings", async ({
       page.evaluate(async () => {
         const storageUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";
         const { getSqlStorage } = await import(/* @vite-ignore */ storageUrl);
-        return (await getSqlStorage()).loadPluginCustomStorageKey(
-          "safeModeProbe",
-        );
+        return (await getSqlStorage()).pluginCustomStorage.get("safeModeProbe");
       }),
     )
     .toBe("executed");

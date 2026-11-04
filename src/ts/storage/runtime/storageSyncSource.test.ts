@@ -29,6 +29,63 @@ function makeStorage() {
   let revision = 7;
   const pageCalls: number[] = [];
   const storage = {
+    coldStorage: {
+      list: vi.fn(async () => ({ items: ["cold-1"] })),
+      get: vi.fn(async () => ({ archived: true })),
+    },
+
+    preset: {
+      list: vi.fn(async () => [
+        {
+          id: "preset-1",
+          position: 0,
+          name: "Preset",
+          image: "",
+          apiType: "",
+          aiModel: "",
+          hash: "h",
+        },
+      ]),
+      load: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
+    },
+
+    module: { list: vi.fn(async () => [{ id: "module-1", name: "Module" }]) },
+
+    pluginCustomStorage: {
+      keys: vi.fn(async () => ["plugin-key"]),
+      get: vi.fn(async () => ({ enabled: true })),
+    },
+
+    setting: {
+      keys: vi.fn(async () => ["zeta", "exotic"]),
+      getMany: vi.fn(
+        async (keys: string[]) =>
+          new Map(
+            keys.map((key) => [
+              key,
+              key === "exotic"
+                ? { missing: undefined, nan: Number.NaN }
+                : "last",
+            ]),
+          ),
+      ),
+    },
+
+    character: {
+      document: vi.fn(
+        async () =>
+          ({
+            chaId: "char-1",
+            name: "Char",
+            type: "character",
+            detailsLoaded: true,
+            chats: [{ id: "chat-1", name: "Chat", message: [] }],
+          }) as any,
+      ),
+    },
+
+    authorNote: { list: async () => [], scriptWrite: async () => false },
+
     chat: {
       load: vi.fn(
         async () =>
@@ -121,39 +178,12 @@ function makeStorage() {
       initialized: true,
       records: { settings: 2, characters: 1, chats: 1, messages: 3, total: 7 },
     })),
-    listSettingKeys: vi.fn(async () => ["zeta", "exotic"]),
-    loadSettingKeys: vi.fn(
-      async (keys: string[]) =>
-        new Map(
-          keys.map((key) => [
-            key,
-            key === "exotic" ? { missing: undefined, nan: Number.NaN } : "last",
-          ]),
-        ),
-    ),
-    listGlobalAuthorNotes: async () => [],
-    getGlobalAuthorNoteScriptWrite: async () => false,
+
     plugin: {
       loadAll: vi.fn(async () => []),
       script: { load: vi.fn(async () => null) },
     },
-    listPluginCustomStorageKeys: vi.fn(async () => ["plugin-key"]),
-    loadPluginCustomStorageKey: vi.fn(async () => ({ enabled: true })),
-    loadModules: vi.fn(async () => [{ id: "module-1", name: "Module" }]),
-    listBotPresets: vi.fn(async () => [
-      {
-        id: "preset-1",
-        position: 0,
-        name: "Preset",
-        image: "",
-        apiType: "",
-        aiModel: "",
-        hash: "h",
-      },
-    ]),
-    loadBotPreset: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
-    listColdStorageItems: vi.fn(async () => ({ items: ["cold-1"] })),
-    getColdStorageItem: vi.fn(async () => ({ archived: true })),
+
     loadStartupData: vi.fn(async () => ({
       status: "ready" as const,
       revision,
@@ -162,16 +192,6 @@ function makeStorage() {
         { chaId: "char-1", name: "Char", type: "character", chats: [] } as any,
       ],
     })),
-    loadCharacter: vi.fn(
-      async () =>
-        ({
-          chaId: "char-1",
-          name: "Char",
-          type: "character",
-          detailsLoaded: true,
-          chats: [{ id: "chat-1", name: "Chat", message: [] }],
-        }) as any,
-    ),
   };
   return {
     storage: storage as unknown as ISqlStorage,
@@ -256,12 +276,12 @@ describe("storage sync SQL source", () => {
 
   it("preserves module positions and root module order independently", async () => {
     const { storage } = makeStorage();
-    storage.listSettingKeys = vi.fn(async () => ["moduleOrder"]);
-    storage.loadSettingKeys = vi.fn(
+    storage.setting.keys = vi.fn(async () => ["moduleOrder"]);
+    storage.setting.getMany = vi.fn(
       async () =>
         new Map([["moduleOrder", ["folder:f1", "module-b", "module-a"]]]),
     );
-    storage.loadModules = vi.fn(
+    storage.module.list = vi.fn(
       async () =>
         [
           { id: "module-b", name: "B", folderId: "f1" },
@@ -345,8 +365,8 @@ describe("storage sync SQL source", () => {
 
   it("fails instead of mixing revisions when the source changes", async () => {
     const { storage, setRevision } = makeStorage();
-    const original = storage.loadCharacter.bind(storage);
-    (storage as any).loadCharacter = vi.fn(async (id: string) => {
+    const original = storage.character.document.bind(storage);
+    (storage as any).character.document = vi.fn(async (id: string) => {
       const value = await original(id);
       setRevision(8);
       return value;

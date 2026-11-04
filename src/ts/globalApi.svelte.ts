@@ -848,7 +848,7 @@ export async function getDbBackups() {
     if (!storage.isEnabled()) {
       return [];
     }
-    const revisions = await storage.listRevisions(20);
+    const revisions = await storage.revision.list(20);
     return revisions.map((r) => r.id);
   } catch {
     return [];

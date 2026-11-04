@@ -11,14 +11,17 @@ import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 export async function probeAuthorNoteBrowser() {
   let failure: Error = new AuthorNoteError("missing", "deleted");
   await globalAuthorNoteStore.init({
-    getGlobalAuthorNote: async () => ({
-      id: "deleted",
-      name: "Deleted",
-      updatedAt: 0,
-    }),
-    readGlobalAuthorNote: async () => {
-      throw failure;
+    authorNote: {
+      get: async () => ({
+        id: "deleted",
+        name: "Deleted",
+        updatedAt: 0,
+      }),
+      read: async () => {
+        throw failure;
+      },
     },
+
     // Required by ISqlStorage; the metadata cache is keyed by storage revision.
     getRevision: () => 0,
   } as unknown as ISqlStorage);

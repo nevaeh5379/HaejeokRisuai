@@ -31,7 +31,7 @@ export async function initRuntimeSettings(storage: ISqlStorage): Promise<void> {
     await pluginStore.init(storage);
 
     settingsStore.hydratePluginCustomStorageKeys(
-      await storage.listPluginCustomStorageKeys(),
+      await storage.pluginCustomStorage.keys(),
     );
     await androidDiagnosticCheckpoint("startup:plugins");
     await loadPlugins();

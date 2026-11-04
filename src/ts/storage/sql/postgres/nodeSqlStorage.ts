@@ -1,3 +1,7 @@
+import type {
+  AuthorNoteMetadata,
+  AuthorNoteRow,
+} from "@risuai/protocol/src/authorNotes.ts";
 import { createSqlMessageMutations } from "../sqlCommitCoordinator";
 import localforage from "localforage";
 
@@ -192,6 +196,434 @@ export {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
+  table = {
+    list: async (): Promise<NodePostgresTableInfo[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      const tables = await this.databaseAdmin.listDbTables();
+      if (tables === null) {
+        this.status = "disabled";
+        return [];
+      }
+      return tables;
+    },
+    data: async (
+      table: string,
+      options: {
+        offset?: number;
+        limit?: number;
+        sortColumn?: string;
+        sortOrder?: "asc" | "desc";
+        search?: string;
+        columns?: string[];
+      } = {},
+    ): Promise<NodePostgresTableData> => {
+      if (!(await this.ensureEnabled())) {
+        throw new Error("PostgreSQL storage is disabled");
+      }
+      const data = await this.databaseAdmin.getDbTableData(table, options);
+      if (data === null) {
+        this.status = "disabled";
+        throw new Error("PostgreSQL storage is disabled");
+      }
+      return data;
+    },
+  };
+
+  stats = {
+    tokenUsage: async (): Promise<NodePostgresTokenUsage[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.getTokenUsage();
+    },
+    botChats: async (): Promise<NodePostgresBotChatStats[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.getBotChatStats();
+    },
+  };
+
+  revision = {
+    list: async (limit?: number): Promise<NodePostgresRevision[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.listRevisions(limit);
+    },
+    details: async (
+      revisionId: number,
+    ): Promise<NodePostgresRevisionDetails | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.databaseAdmin.getRevisionDetails(revisionId);
+    },
+    diff: async (
+      baseId: number,
+      targetId: number,
+    ): Promise<NodePostgresRevisionDiff | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.databaseAdmin.getRevisionDiff(baseId, targetId);
+    },
+    previewRestore: async (
+      revisionId: number,
+    ): Promise<NodePostgresRestorePreview | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.databaseAdmin.previewRestoreRevision(revisionId);
+    },
+    restore: async (
+      revisionId: number,
+    ): Promise<{ revision: number; revisionId: number }> => {
+      if (!(await this.ensureEnabled())) {
+        throw new Error("PostgreSQL storage is disabled");
+      }
+      const result = await this.databaseAdmin.restoreRevision(revisionId);
+      this.currentRevision = result.revision;
+      return result;
+    },
+  };
+
+  coldStorage = {
+    get: async (key: string): Promise<unknown | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.coldStorageClient.getItem(key);
+    },
+    list: async (): Promise<{ items: string[] }> => {
+      if (!(await this.ensureEnabled())) return { items: [] };
+      return { items: await this.coldStorageClient.listItems() };
+    },
+    set: async (key: string, value: unknown): Promise<boolean> => {
+      if (!(await this.ensureEnabled())) return false;
+      await this.coldStorageClient.setItem(key, value);
+      return true;
+    },
+    remove: async (keys: string[]): Promise<number> => {
+      if (!(await this.ensureEnabled()) || keys.length === 0) return 0;
+      return await this.coldStorageClient.removeItems(keys);
+    },
+    prune: async (retainedKeys: string[]): Promise<number> => {
+      if (!(await this.ensureEnabled())) return 0;
+      return await this.coldStorageClient.prune(retainedKeys);
+    },
+  };
+
+  setting = {
+    keys: async (): Promise<string[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.readClient.listSettingKeys();
+    },
+    get: async (key: string): Promise<unknown> => {
+      if (!(await this.ensureEnabled())) return undefined;
+      return await this.readClient.loadSettingKey(key);
+    },
+  };
+
+  script = {
+    list: async (): Promise<customscript[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      let cached = this.memoryScriptsCache;
+      if (!cached) {
+        try {
+          cached = await this.scriptsCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.loadScripts<customscript>(
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached)
+        return cached.globalscript ?? [];
+      if (result.status !== "ok") return [];
+      const entry = {
+        hash: result.body.hash,
+        globalscript: result.body.globalscript ?? [],
+      };
+      this.memoryScriptsCache = entry;
+      try {
+        await this.scriptsCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.globalscript;
+    },
+  };
+
+  prompt = {
+    load: async (): Promise<Record<string, unknown>> => {
+      if (!(await this.ensureEnabled())) return {};
+      let cached = this.memoryPromptsCache;
+      if (!cached) {
+        try {
+          cached = await this.promptsCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.loadPrompts<
+        Record<string, unknown>
+      >(cached?.hash);
+      if (result.status === "not-modified" && cached)
+        return cached.prompts ?? {};
+      if (result.status !== "ok") return {};
+      const entry = {
+        hash: result.body.hash,
+        prompts: result.body.prompts ?? {},
+      };
+      this.memoryPromptsCache = entry;
+      try {
+        await this.promptsCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.prompts;
+    },
+  };
+
+  module = {
+    list: async (): Promise<RisuModule[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      let cached = this.memoryModulesCache;
+      if (!cached) {
+        try {
+          cached = await this.modulesCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.loadModules<RisuModule>(
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached)
+        return cached.modules ?? [];
+      if (result.status !== "ok") return [];
+      const entry = {
+        hash: result.body.hash,
+        modules: result.body.modules ?? [],
+      };
+      this.memoryModulesCache = entry;
+      try {
+        await this.modulesCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.modules;
+    },
+  };
+
+  lorebook = {
+    list: async (): Promise<{ name: string; data: loreBook[] }[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      let cached = this.memoryLoreBookCache;
+      if (!cached) {
+        try {
+          cached = await this.loreBookCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      type LorebookRecord = { name: string; data: loreBook[] };
+      const result = await this.documentClient.loadLorebooks<LorebookRecord>(
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached)
+        return cached.loreBook ?? [];
+      if (result.status !== "ok") return [];
+      const entry = {
+        hash: result.body.hash,
+        loreBook: result.body.loreBook ?? [],
+      };
+      this.memoryLoreBookCache = entry;
+      try {
+        await this.loreBookCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.loreBook;
+    },
+  };
+
+  preset = {
+    list: async (): Promise<BotPresetSummary[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      let cached = this.memoryBotPresetsCache;
+      if (!cached) {
+        try {
+          cached = await this.botPresetsCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.listBotPresets<BotPresetSummary>(
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached)
+        return cached.presets ?? [];
+      if (result.status !== "ok") return [];
+      const entry = {
+        hash: result.body.hash,
+        presets: result.body.presets ?? [],
+      };
+      this.memoryBotPresetsCache = entry;
+      try {
+        await this.botPresetsCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.presets;
+    },
+    load: async (id: string): Promise<StoredBotPreset | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      let cached = this.memoryBotPresetCache.get(id);
+      if (!cached) {
+        try {
+          cached =
+            (await this.botPresetsCacheForage.getItem(`preset:${id}`)) ??
+            undefined;
+        } catch {}
+      }
+      const result = await this.documentClient.loadBotPreset<StoredBotPreset>(
+        id,
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached) return cached.preset;
+      if (result.status !== "ok") return null;
+      const entry = { hash: result.body.hash, preset: result.body.preset };
+      this.memoryBotPresetCache.set(id, entry);
+      void this.botPresetsCacheForage
+        .setItem(`preset:${id}`, entry)
+        .catch(() => {});
+      return entry.preset;
+    },
+  };
+
+  persona = {
+    list: async (): Promise<RisuPersona[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      let cached = this.memoryPersonasCache;
+      if (!cached) {
+        try {
+          cached = await this.personasCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.loadPersonas<RisuPersona>(
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached)
+        return cached.personas ?? [];
+      if (result.status !== "ok") return [];
+      const entry = {
+        hash: result.body.hash,
+        personas: result.body.personas ?? [],
+      };
+      this.memoryPersonasCache = entry;
+      try {
+        await this.personasCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.personas;
+    },
+  };
+
+  pluginCustomStorage = {
+    load: async (): Promise<Record<string, unknown> | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      let cached = this.memoryPluginStorageCache;
+      if (!cached) {
+        try {
+          cached = await this.pluginStorageCacheForage.getItem("cache");
+        } catch {
+          cached = null;
+        }
+      }
+      const result = await this.documentClient.loadPluginStorage(cached?.hash);
+      if (result.status === "not-modified" && cached) {
+        this.memoryPluginStorageCache = cached;
+        return cached.pluginCustomStorage ?? {};
+      }
+      if (result.status !== "ok") return null;
+      const pluginCustomStorage = decodePluginStorageRecord(
+        result.body.pluginCustomStorage ?? {},
+      );
+      const entry = {
+        hash: result.body.hash,
+        pluginCustomStorage,
+      };
+      this.memoryPluginStorageCache = entry;
+      try {
+        await this.pluginStorageCacheForage.setItem("cache", entry);
+      } catch {}
+      return entry.pluginCustomStorage;
+    },
+    keys: async (): Promise<string[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.documentClient.listPluginStorageKeys();
+    },
+    get: async (key: string): Promise<unknown> => {
+      if (!(await this.ensureEnabled())) return undefined;
+      let cached = this.memoryPluginKeyCache.get(key);
+      if (!cached) {
+        try {
+          cached = (await this.pluginKeyCacheForage.getItem(key)) ?? undefined;
+        } catch {
+          cached = undefined;
+        }
+      }
+      const result = await this.documentClient.loadPluginStorageKey(
+        key,
+        cached?.hash,
+      );
+      if (result.status === "not-modified" && cached) return cached.value;
+      if (result.status !== "ok") return undefined;
+      const entry = {
+        hash: result.body.hash,
+        value: decodePluginStorageValue(result.body.value),
+      };
+      this.memoryPluginKeyCache.set(key, entry);
+      try {
+        await this.pluginKeyCacheForage.setItem(key, entry);
+      } catch {}
+      return entry.value;
+    },
+  };
+
+  character = {
+    searchByTag: async (
+      tag: string,
+      limit = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.searchCharacters("tag", tag, limit);
+    },
+    searchByName: async (
+      name: string,
+      limit = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.searchCharacters("name", name, limit);
+    },
+
+    document: async (
+      characterId: string,
+    ): Promise<character | groupChat | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.readClient.loadCharacter<character | groupChat>(
+        characterId,
+      );
+    },
+    assetFields: async (
+      characterId: string,
+    ): Promise<Partial<character> | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.readClient.loadCharacterAssetFields<Partial<character>>(
+        characterId,
+      );
+    },
+  };
+
+  authorNote = {
+    list: async () => {
+      return this.requestAuthorNote<AuthorNoteMetadata[]>("");
+    },
+    get: async (id: string) => {
+      return this.requestAuthorNote<AuthorNoteMetadata | null>(
+        `/${encodeURIComponent(id)}`,
+      );
+    },
+    read: async (id: string) => {
+      return this.requestAuthorNote<AuthorNoteRow | null>(
+        `/${encodeURIComponent(id)}/content`,
+      );
+    },
+    scriptWrite: async () => {
+      return this.requestAuthorNote<boolean>("/script-write");
+    },
+  };
+
   chat = {
     load: async (
       chatId: string,
@@ -317,7 +749,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
   readonly plugin: IPluginStorage;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
-  private revision = 0;
+  private currentRevision = 0;
   private readonly clientId = getNodeClientSessionId();
   private readonly databaseAdmin: RemoteDatabaseAdminClient;
   private readonly coldStorageClient: RemoteColdStorageClient;
@@ -351,7 +783,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   private memoryPluginStorageCache: {
     hash: string;
-    pluginCustomStorage: Record<string, any>;
+    pluginCustomStorage: Record<string, unknown>;
   } | null = null;
   private memoryPersonasCache: {
     hash: string;
@@ -373,7 +805,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     null;
   private memoryPromptsCache: {
     hash: string;
-    prompts: Record<string, any>;
+    prompts: Record<string, unknown>;
   } | null = null;
   private memoryScriptsCache: {
     hash: string;
@@ -449,8 +881,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   applyRemoteRevision(revision: number): void {
-    if (Number.isSafeInteger(revision) && revision > this.revision) {
-      this.revision = revision;
+    if (Number.isSafeInteger(revision) && revision > this.currentRevision) {
+      this.currentRevision = revision;
     }
   }
 
@@ -462,7 +894,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   async getServerConfig(): Promise<NodePostgresServerConfig> {
     const config = await this.databaseAdmin.getPostgresConfig();
     this.status = config.enabled ? "enabled" : "disabled";
-    this.revision = config.revision ?? 0;
+    this.currentRevision = config.revision ?? 0;
     return config;
   }
 
@@ -471,7 +903,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   ): Promise<NodePostgresServerConfig> {
     const config = await this.databaseAdmin.configurePostgres(update);
     this.status = config.enabled ? "enabled" : "disabled";
-    this.revision = config.revision ?? 0;
+    this.currentRevision = config.revision ?? 0;
     return config;
   }
 
@@ -487,7 +919,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           : config.enabled
             ? "enabled"
             : "disabled";
-    if (config.revision != null) this.revision = config.revision;
+    if (config.revision != null) this.currentRevision = config.revision;
     return config;
   }
 
@@ -507,14 +939,14 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         : config.runtime?.status === "degraded"
           ? "degraded"
           : "disabled";
-    if (config.revision != null) this.revision = config.revision;
+    if (config.revision != null) this.currentRevision = config.revision;
     return config;
   }
 
   async retryDatabaseConnection(): Promise<RemoteDatabaseConfig> {
     const config = await this.databaseAdmin.retryDatabaseConnection();
     this.status = config.runtime?.status === "ready" ? "enabled" : "degraded";
-    if (config.revision != null) this.revision = config.revision;
+    if (config.revision != null) this.currentRevision = config.revision;
     return config;
   }
 
@@ -537,14 +969,14 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   getRevision(): number {
-    return this.revision;
+    return this.currentRevision;
   }
 
   async getStorageSyncSummary() {
     const summary = await this.apiClient.getStorageSyncSummary(
       await this.getAuth(),
     );
-    this.revision = summary.revision;
+    this.currentRevision = summary.revision;
     return {
       revision: summary.revision,
       initialized: summary.initialized,
@@ -552,180 +984,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     };
   }
 
-  async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    if (!(await this.ensureEnabled())) return null;
-    let cached = this.memoryPluginStorageCache;
-    if (!cached) {
-      try {
-        cached = await this.pluginStorageCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadPluginStorage(cached?.hash);
-    if (result.status === "not-modified" && cached) {
-      this.memoryPluginStorageCache = cached;
-      return cached.pluginCustomStorage ?? {};
-    }
-    if (result.status !== "ok") return null;
-    const pluginCustomStorage = decodePluginStorageRecord(
-      result.body.pluginCustomStorage ?? {},
-    );
-    const entry = {
-      hash: result.body.hash,
-      pluginCustomStorage,
-    };
-    this.memoryPluginStorageCache = entry;
-    try {
-      await this.pluginStorageCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.pluginCustomStorage;
-  }
-
   private pluginKeyCacheForage = localforage.createInstance({
     name: "risuaiPostgresPluginKeyStorage",
   });
   private memoryPluginKeyCache = new BoundedCache<
     string,
-    { hash: string; value: any }
+    { hash: string; value: unknown }
   >({ maxEntries: 64 });
-
-  async listPluginCustomStorageKeys(): Promise<string[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.documentClient.listPluginStorageKeys();
-  }
-
-  async loadPluginCustomStorageKey(key: string): Promise<any> {
-    if (!(await this.ensureEnabled())) return undefined;
-    let cached = this.memoryPluginKeyCache.get(key);
-    if (!cached) {
-      try {
-        cached = (await this.pluginKeyCacheForage.getItem(key)) ?? undefined;
-      } catch {
-        cached = undefined;
-      }
-    }
-    const result = await this.documentClient.loadPluginStorageKey(
-      key,
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) return cached.value;
-    if (result.status !== "ok") return undefined;
-    const entry = {
-      hash: result.body.hash,
-      value: decodePluginStorageValue(result.body.value),
-    };
-    this.memoryPluginKeyCache.set(key, entry);
-    try {
-      await this.pluginKeyCacheForage.setItem(key, entry);
-    } catch {}
-    return entry.value;
-  }
-
-  async loadPersonas(): Promise<RisuPersona[]> {
-    if (!(await this.ensureEnabled())) return [];
-    let cached = this.memoryPersonasCache;
-    if (!cached) {
-      try {
-        cached = await this.personasCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadPersonas<RisuPersona>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached)
-      return cached.personas ?? [];
-    if (result.status !== "ok") return [];
-    const entry = {
-      hash: result.body.hash,
-      personas: result.body.personas ?? [],
-    };
-    this.memoryPersonasCache = entry;
-    try {
-      await this.personasCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.personas;
-  }
-
-  async listBotPresets(): Promise<BotPresetSummary[]> {
-    if (!(await this.ensureEnabled())) return [];
-    let cached = this.memoryBotPresetsCache;
-    if (!cached) {
-      try {
-        cached = await this.botPresetsCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.listBotPresets<BotPresetSummary>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) return cached.presets ?? [];
-    if (result.status !== "ok") return [];
-    const entry = {
-      hash: result.body.hash,
-      presets: result.body.presets ?? [],
-    };
-    this.memoryBotPresetsCache = entry;
-    try {
-      await this.botPresetsCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.presets;
-  }
-
-  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    if (!(await this.ensureEnabled())) return null;
-    let cached = this.memoryBotPresetCache.get(id);
-    if (!cached) {
-      try {
-        cached =
-          (await this.botPresetsCacheForage.getItem(`preset:${id}`)) ??
-          undefined;
-      } catch {}
-    }
-    const result = await this.documentClient.loadBotPreset<StoredBotPreset>(
-      id,
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) return cached.preset;
-    if (result.status !== "ok") return null;
-    const entry = { hash: result.body.hash, preset: result.body.preset };
-    this.memoryBotPresetCache.set(id, entry);
-    void this.botPresetsCacheForage
-      .setItem(`preset:${id}`, entry)
-      .catch(() => {});
-    return entry.preset;
-  }
-
-  async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
-    if (!(await this.ensureEnabled())) return [];
-    let cached = this.memoryLoreBookCache;
-    if (!cached) {
-      try {
-        cached = await this.loreBookCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    type LorebookRecord = { name: string; data: loreBook[] };
-    const result = await this.documentClient.loadLorebooks<LorebookRecord>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached)
-      return cached.loreBook ?? [];
-    if (result.status !== "ok") return [];
-    const entry = {
-      hash: result.body.hash,
-      loreBook: result.body.loreBook ?? [],
-    };
-    this.memoryLoreBookCache = entry;
-    try {
-      await this.loreBookCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.loreBook;
-  }
 
   private async requestAuthorNote<T>(path: string): Promise<T> {
     if (!(await this.ensureEnabled()))
@@ -741,115 +1006,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       );
     return (await response.json()).value as T;
   }
-  async listGlobalAuthorNotes() {
-    return this.requestAuthorNote<
-      import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
-    >("");
-  }
-  async getGlobalAuthorNote(id: string) {
-    return this.requestAuthorNote<
-      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
-      | null
-    >(`/${encodeURIComponent(id)}`);
-  }
-  async readGlobalAuthorNote(id: string) {
-    return this.requestAuthorNote<
-      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
-      | null
-    >(`/${encodeURIComponent(id)}/content`);
-  }
-  async getGlobalAuthorNoteScriptWrite() {
-    return this.requestAuthorNote<boolean>("/script-write");
-  }
-
-  async loadModules(): Promise<RisuModule[]> {
-    if (!(await this.ensureEnabled())) return [];
-    let cached = this.memoryModulesCache;
-    if (!cached) {
-      try {
-        cached = await this.modulesCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadModules<RisuModule>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) return cached.modules ?? [];
-    if (result.status !== "ok") return [];
-    const entry = {
-      hash: result.body.hash,
-      modules: result.body.modules ?? [],
-    };
-    this.memoryModulesCache = entry;
-    try {
-      await this.modulesCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.modules;
-  }
-
-  async loadPrompts(): Promise<Record<string, any>> {
-    if (!(await this.ensureEnabled())) return {};
-    let cached = this.memoryPromptsCache;
-    if (!cached) {
-      try {
-        cached = await this.promptsCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadPrompts<Record<string, any>>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) return cached.prompts ?? {};
-    if (result.status !== "ok") return {};
-    const entry = {
-      hash: result.body.hash,
-      prompts: result.body.prompts ?? {},
-    };
-    this.memoryPromptsCache = entry;
-    try {
-      await this.promptsCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.prompts;
-  }
-
-  async loadScripts(): Promise<customscript[]> {
-    if (!(await this.ensureEnabled())) return [];
-    let cached = this.memoryScriptsCache;
-    if (!cached) {
-      try {
-        cached = await this.scriptsCacheForage.getItem("cache");
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadScripts<customscript>(
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached)
-      return cached.globalscript ?? [];
-    if (result.status !== "ok") return [];
-    const entry = {
-      hash: result.body.hash,
-      globalscript: result.body.globalscript ?? [],
-    };
-    this.memoryScriptsCache = entry;
-    try {
-      await this.scriptsCacheForage.setItem("cache", entry);
-    } catch {}
-    return entry.globalscript;
-  }
-
-  async listSettingKeys(): Promise<string[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.readClient.listSettingKeys();
-  }
-
-  async loadSettingKey(key: string): Promise<any> {
-    if (!(await this.ensureEnabled())) return undefined;
-    return await this.readClient.loadSettingKey(key);
-  }
 
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
     const body = await this.readClient.loadStartupData<SqlStartupDataResult>();
@@ -858,7 +1014,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       return null;
     }
     this.status = "enabled";
-    this.revision = body.revision;
+    this.currentRevision = body.revision;
     return body;
   }
 
@@ -871,90 +1027,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         body.database.pluginCustomStorage,
       );
     }
-    this.revision = body.revision;
+    this.currentRevision = body.revision;
     return body;
-  }
-
-  async loadCharacter(
-    characterId: string,
-  ): Promise<character | groupChat | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.readClient.loadCharacter<character | groupChat>(
-      characterId,
-    );
-  }
-
-  async loadCharacterAssetFields(
-    characterId: string,
-  ): Promise<Partial<character> | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.readClient.loadCharacterAssetFields<Partial<character>>(
-      characterId,
-    );
-  }
-
-  async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.listRevisions(limit);
-  }
-
-  async getRevisionDetails(
-    revisionId: number,
-  ): Promise<NodePostgresRevisionDetails | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.databaseAdmin.getRevisionDetails(revisionId);
-  }
-
-  async getRevisionDiff(
-    baseId: number,
-    targetId: number,
-  ): Promise<NodePostgresRevisionDiff | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.databaseAdmin.getRevisionDiff(baseId, targetId);
-  }
-
-  async previewRestoreRevision(
-    revisionId: number,
-  ): Promise<NodePostgresRestorePreview | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.databaseAdmin.previewRestoreRevision(revisionId);
-  }
-
-  async restoreRevision(
-    revisionId: number,
-  ): Promise<{ revision: number; revisionId: number }> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("PostgreSQL storage is disabled");
-    }
-    const result = await this.databaseAdmin.restoreRevision(revisionId);
-    this.revision = result.revision;
-    return result;
-  }
-
-  async getColdStorageItem(key: string): Promise<unknown | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.coldStorageClient.getItem(key);
-  }
-
-  async listColdStorageItems(): Promise<{ items: string[] }> {
-    if (!(await this.ensureEnabled())) return { items: [] };
-    return { items: await this.coldStorageClient.listItems() };
-  }
-
-  async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    if (!(await this.ensureEnabled())) return false;
-    await this.coldStorageClient.setItem(key, value);
-    return true;
-  }
-
-  async removeColdStorageItems(keys: string[]): Promise<number> {
-    if (!(await this.ensureEnabled()) || keys.length === 0) return 0;
-    return await this.coldStorageClient.removeItems(keys);
-  }
-
-  async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    if (!(await this.ensureEnabled())) return 0;
-    return await this.coldStorageClient.prune(retainedKeys);
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {
@@ -973,8 +1047,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           },
         }
       : commit;
-    const result = await this.commitClient.commit(wireCommit, this.revision);
-    this.revision = result.revision;
+    const result = await this.commitClient.commit(
+      wireCommit,
+      this.currentRevision,
+    );
+    this.currentRevision = result.revision;
     return result;
   }
 
@@ -983,7 +1060,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     onProgress?: (status: string) => void,
   ) {
     onProgress?.("Replacing SQL database...");
-    await this.commit(buildSqlReplaceCommit(database, this.revision));
+    await this.commit(buildSqlReplaceCommit(database, this.currentRevision));
     return true;
   }
 
@@ -1073,7 +1150,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           manifest,
         );
         closed = true;
-        this.revision = result.revision;
+        this.currentRevision = result.revision;
       },
       abort: async () => {
         if (closed) return;
@@ -1083,64 +1160,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           .catch(() => {});
       },
     };
-  }
-
-  async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.getTokenUsage();
-  }
-
-  async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.getBotChatStats();
-  }
-
-  async searchCharactersByTag(
-    tag: string,
-    limit = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.searchCharacters("tag", tag, limit);
-  }
-
-  async searchCharactersByName(
-    name: string,
-    limit = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.searchCharacters("name", name, limit);
-  }
-
-  async listDbTables(): Promise<NodePostgresTableInfo[]> {
-    if (!(await this.ensureEnabled())) return [];
-    const tables = await this.databaseAdmin.listDbTables();
-    if (tables === null) {
-      this.status = "disabled";
-      return [];
-    }
-    return tables;
-  }
-
-  async getDbTableData(
-    table: string,
-    options: {
-      offset?: number;
-      limit?: number;
-      sortColumn?: string;
-      sortOrder?: "asc" | "desc";
-      search?: string;
-      columns?: string[];
-    } = {},
-  ): Promise<NodePostgresTableData> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("PostgreSQL storage is disabled");
-    }
-    const data = await this.databaseAdmin.getDbTableData(table, options);
-    if (data === null) {
-      this.status = "disabled";
-      throw new Error("PostgreSQL storage is disabled");
-    }
-    return data;
   }
 
   // ── 백업 데이터베이스 API ──

@@ -11,6 +11,10 @@ import type {
   loreBook,
   customscript,
 } from "../../protocol/domain/database.ts";
+import type {
+  AuthorNoteMetadata,
+  AuthorNoteRow,
+} from "../../protocol/src/authorNotes.ts";
 import type { RisuModule } from "../../protocol/domain/modules.ts";
 import type { IPluginStorage } from "../../protocol/domain/pluginStorage.ts";
 import type { SqlCommit } from "../../protocol/domain/sqlCommit.ts";
@@ -183,17 +187,52 @@ export interface BotPresetSummary {
  *  - `loadStartupData()` returns SettingsStore-owned settings and lightweight
  *    character shells as separate domains.
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
- *  - `loadCharacter(id)` returns a full character (with chats list but without
+ *  - `character.document(id)` returns a full character (with chats list but without
  *    message arrays).
  *  - `chat.load(id)` returns a full chat *with* its message array.
- *  - Domain loaders (`loadPersonas`, `listBotPresets`/`loadBotPreset`, …) fetch one domain at
+ *  - Domain loaders (`persona.list`, `preset.list`/`preset.load`, …) fetch one domain at
  *    a time, allowing the adapter to keep unloaded domains out of memory.
  */
 export interface ISqlStorage {
+  table: {
+    list(): Promise<NodePostgresTableInfo[]>;
+    data(
+      table: string,
+      options?: {
+        offset?: number;
+        limit?: number;
+        sortColumn?: string;
+        sortOrder?: "asc" | "desc";
+        search?: string;
+        columns?: string[];
+      },
+    ): Promise<NodePostgresTableData>;
+  };
+
+  stats: {
+    tokenUsage(): Promise<NodePostgresTokenUsage[]>;
+    botChats(): Promise<NodePostgresBotChatStats[]>;
+  };
+
+  revision: {
+    list(limit?: number): Promise<NodePostgresRevision[]>;
+    details(revisionId: number): Promise<NodePostgresRevisionDetails | null>;
+    diff(
+      baseId: number,
+      targetId: number,
+    ): Promise<NodePostgresRevisionDiff | null>;
+    previewRestore(
+      revisionId: number,
+    ): Promise<NodePostgresRestorePreview | null>;
+    restore(
+      revisionId: number,
+    ): Promise<{ revision: number; revisionId: number }>;
+  };
+
   chat: {
     load(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
     /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
-    listRecent?(
+    listRecent(
       limit?: number,
       activeChatId?: string,
     ): Promise<SqlRecentChatMetadata[]>;
@@ -222,16 +261,16 @@ export interface ISqlStorage {
     ): Promise<NodePostgresMessageSearchResult[]>;
   };
 
-  /** Optional during remote protocol rollout; branch features must require these APIs. */
+  /** Persistent chat branch operations. */
   branch: {
-    list?(chatId: string): Promise<SqlChatBranchSummary[]>;
-    graph?(chatId: string): Promise<SqlChatBranchGraphData>;
-    graphPage?(
+    list(chatId: string): Promise<SqlChatBranchSummary[]>;
+    graph(chatId: string): Promise<SqlChatBranchGraphData>;
+    graphPage(
       chatId: string,
       offset: number,
       limit: number,
     ): Promise<SqlChatBranchGraphPage>;
-    messages?(
+    messages(
       chatId: string,
       branchId: string,
       options?: {
@@ -239,8 +278,8 @@ export interface ISqlStorage {
         mode?: "full" | "generation" | "graph";
       },
     ): Promise<Message[]>;
-    create?(input: SqlCreateChatBranchInput): Promise<SqlChatBranchSummary>;
-    activate?(chatId: string, branchId: string): Promise<void>;
+    create(input: SqlCreateChatBranchInput): Promise<SqlChatBranchSummary>;
+    activate(chatId: string, branchId: string): Promise<void>;
   };
 
   readonly backendKind: SqlBackendKind;
@@ -258,22 +297,40 @@ export interface ISqlStorage {
    */
   init(): Promise<boolean>;
   /** Release backend resources before a page reload or application shutdown. */
-  close?(): Promise<void>;
+  close(): Promise<void>;
 
   // ── Startup / snapshot / save ───────────────────────────────────────
 
   loadStartupData(): Promise<SqlStartupDataResult | null>;
   getStorageSyncSummary(): Promise<SqlStorageSyncSummary | null>;
-  exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
+  exportSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
 
   commit(commit: SqlCommit): Promise<SqlCommitResult>;
 
-  replaceDatabase(
+  replace(
     database: Database,
     onProgress?: (status: string, progress?: number) => void,
   ): Promise<boolean>;
 
   character: {
+    searchByTag(
+      tag: string,
+      limit?: number,
+    ): Promise<NodePostgresCharacterSearchResult[]>;
+    searchByName(
+      name: string,
+      limit?: number,
+    ): Promise<NodePostgresCharacterSearchResult[]>;
+    document(characterId: string): Promise<character | groupChat | null>;
+    /** Lightweight character hydration for interactive selection. Chat rows may be summaries. */
+    forSelection(characterId: string): Promise<character | groupChat | null>;
+    /**
+     * Loads only the asset-bearing character fields (image, emotionImages,
+     * additionalAssets, ccAssets, customBackground, gptSoVitsConfig, vits)
+     * without hydrating chats or other metadata. Used by storage analyzers.
+     */
+    assetFields(characterId: string): Promise<Partial<character> | null>;
+
     /** Creates a reference without querying or checking whether the character exists. */
     ref(id: string): Character;
     /** Loads the canonical handle for the id; rejects if the ID is not a character. */
@@ -293,111 +350,44 @@ export interface ISqlStorage {
     position: { max(): Promise<number> };
   };
 
-  // ── Per-entity lazy loaders ──────────────────────────────────────────
+  authorNote: {
+    list(): Promise<AuthorNoteMetadata[]>;
+    get(id: string): Promise<AuthorNoteMetadata | null>;
+    read(id: string): Promise<AuthorNoteRow | null>;
+    scriptWrite(): Promise<boolean>;
+  };
 
-  loadCharacter(characterId: string): Promise<character | groupChat | null>;
-  /** Lightweight character hydration for interactive selection. Chat rows may be summaries. */
-  loadCharacterForSelection?(
-    characterId: string,
-  ): Promise<character | groupChat | null>;
-  /**
-   * Loads only the asset-bearing character fields (image, emotionImages,
-   * additionalAssets, ccAssets, customBackground, gptSoVitsConfig, vits)
-   * without hydrating chats or other metadata. Used by storage analyzers.
-   */
-  loadCharacterAssetFields?(
-    characterId: string,
-  ): Promise<Partial<character> | null>;
+  persona: { list(): Promise<RisuPersona[]> };
+  preset: {
+    list(): Promise<BotPresetSummary[]>;
+    load(id: string): Promise<StoredBotPreset | null>;
+  };
+  lorebook: { list(): Promise<{ name: string; data: loreBook[] }[]> };
+  module: { list(): Promise<RisuModule[]> };
+  prompt: { load(): Promise<Record<string, unknown>> };
+  script: { list(): Promise<customscript[]> };
 
-  // ── Domain loaders (deferred by the adapter) ─────────────────────────
+  pluginCustomStorage: {
+    load(): Promise<Record<string, unknown> | null>;
+    keys(): Promise<string[]>;
+    get(key: string): Promise<unknown>;
+  };
 
-  listGlobalAuthorNotes(): Promise<
-    import("../../protocol/src/authorNotes.ts").AuthorNoteMetadata[]
-  >;
-  getGlobalAuthorNote(
-    id: string,
-  ): Promise<
-    import("../../protocol/src/authorNotes.ts").AuthorNoteMetadata | null
-  >;
-  readGlobalAuthorNote(
-    id: string,
-  ): Promise<import("../../protocol/src/authorNotes.ts").AuthorNoteRow | null>;
-  getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
+  setting: {
+    get(key: string): Promise<unknown>;
+    /** Enumerates every persisted root setting key without hydrating values. */
+    keys(): Promise<string[]>;
+    /** Batched multi-key read; backends may collapse it into one query. */
+    getMany(keys: string[]): Promise<Map<string, unknown>>;
+  };
 
-  loadPersonas(): Promise<RisuPersona[]>;
-  listBotPresets(): Promise<BotPresetSummary[]>;
-  loadBotPreset(id: string): Promise<StoredBotPreset | null>;
-  loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]>;
-  loadModules(): Promise<RisuModule[]>;
-  loadPrompts(): Promise<Record<string, any>>;
-  loadScripts(): Promise<customscript[]>;
-
-  // ── Plugin custom storage ────────────────────────────────────────────
-
-  loadPluginCustomStorage(): Promise<Record<string, any> | null>;
-  listPluginCustomStorageKeys(): Promise<string[]>;
-  loadPluginCustomStorageKey(key: string): Promise<any>;
-
-  // ── Settings ─────────────────────────────────────────────────────────
-
-  //TODO remove any.
-  loadSettingKey(key: string): Promise<any>;
-  /** Enumerates every persisted root setting key without hydrating values. */
-  listSettingKeys?(): Promise<string[]>;
-  /** Batched multi-key read; backends may collapse it into one query. */
-  loadSettingKeys?(keys: string[]): Promise<Map<string, unknown>>;
-
-  // ── Cold storage ─────────────────────────────────────────────────────
-
-  getColdStorageItem(key: string): Promise<unknown | null>;
-  listColdStorageItems(): Promise<{ items: string[] }>;
-  setColdStorageItem(key: string, value: unknown): Promise<boolean>;
-  removeColdStorageItems(keys: string[]): Promise<number>;
-  pruneColdStorage(retainedKeys: string[]): Promise<number>;
-
-  // ── Revisions / history ──────────────────────────────────────────────
-
-  listRevisions(limit?: number): Promise<NodePostgresRevision[]>;
-  getRevisionDetails?(
-    revisionId: number,
-  ): Promise<NodePostgresRevisionDetails | null>;
-  getRevisionDiff?(
-    baseId: number,
-    targetId: number,
-  ): Promise<NodePostgresRevisionDiff | null>;
-  previewRestoreRevision?(
-    revisionId: number,
-  ): Promise<NodePostgresRestorePreview | null>;
-  restoreRevision(
-    revisionId: number,
-  ): Promise<{ revision: number; revisionId: number }>;
-  getTokenUsage(): Promise<NodePostgresTokenUsage[]>;
-  getBotChatStats(): Promise<NodePostgresBotChatStats[]>;
-  searchCharactersByTag(
-    tag: string,
-    limit?: number,
-  ): Promise<NodePostgresCharacterSearchResult[]>;
-  searchCharactersByName(
-    name: string,
-    limit?: number,
-  ): Promise<NodePostgresCharacterSearchResult[]>;
-
-  // ── Optional table explorer ──────────────────────────────────────────
-
-  listDbTables?(): Promise<
-    import("../../protocol/databaseApi.ts").NodePostgresTableInfo[]
-  >;
-  getDbTableData?(
-    table: string,
-    options?: {
-      offset?: number;
-      limit?: number;
-      sortColumn?: string;
-      sortOrder?: "asc" | "desc";
-      search?: string;
-      columns?: string[];
-    },
-  ): Promise<import("../../protocol/databaseApi.ts").NodePostgresTableData>;
+  coldStorage: {
+    get(key: string): Promise<unknown | null>;
+    list(): Promise<{ items: string[] }>;
+    set(key: string, value: unknown): Promise<boolean>;
+    remove(keys: string[]): Promise<number>;
+    prune(retainedKeys: string[]): Promise<number>;
+  };
 }
 
 /**
@@ -407,49 +397,50 @@ export interface ISqlStorage {
  * backends are always "enabled" and have no external connection to configure.
  */
 export interface INodeSqlStorageAdmin extends ISqlStorage {
+  table: {
+    list(): Promise<NodePostgresTableInfo[]>;
+    data(
+      table: string,
+      options?: {
+        offset?: number;
+        limit?: number;
+        sortColumn?: string;
+        sortOrder?: "asc" | "desc";
+        search?: string;
+        columns?: string[];
+      },
+    ): Promise<NodePostgresTableData>;
+  };
+
   getServerConfig(): Promise<NodePostgresServerConfig>;
   configureServer(
     update: NodePostgresServerConfigUpdate,
   ): Promise<NodePostgresServerConfig>;
   getDatabaseConfig(): Promise<
     NodePostgresServerConfig & {
-      params: Record<string, any>;
+      params: Record<string, unknown>;
       storedVendor: import("../../protocol/storageConfig.ts").DbVendor | null;
     }
   >;
   applyDatabaseConfig(
     vendor: import("../../protocol/storageConfig.ts").DbVendor,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
     migrate: boolean,
   ): Promise<
     NodePostgresServerConfig & {
-      params: Record<string, any>;
+      params: Record<string, unknown>;
       storedVendor: import("../../protocol/storageConfig.ts").DbVendor | null;
     }
   >;
   testConnection(
     vendor: import("../../protocol/storageConfig.ts").DbVendor,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
   ): Promise<{ success: boolean; error?: string }>;
   migrateLegacyData(): Promise<{
     success: boolean;
     migrated: number;
     skipped: number;
   }>;
-  listDbTables(): Promise<
-    import("../../protocol/databaseApi.ts").NodePostgresTableInfo[]
-  >;
-  getDbTableData(
-    table: string,
-    options?: {
-      offset?: number;
-      limit?: number;
-      sortColumn?: string;
-      sortOrder?: "asc" | "desc";
-      search?: string;
-      columns?: string[];
-    },
-  ): Promise<import("../../protocol/databaseApi.ts").NodePostgresTableData>;
 }
 
 /**

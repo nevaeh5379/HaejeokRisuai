@@ -31,8 +31,8 @@
         try {
             config = await getNodeStorage().sql.getServerConfig()
             poolMax = config.poolMax
-            revisions = config.enabled ? await getNodeStorage().sql.listRevisions(20) : []
-            tokenUsage = config.enabled ? await getNodeStorage().sql.getTokenUsage() : []
+            revisions = config.enabled ? await getNodeStorage().sql.revision.list(20) : []
+            tokenUsage = config.enabled ? await getNodeStorage().sql.stats.tokenUsage() : []
         } catch (error) {
             loadError = `${error}`
         } finally {
@@ -46,7 +46,7 @@
         }
         busy = true
         try {
-            await getNodeStorage().sql.restoreRevision(revision.id)
+            await getNodeStorage().sql.revision.restore(revision.id)
             alertNormal(language.postgresRestoreSuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {

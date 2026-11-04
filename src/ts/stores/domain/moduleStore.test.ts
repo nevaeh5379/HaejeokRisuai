@@ -15,9 +15,12 @@ describe("moduleStore ordering and folder positions", () => {
   beforeEach(() => {
     committed = [];
     mockStorage = {
+      setting: { get: vi.fn(async () => []) },
+
+      module: { list: vi.fn(async () => []) },
+
       getRevision: vi.fn(() => 0),
-      loadModules: vi.fn(async () => []),
-      loadSettingKey: vi.fn(async () => []),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         committed.push(structuredClone(commit));
         return { revision: committed.length };
@@ -40,8 +43,8 @@ describe("moduleStore ordering and folder positions", () => {
       name: "Persisted module",
       description: "",
     };
-    mockStorage.loadModules = vi.fn(() => serializedRead([module]));
-    mockStorage.loadSettingKey = vi.fn((key: string) =>
+    mockStorage.module.list = vi.fn(() => serializedRead([module]));
+    mockStorage.setting.get = vi.fn((key: string) =>
       serializedRead(key === "enabledModules" ? [module.id] : []),
     );
 
@@ -54,8 +57,8 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("refreshes module-owned state from remote storage", async () => {
     let modules: RisuModule[] = [{ id: "m1", name: "Before", description: "" }];
-    mockStorage.loadModules = vi.fn(async () => structuredClone(modules));
-    mockStorage.loadSettingKey = vi.fn(async (key: string) =>
+    mockStorage.module.list = vi.fn(async () => structuredClone(modules));
+    mockStorage.setting.get = vi.fn(async (key: string) =>
       key === "enabledModules" ? ["m1"] : [],
     );
     await moduleStore.init(mockStorage);
@@ -69,7 +72,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("detects direct nested edits and saves only the changed module", async () => {
-    mockStorage.loadModules = vi.fn(
+    mockStorage.module.list = vi.fn(
       async () =>
         [
           {
@@ -100,7 +103,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("preserves edits made while a module commit is in flight", async () => {
-    mockStorage.loadModules = vi.fn(async () => [
+    mockStorage.module.list = vi.fn(async () => [
       { id: "m1", name: "Initial", description: "" },
     ]);
     await moduleStore.init(mockStorage);
@@ -132,7 +135,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("persists same-length nested edits through the automatic save observer", async () => {
-    mockStorage.loadModules = vi.fn(
+    mockStorage.module.list = vi.fn(
       async () =>
         [
           {
@@ -157,7 +160,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("saves direct array reordering and deletion without rewriting unchanged bodies", async () => {
-    mockStorage.loadModules = vi.fn(async () => [
+    mockStorage.module.list = vi.fn(async () => [
       { id: "m1", name: "First", description: "" },
       { id: "m2", name: "Second", description: "" },
       { id: "m3", name: "Third", description: "" },
@@ -177,7 +180,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("deletes the old module ID when a compatibility caller renames it directly", async () => {
-    mockStorage.loadModules = vi.fn(async () => [
+    mockStorage.module.list = vi.fn(async () => [
       { id: "old-id", name: "Module", description: "" },
     ]);
     await moduleStore.init(mockStorage);
@@ -219,7 +222,7 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("keeps a failed module edit pending so it can be retried", async () => {
-    mockStorage.loadModules = vi.fn(async () => [
+    mockStorage.module.list = vi.fn(async () => [
       { id: "m1", name: "Initial", description: "" },
     ]);
     await moduleStore.init(mockStorage);
@@ -250,8 +253,8 @@ describe("moduleStore ordering and folder positions", () => {
     const mod3: RisuModule = { id: "m3", name: "Module 3", description: "" };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1, mod2, mod3]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1, mod2, mod3]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "enabledModules") return [];
       if (key === "moduleOrder") return undefined;
@@ -278,8 +281,8 @@ describe("moduleStore ordering and folder positions", () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "moduleOrder") return ["m1", "folder:f1"];
       return [];
@@ -314,8 +317,8 @@ describe("moduleStore ordering and folder positions", () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "moduleOrder") return ["m1", "folder:f1"];
       return [];
@@ -349,8 +352,8 @@ describe("moduleStore ordering and folder positions", () => {
     };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1, mod2]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1, mod2]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "moduleOrder") return ["folder:f1"];
       return [];
@@ -374,8 +377,8 @@ describe("moduleStore ordering and folder positions", () => {
     };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1, mod2]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1, mod2]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "moduleOrder") return ["folder:f1", "m1"];
       return [];
@@ -396,8 +399,8 @@ describe("moduleStore ordering and folder positions", () => {
     const mod2: RisuModule = { id: "m2", name: "Module 2", description: "" };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1, mod2]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1, mod2]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1];
       if (key === "moduleOrder") return ["m1", "folder:f1", "m2"];
       return [];
@@ -420,8 +423,8 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("adds newly installed modules to root moduleOrder and removes deleted modules", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    mockStorage.loadModules = vi.fn(async () => [mod1]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleOrder") return ["m1"];
       return [];
     });
@@ -454,8 +457,8 @@ describe("moduleStore ordering and folder positions", () => {
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
     const folder2: ModuleFolder = { id: "f2", name: "Folder 2", color: "" };
 
-    mockStorage.loadModules = vi.fn(async () => [mod1, mod2, mod3]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1, mod2, mod3]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleFolders") return [folder1, folder2];
       if (key === "moduleOrder") return ["m1", "folder:f1", "folder:f2"];
       return [];
@@ -491,8 +494,8 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("synchronizes root order when modules are upserted through compatibility APIs", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    mockStorage.loadModules = vi.fn(async () => [mod1]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleOrder") return ["m1"];
       return [];
     });
@@ -520,8 +523,8 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("keeps getRootItems pure when root order is stale", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    mockStorage.loadModules = vi.fn(async () => [mod1]);
-    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+    mockStorage.module.list = vi.fn(async () => [mod1]);
+    mockStorage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleOrder") return ["m1"];
       return [];
     });

@@ -60,8 +60,10 @@ test.describe("lazy chat variable hydration", () => {
         releaseChatRead = resolve;
       });
       const storage = {
+        character: { document: async () => null },
+
         getRevision: () => revision,
-        loadCharacter: async () => null,
+
         loadChat: async (chatId: string) => {
           await chatReadGate;
           const chat = persistedChats.get(chatId);
@@ -156,8 +158,7 @@ test.describe("lazy chat variable hydration", () => {
         pendingAfterRead,
         wroteDuringHydration,
         pendingAfterDeferredWrite,
-        inMemoryVariables:
-          characterStore.characters[0].chats[0].scriptstate,
+        inMemoryVariables: characterStore.characters[0].chats[0].scriptstate,
         persistedVariables: persistedChats.get("chat-1")?.scriptstate,
         persistedLocalVariables:
           persistedChats.get("chat-1")?.GLGlobalVariables,

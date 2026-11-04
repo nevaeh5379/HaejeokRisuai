@@ -13,11 +13,18 @@ import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
 
 const preLoadChatMock = vi.fn();
 vi.mock("./process/coldstorage.svelte", () => ({
+  coldStorage: { get: vi.fn() },
+
   preLoadChat: (...args: any[]) => preLoadChatMock(...args),
-  getColdStorageItem: vi.fn(),
 }));
 
 class MockSqlStorage {
+  character = {
+    document: async (): Promise<any> => {
+      return null;
+    },
+  };
+
   chat = {
     load: async (): Promise<any> => {
       return null;
@@ -54,9 +61,6 @@ class MockSqlStorage {
   async close(): Promise<void> {}
   async replaceDatabase(): Promise<boolean> {
     return true;
-  }
-  async loadCharacter(): Promise<any> {
-    return null;
   }
 }
 

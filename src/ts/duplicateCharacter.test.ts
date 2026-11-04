@@ -35,11 +35,18 @@ vi.mock("./globalApi.svelte", async (importOriginal) => {
 const preLoadChatMock = vi.fn();
 const getColdStorageItemMock = vi.fn();
 vi.mock("./process/coldstorage.svelte", () => ({
-  preLoadChat: (...args: any[]) => preLoadChatMock(...args),
   getColdStorageItem: (...args: any[]) => getColdStorageItemMock(...args),
+
+  preLoadChat: (...args: any[]) => preLoadChatMock(...args),
 }));
 
 class MockSqlStorage {
+  character = {
+    document: async (id: string): Promise<any> => {
+      return null;
+    },
+  };
+
   chat = {
     load: async (): Promise<any> => {
       return null;
@@ -76,9 +83,6 @@ class MockSqlStorage {
   async close(): Promise<void> {}
   async replaceDatabase(): Promise<boolean> {
     return true;
-  }
-  async loadCharacter(id: string): Promise<any> {
-    return null;
   }
 }
 
@@ -206,7 +210,7 @@ describe("duplicateCharacter", () => {
       detailsLoaded: false,
     } as unknown as character;
 
-    mockStorage.loadCharacter = vi.fn().mockResolvedValue({
+    mockStorage.character.document = vi.fn().mockResolvedValue({
       chaId: "char-shallow",
       type: "character",
       name: "Shallow Bot",
@@ -296,7 +300,7 @@ describe("duplicateCharacter", () => {
       detailsLoaded: false,
     } as unknown as character;
 
-    mockStorage.loadCharacter = vi.fn().mockResolvedValue(null);
+    mockStorage.character.document = vi.fn().mockResolvedValue(null);
     characterStore.init([shallowChar], mockStorage as unknown as ISqlStorage);
 
     const duplicated = await duplicateCharacter(0);
@@ -330,7 +334,7 @@ describe("duplicateCharacter", () => {
       detailsLoaded: true,
     } as unknown as character;
 
-    mockStorage.loadCharacter = vi.fn().mockImplementation(async () => {
+    mockStorage.character.document = vi.fn().mockImplementation(async () => {
       characterStore.characters = [otherChar, sourceChar];
       return {
         ...sourceChar,
@@ -510,7 +514,7 @@ describe("duplicateCharacter", () => {
       chats: [makeChat("chat-exp-1", [makeMessage("m1", "exported message")])],
     } as unknown as character;
 
-    mockStorage.loadCharacter = vi.fn(async (id: string) => {
+    mockStorage.character.document = vi.fn(async (id: string) => {
       if (id === "char-shallow-all-chats") return fullChar;
       return null;
     });
@@ -520,7 +524,7 @@ describe("duplicateCharacter", () => {
 
     await exportAllChats();
 
-    expect(mockStorage.loadCharacter).toHaveBeenCalledWith(
+    expect(mockStorage.character.document).toHaveBeenCalledWith(
       "char-shallow-all-chats",
     );
     expect(preLoadChatMock).toHaveBeenCalledWith(0, 0, { full: true });
@@ -592,7 +596,7 @@ describe("duplicateCharacter", () => {
       chatFolders: [],
     } as unknown as character;
 
-    mockStorage.loadCharacter = vi.fn().mockResolvedValue(null);
+    mockStorage.character.document = vi.fn().mockResolvedValue(null);
     characterStore.init([shallowChar], mockStorage as unknown as ISqlStorage);
     selectedCharID.set(0);
 

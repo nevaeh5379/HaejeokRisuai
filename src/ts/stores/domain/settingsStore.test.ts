@@ -15,8 +15,12 @@ describe("SettingsStore Reactivity and Persistence", () => {
     deferredSettingsLoader.reset();
     committed = [];
     mockStorage = {
+      lorebook: { list: vi.fn(async () => []) },
+      prompt: { load: vi.fn(async () => ({})) },
+      pluginCustomStorage: { get: vi.fn(async () => undefined) },
+
       getRevision: vi.fn(() => committed.length),
-      loadPluginCustomStorageKey: vi.fn(async () => undefined),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         committed.push(structuredClone(commit));
         return { revision: committed.length };
@@ -92,7 +96,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
   });
 
   it("hydrates deferred SQL domains without scheduling a write", async () => {
-    mockStorage.loadLorebooks = vi.fn(async () => [
+    mockStorage.lorebook.list = vi.fn(async () => [
       { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
     ]) as any;
     settingsStore.init(
@@ -115,7 +119,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(settingsStore.state.loreBook).toEqual([
       { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
     ]);
-    expect(mockStorage.loadLorebooks).toHaveBeenCalledTimes(1);
+    expect(mockStorage.lorebook.list).toHaveBeenCalledTimes(1);
     await settingsStore.flush();
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
@@ -367,7 +371,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
   });
 
   it("tracks plugin storage keys without loading values and hydrates one key without committing it", async () => {
-    mockStorage.loadPluginCustomStorageKey = vi.fn(async (key: string) => {
+    mockStorage.pluginCustomStorage.get = vi.fn(async (key: string) => {
       return key === "large-cache" ? { entries: [1, 2, 3] } : undefined;
     });
     settingsStore.init({ pluginCustomStorage: {} } as any, mockStorage);
@@ -512,7 +516,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
 
   it("does not rehydrate preset copies when a deferred load finishes after transfer", async () => {
     let finish!: (prompts: Record<string, unknown>) => void;
-    mockStorage.loadPrompts = vi.fn(
+    mockStorage.prompt.load = vi.fn(
       () =>
         new Promise((resolve) => {
           finish = resolve;

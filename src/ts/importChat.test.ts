@@ -9,6 +9,12 @@ import { selectedCharID } from "./stores.svelte";
 import * as util from "./util";
 
 class MockSqlStorage {
+  character = {
+    document: async (): Promise<any> => {
+      return null;
+    },
+  };
+
   chat = {
     load: async (): Promise<any> => {
       return null;
@@ -45,9 +51,6 @@ class MockSqlStorage {
   async close(): Promise<void> {}
   async replaceDatabase(): Promise<boolean> {
     return true;
-  }
-  async loadCharacter(): Promise<any> {
-    return null;
   }
 }
 

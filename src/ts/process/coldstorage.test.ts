@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const sql = {
+    coldStorage: {
+      get: vi.fn(),
+      set: vi.fn(),
+      list: vi.fn(),
+      prune: vi.fn(),
+      remove: vi.fn(),
+    },
+
     isEnabled: vi.fn(() => true),
-    getColdStorageItem: vi.fn(),
-    setColdStorageItem: vi.fn(),
-    listColdStorageItems: vi.fn(),
-    pruneColdStorage: vi.fn(),
-    removeColdStorageItems: vi.fn(),
   };
   const storage = {
     sql,
@@ -85,9 +88,9 @@ describe("cold storage backend routing", () => {
 
   it("uses the active remote SQL backend in Tauri", async () => {
     const value = { character: { chaId: "remote-character" } };
-    mocks.sql.getColdStorageItem.mockResolvedValue(value);
-    mocks.sql.setColdStorageItem.mockResolvedValue(true);
-    mocks.sql.listColdStorageItems.mockResolvedValue({ items: ["remote-key"] });
+    mocks.sql.coldStorage.get.mockResolvedValue(value);
+    mocks.sql.coldStorage.set.mockResolvedValue(true);
+    mocks.sql.coldStorage.list.mockResolvedValue({ items: ["remote-key"] });
 
     await expect(getColdStorageItem("remote-key")).resolves.toBe(value);
     await expect(setColdStorageItem("remote-key", value)).resolves.toBe(true);
@@ -95,11 +98,8 @@ describe("cold storage backend routing", () => {
       items: ["remote-key"],
     });
 
-    expect(mocks.sql.getColdStorageItem).toHaveBeenCalledWith("remote-key");
-    expect(mocks.sql.setColdStorageItem).toHaveBeenCalledWith(
-      "remote-key",
-      value,
-    );
+    expect(mocks.sql.coldStorage.get).toHaveBeenCalledWith("remote-key");
+    expect(mocks.sql.coldStorage.set).toHaveBeenCalledWith("remote-key", value);
     expect(mocks.readFile).not.toHaveBeenCalled();
     expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(mocks.readDir).not.toHaveBeenCalled();
@@ -108,7 +108,7 @@ describe("cold storage backend routing", () => {
   it("collects remote cold storage for a Tauri backup", async () => {
     const key = "11111111-1111-1111-1111-111111111111";
     const value = { character: { chaId: "remote-character" } };
-    mocks.sql.getColdStorageItem.mockResolvedValue(value);
+    mocks.sql.coldStorage.get.mockResolvedValue(value);
 
     const result = await collectColdStorageBackupPayloads({
       characters: [
@@ -130,16 +130,16 @@ describe("cold storage backend routing", () => {
         value,
       }),
     ]);
-    expect(mocks.sql.getColdStorageItem).toHaveBeenCalledWith(key);
+    expect(mocks.sql.coldStorage.get).toHaveBeenCalledWith(key);
     expect(mocks.readFile).not.toHaveBeenCalled();
   });
 
   it("prunes the active remote SQL backend in Tauri", async () => {
-    mocks.sql.pruneColdStorage.mockResolvedValue(3);
+    mocks.sql.coldStorage.prune.mockResolvedValue(3);
 
     await cleanColdStorage();
 
-    expect(mocks.sql.pruneColdStorage).toHaveBeenCalledWith([]);
+    expect(mocks.sql.coldStorage.prune).toHaveBeenCalledWith([]);
     expect(mocks.remove).not.toHaveBeenCalled();
     expect(mocks.alertClear).toHaveBeenCalledTimes(1);
   });

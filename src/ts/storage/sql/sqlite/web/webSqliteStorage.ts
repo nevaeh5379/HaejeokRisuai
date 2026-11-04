@@ -249,6 +249,343 @@ function getWorkerRpc(): WorkerRpc {
 
 const DB_FILE = "/risuai-local.sqlite3";
 export class WebSqliteStorage implements ISqlStorage {
+  table = {
+    list: async (): Promise<NodePostgresTableInfo[]> => {
+      if (!this._enabled && !(await this.init())) return [];
+      const selectRowSets: SqliteSelectRowSets = async (queries) =>
+        (await this.selectBatchResults(queries)).map(
+          (result) => result.rows ?? [],
+        );
+      return await sqliteAdmin.listTables(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        selectRowSets,
+      );
+    },
+    data: async (
+      table: string,
+      options: {
+        offset?: number;
+        limit?: number;
+        sortColumn?: string;
+        sortOrder?: "asc" | "desc";
+        search?: string;
+        columns?: string[];
+      } = {},
+    ): Promise<NodePostgresTableData> => {
+      if (!this._enabled && !(await this.init())) {
+        throw new Error("Browser SQLite storage is not available");
+      }
+      const selectRowSets: SqliteSelectRowSets = async (queries) =>
+        (await this.selectBatchResults(queries)).map(
+          (result) => result.rows ?? [],
+        );
+      return await sqliteAdmin.getTableData(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        selectRowSets,
+        table,
+        options,
+      );
+    },
+  };
+
+  stats = {
+    tokenUsage: async (): Promise<NodePostgresTokenUsage[]> => {
+      return await sqliteAdmin.getTokenUsage(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    botChats: async (): Promise<NodePostgresBotChatStats[]> => {
+      return await sqliteAdmin.getBotChatStats(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  revision = {
+    list: async (limit?: number): Promise<NodePostgresRevision[]> => {
+      return await sqliteRevisions.list(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        limit,
+      );
+    },
+    details: async (
+      revisionId: number,
+    ): Promise<NodePostgresRevisionDetails | null> => {
+      return await sqliteRevisions.getDetails(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        revisionId,
+      );
+    },
+    diff: async (
+      baseId: number,
+      targetId: number,
+    ): Promise<NodePostgresRevisionDiff | null> => {
+      return sqliteRevisions.getDiff(baseId, targetId);
+    },
+    previewRestore: async (
+      revisionId: number,
+    ): Promise<NodePostgresRestorePreview | null> => {
+      return sqliteRevisions.previewRestore(this.currentRevision, revisionId);
+    },
+    restore: async (
+      revisionId: number,
+    ): Promise<{ revision: number; revisionId: number }> => {
+      return { revision: this.currentRevision, revisionId };
+    },
+  };
+
+  coldStorage = {
+    get: async (key: string): Promise<unknown | null> => {
+      return await sqliteColdStorage.getItem(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        this.loadNodeValue.bind(this),
+        key,
+      );
+    },
+    list: async (): Promise<{ items: string[] }> => {
+      return await sqliteColdStorage.listItems(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    set: async (key: string, value: unknown): Promise<boolean> => {
+      return this.writeQueue.run(async () => {
+        await this.run("BEGIN IMMEDIATE");
+        try {
+          await sqliteCommit.writeColdStorage(
+            (sql, bind = []) => this.run(sql, bind),
+            key,
+            value,
+          );
+          await this.run("COMMIT");
+          return true;
+        } catch (error) {
+          try {
+            await this.run("ROLLBACK");
+          } catch {
+            // Preserve the original cold-storage error.
+          }
+          throw error;
+        }
+      });
+    },
+    remove: async (keys: string[]): Promise<number> => {
+      const statement = sqliteColdStorage.buildDelete(keys);
+      if (!statement) return 0;
+      return this.writeQueue.run(async () => {
+        await this.run(statement.sql, statement.bind ?? []);
+        return keys.length;
+      });
+    },
+    prune: async (retainedKeys: string[]): Promise<number> => {
+      return this.writeQueue.run(async () => {
+        const toDelete = await sqliteColdStorage.findPruneKeys(
+          this.selectRows.bind(this) as SqliteSelectRows,
+          retainedKeys,
+        );
+        const statement = sqliteColdStorage.buildDelete(toDelete);
+        if (!statement) return 0;
+        await this.run(statement.sql, statement.bind ?? []);
+        return toDelete.length;
+      });
+    },
+  };
+
+  setting = {
+    keys: async (): Promise<string[]> => {
+      return await sqliteDocument.listSettingKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    get: async (key: string): Promise<unknown> => {
+      return this.loadSettingValue(key);
+    },
+  };
+
+  pluginCustomStorage = {
+    load: async (): Promise<Record<string, unknown> | null> => {
+      return (await sqlitePlugin.loadCustomStorage(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      )) as Record<string, unknown> | null;
+    },
+    keys: async (): Promise<string[]> => {
+      return await sqlitePlugin.listCustomStorageKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    get: async (key: string): Promise<unknown> => {
+      return await sqlitePlugin.loadCustomStorageKey(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        key,
+      );
+    },
+  };
+
+  script = {
+    list: async (): Promise<customscript[]> => {
+      return (
+        ((await this.loadSettingValue("globalscript")) as
+          customscript[] | undefined) ?? []
+      );
+    },
+  };
+
+  prompt = {
+    load: async (): Promise<Record<string, unknown>> => {
+      return await sqliteDocument.loadPrompts(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  module = {
+    list: async (): Promise<RisuModule[]> => {
+      return await sqliteDocument.loadModules<RisuModule>(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+  };
+
+  lorebook = {
+    list: async (): Promise<{ name: string; data: loreBook[] }[]> => {
+      return (
+        ((await this.loadSettingValue("loreBook")) as
+          { name: string; data: loreBook[] }[] | undefined) ?? []
+      );
+    },
+  };
+
+  preset = {
+    list: async (): Promise<BotPresetSummary[]> => {
+      return await sqliteDocument.listBotPresets(
+        this.selectRows.bind(this) as SqliteSelectRows,
+      );
+    },
+    load: async (id: string): Promise<StoredBotPreset | null> => {
+      return await sqliteDocument.loadBotPreset<botPreset>(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        id,
+      );
+    },
+  };
+
+  persona = {
+    list: async (): Promise<RisuPersona[]> => {
+      return (
+        ((await this.loadSettingValue("personas")) as
+          RisuPersona[] | undefined) ?? []
+      );
+    },
+  };
+
+  authorNote = {
+    list: async () => {
+      return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
+    },
+    get: async (id: string) => {
+      return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
+    },
+    read: async (id: string) => {
+      return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
+    },
+    scriptWrite: async () => {
+      return authorNoteSql.allowAuthorNoteScriptWrite(
+        this.authorNoteDatabase(),
+      );
+    },
+  };
+
+  character = {
+    searchByTag: async (
+      tag: string,
+      limit: number = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      return await sqliteAdmin.searchCharacters(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        "tag",
+        tag,
+        limit,
+      );
+    },
+    searchByName: async (
+      name: string,
+      limit: number = 100,
+    ): Promise<NodePostgresCharacterSearchResult[]> => {
+      return await sqliteAdmin.searchCharacters(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        "name",
+        name,
+        limit,
+      );
+    },
+
+    document: async (
+      characterId: string,
+    ): Promise<character | groupChat | null> => {
+      return (await sqliteEntity.loadCharacterDocument(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        characterId,
+      )) as unknown as character | groupChat | null;
+    },
+    forSelection: async (
+      characterId: string,
+    ): Promise<character | groupChat | null> => {
+      const [characterResult, nodeResult, chatResult] =
+        await this.selectBatchResults([
+          {
+            sql: "SELECT id FROM characters WHERE id = ?",
+            bind: [characterId],
+          },
+          {
+            sql: `SELECT node_id, parent_node_id, node_order, object_key,
+                     object_key_encoded, value_type, text_value, encoded_text_value,
+                     number_value, boolean_value
+              FROM character_extension_nodes
+              WHERE character_id = ? ORDER BY node_id`,
+            bind: [characterId],
+            transform: "relational",
+          },
+          {
+            sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+            bind: [characterId],
+          },
+        ]);
+      const characterRows = characterResult.rows ?? [];
+      const chatRows = chatResult.rows ?? [];
+      if (characterRows.length === 0) return null;
+      // Rebuild large relational trees in the SQLite Worker so the UI thread
+      // receives the final object instead of cloning thousands of node rows.
+      const characterData = (nodeResult.value ?? {}) as any;
+      characterData.chaId = characterId;
+      characterData.detailsLoaded = true;
+      characterData.chats = chatRows.map((row) => ({
+        id: row.id as string,
+        name: (row.name as string) ?? "",
+        note: (row.note as string) ?? "",
+        folderId: (row.folder_id as string) ?? undefined,
+        lastDate: (row.last_message_time as number) ?? undefined,
+        message: [],
+        messagesLoaded: false,
+        messagesFullyLoaded: false,
+        detailsLoaded: false,
+      })) as Chat[];
+      return characterData;
+    },
+    assetFields: async (
+      characterId: string,
+    ): Promise<Partial<character> | null> => {
+      const row = await this.selectOne(
+        "SELECT id FROM characters WHERE id = ?",
+        [characterId],
+      );
+      if (!row) return null;
+      const query = sqliteEntity.buildCharacterAssetFieldsQuery(characterId);
+      const [nodeResult] = await this.selectBatchResults([
+        { sql: query.sql, bind: query.bind, transform: "relational" },
+      ]);
+      return (nodeResult.value ?? {}) as Partial<character>;
+    },
+  };
+
   chat = {
     load: async (
       chatId: string,
@@ -501,7 +838,7 @@ export class WebSqliteStorage implements ISqlStorage {
     this.selectRows.bind(this) as SqliteSelectRows,
   );
 
-  private revision = 0;
+  private currentRevision = 0;
   private initialized = false;
   private initPromise: Promise<boolean> | null = null;
   private readonly writeQueue = new AsyncSerialQueue();
@@ -513,7 +850,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   getRevision(): number {
-    return this.revision;
+    return this.currentRevision;
   }
 
   async getStorageSyncSummary() {
@@ -523,7 +860,7 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     return await sqliteStartup.getSyncSummary(
       this.selectRows.bind(this) as SqliteSelectRows,
-      this.revision,
+      this.currentRevision,
     );
   }
 
@@ -557,7 +894,7 @@ export class WebSqliteStorage implements ISqlStorage {
       this.rpc = rpc;
       const result = await rpc.init();
       this._enabled = result.enabled;
-      this.revision = result.revision;
+      this.currentRevision = result.revision;
       if (result.enabled)
         await authorNoteSql.ensureAuthorNoteReceipts({
           ...this.authorNoteDatabase(),
@@ -669,7 +1006,7 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     const projection = await sqliteStartup.loadProjection(
       ((queries) => this.selectBatch(queries)) as SqliteSelectRowSets,
-      this.revision,
+      this.currentRevision,
       DEFERRED_STARTUP_SETTING_KEYS,
       SETTINGS_STORE_EXCLUDED_KEYS,
     );
@@ -708,7 +1045,7 @@ export class WebSqliteStorage implements ISqlStorage {
       selectRows: this.selectRows.bind(this) as SqliteSelectRows,
       selectRowSets: ((queries) =>
         this.selectBatch(queries)) as SqliteSelectRowSets,
-      revision: this.revision,
+      revision: this.currentRevision,
       legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
       loadChatMessages: (chatId) => this.message.list(chatId),
     })) as SqlDatabaseSnapshotResult;
@@ -786,7 +1123,7 @@ export class WebSqliteStorage implements ISqlStorage {
       if (!this.rpc) throw new Error("Database not opened");
       await this.rpc.execBatch(statements);
       await this.run("COMMIT");
-      this.revision = revision;
+      this.currentRevision = revision;
       return {
         revision,
         ...(authorNotes.length
@@ -816,7 +1153,7 @@ export class WebSqliteStorage implements ISqlStorage {
     onProgress?: (status: string) => void,
   ): Promise<boolean> {
     onProgress?.("Replacing local database...");
-    await this.commit(buildSqlReplaceCommit(database, this.revision));
+    await this.commit(buildSqlReplaceCommit(database, this.currentRevision));
     return true;
   }
 
@@ -826,12 +1163,12 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
-    const baseRevision = this.revision;
+    const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,
       onProgress,
       onCommitted: (revision) => {
-        this.revision = revision;
+        this.currentRevision = revision;
       },
       runTransaction: (task) =>
         this.writeQueue.run(async () => {
@@ -868,74 +1205,6 @@ export class WebSqliteStorage implements ISqlStorage {
     });
   }
 
-  async loadCharacter(
-    characterId: string,
-  ): Promise<character | groupChat | null> {
-    return (await sqliteEntity.loadCharacterDocument(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      characterId,
-    )) as unknown as character | groupChat | null;
-  }
-
-  async loadCharacterForSelection(
-    characterId: string,
-  ): Promise<character | groupChat | null> {
-    const [characterResult, nodeResult, chatResult] =
-      await this.selectBatchResults([
-        {
-          sql: "SELECT id FROM characters WHERE id = ?",
-          bind: [characterId],
-        },
-        {
-          sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                     object_key_encoded, value_type, text_value, encoded_text_value,
-                     number_value, boolean_value
-              FROM character_extension_nodes
-              WHERE character_id = ? ORDER BY node_id`,
-          bind: [characterId],
-          transform: "relational",
-        },
-        {
-          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-          bind: [characterId],
-        },
-      ]);
-    const characterRows = characterResult.rows ?? [];
-    const chatRows = chatResult.rows ?? [];
-    if (characterRows.length === 0) return null;
-    // Rebuild large relational trees in the SQLite Worker so the UI thread
-    // receives the final object instead of cloning thousands of node rows.
-    const characterData = (nodeResult.value ?? {}) as any;
-    characterData.chaId = characterId;
-    characterData.detailsLoaded = true;
-    characterData.chats = chatRows.map((row) => ({
-      id: row.id as string,
-      name: (row.name as string) ?? "",
-      note: (row.note as string) ?? "",
-      folderId: (row.folder_id as string) ?? undefined,
-      lastDate: (row.last_message_time as number) ?? undefined,
-      message: [],
-      messagesLoaded: false,
-      messagesFullyLoaded: false,
-      detailsLoaded: false,
-    })) as Chat[];
-    return characterData;
-  }
-
-  async loadCharacterAssetFields(
-    characterId: string,
-  ): Promise<Partial<character> | null> {
-    const row = await this.selectOne("SELECT id FROM characters WHERE id = ?", [
-      characterId,
-    ]);
-    if (!row) return null;
-    const query = sqliteEntity.buildCharacterAssetFieldsQuery(characterId);
-    const [nodeResult] = await this.selectBatchResults([
-      { sql: query.sql, bind: query.bind, transform: "relational" },
-    ]);
-    return (nodeResult.value ?? {}) as Partial<character>;
-  }
-
   private async runBranchTransaction(
     statements: { sql: string; bind?: unknown[] }[],
   ): Promise<void> {
@@ -968,7 +1237,7 @@ export class WebSqliteStorage implements ISqlStorage {
 
   private async loadLegacyChatExtension(
     chatId: string,
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     const [result] = await this.selectBatchResults([
       {
         sql: `SELECT node_id, parent_node_id, node_order, object_key,
@@ -1027,31 +1296,6 @@ export class WebSqliteStorage implements ISqlStorage {
     await this.runBranchTransaction(sqliteBranch.ensureGraphStatements(chatId));
   }
 
-  async loadPersonas(): Promise<RisuPersona[]> {
-    return (
-      ((await this.loadSettingValue("personas")) as
-        RisuPersona[] | undefined) ?? []
-    );
-  }
-  async listBotPresets(): Promise<BotPresetSummary[]> {
-    return await sqliteDocument.listBotPresets(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    return await sqliteDocument.loadBotPreset<botPreset>(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      id,
-    );
-  }
-
-  async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
-    return (
-      ((await this.loadSettingValue("loreBook")) as
-        { name: string; data: loreBook[] }[] | undefined) ?? []
-    );
-  }
   private authorNoteDatabase(): authorNoteSql.AuthorNoteSql {
     return {
       dialect: "sqlite",
@@ -1060,232 +1304,5 @@ export class WebSqliteStorage implements ISqlStorage {
         throw new Error("Read-only note connection");
       },
     };
-  }
-  async listGlobalAuthorNotes() {
-    return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
-  }
-  async getGlobalAuthorNote(id: string) {
-    return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
-  }
-  async readGlobalAuthorNote(id: string) {
-    return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
-  }
-  async getGlobalAuthorNoteScriptWrite() {
-    return authorNoteSql.allowAuthorNoteScriptWrite(this.authorNoteDatabase());
-  }
-
-  async loadModules(): Promise<RisuModule[]> {
-    return await sqliteDocument.loadModules<RisuModule>(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadPrompts(): Promise<Record<string, any>> {
-    return await sqliteDocument.loadPrompts(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadScripts(): Promise<customscript[]> {
-    return (
-      ((await this.loadSettingValue("globalscript")) as
-        customscript[] | undefined) ?? []
-    );
-  }
-
-  async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    return (await sqlitePlugin.loadCustomStorage(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    )) as Record<string, any> | null;
-  }
-
-  async listPluginCustomStorageKeys(): Promise<string[]> {
-    return await sqlitePlugin.listCustomStorageKeys(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadPluginCustomStorageKey(key: string): Promise<any> {
-    return await sqlitePlugin.loadCustomStorageKey(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      key,
-    );
-  }
-
-  async listSettingKeys(): Promise<string[]> {
-    return await sqliteDocument.listSettingKeys(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async loadSettingKey(key: string): Promise<any> {
-    return this.loadSettingValue(key);
-  }
-
-  async getColdStorageItem(key: string): Promise<unknown | null> {
-    return await sqliteColdStorage.getItem(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      this.loadNodeValue.bind(this),
-      key,
-    );
-  }
-
-  async listColdStorageItems(): Promise<{ items: string[] }> {
-    return await sqliteColdStorage.listItems(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    return this.writeQueue.run(async () => {
-      await this.run("BEGIN IMMEDIATE");
-      try {
-        await sqliteCommit.writeColdStorage(
-          (sql, bind = []) => this.run(sql, bind),
-          key,
-          value,
-        );
-        await this.run("COMMIT");
-        return true;
-      } catch (error) {
-        try {
-          await this.run("ROLLBACK");
-        } catch {
-          // Preserve the original cold-storage error.
-        }
-        throw error;
-      }
-    });
-  }
-
-  async removeColdStorageItems(keys: string[]): Promise<number> {
-    const statement = sqliteColdStorage.buildDelete(keys);
-    if (!statement) return 0;
-    return this.writeQueue.run(async () => {
-      await this.run(statement.sql, statement.bind ?? []);
-      return keys.length;
-    });
-  }
-
-  async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    return this.writeQueue.run(async () => {
-      const toDelete = await sqliteColdStorage.findPruneKeys(
-        this.selectRows.bind(this) as SqliteSelectRows,
-        retainedKeys,
-      );
-      const statement = sqliteColdStorage.buildDelete(toDelete);
-      if (!statement) return 0;
-      await this.run(statement.sql, statement.bind ?? []);
-      return toDelete.length;
-    });
-  }
-
-  async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    return await sqliteRevisions.list(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      limit,
-    );
-  }
-
-  async getRevisionDetails(
-    revisionId: number,
-  ): Promise<NodePostgresRevisionDetails | null> {
-    return await sqliteRevisions.getDetails(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      revisionId,
-    );
-  }
-
-  async getRevisionDiff(
-    baseId: number,
-    targetId: number,
-  ): Promise<NodePostgresRevisionDiff | null> {
-    return sqliteRevisions.getDiff(baseId, targetId);
-  }
-
-  async previewRestoreRevision(
-    revisionId: number,
-  ): Promise<NodePostgresRestorePreview | null> {
-    return sqliteRevisions.previewRestore(this.revision, revisionId);
-  }
-
-  async restoreRevision(
-    revisionId: number,
-  ): Promise<{ revision: number; revisionId: number }> {
-    return { revision: this.revision, revisionId };
-  }
-
-  async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return await sqliteAdmin.getTokenUsage(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    return await sqliteAdmin.getBotChatStats(
-      this.selectRows.bind(this) as SqliteSelectRows,
-    );
-  }
-
-  async listDbTables(): Promise<NodePostgresTableInfo[]> {
-    if (!this._enabled && !(await this.init())) return [];
-    const selectRowSets: SqliteSelectRowSets = async (queries) =>
-      (await this.selectBatchResults(queries)).map(
-        (result) => result.rows ?? [],
-      );
-    return await sqliteAdmin.listTables(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      selectRowSets,
-    );
-  }
-
-  async getDbTableData(
-    table: string,
-    options: {
-      offset?: number;
-      limit?: number;
-      sortColumn?: string;
-      sortOrder?: "asc" | "desc";
-      search?: string;
-      columns?: string[];
-    } = {},
-  ): Promise<NodePostgresTableData> {
-    if (!this._enabled && !(await this.init())) {
-      throw new Error("Browser SQLite storage is not available");
-    }
-    const selectRowSets: SqliteSelectRowSets = async (queries) =>
-      (await this.selectBatchResults(queries)).map(
-        (result) => result.rows ?? [],
-      );
-    return await sqliteAdmin.getTableData(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      selectRowSets,
-      table,
-      options,
-    );
-  }
-
-  async searchCharactersByTag(
-    tag: string,
-    limit: number = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await sqliteAdmin.searchCharacters(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      "tag",
-      tag,
-      limit,
-    );
-  }
-
-  async searchCharactersByName(
-    name: string,
-    limit: number = 100,
-  ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await sqliteAdmin.searchCharacters(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      "name",
-      name,
-      limit,
-    );
   }
 }

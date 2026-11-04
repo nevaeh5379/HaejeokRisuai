@@ -151,12 +151,12 @@ export class TauriSqliteStorage
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
-    const baseRevision = this.revision;
+    const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,
       onProgress,
       onCommitted: (revision) => {
-        this.revision = revision;
+        this.currentRevision = revision;
       },
       runTransaction: (task) =>
         this.writeQueue.run(() =>

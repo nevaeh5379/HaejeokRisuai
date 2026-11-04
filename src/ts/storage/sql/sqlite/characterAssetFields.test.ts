@@ -26,8 +26,8 @@ describe.each(backendFactories)(
       const { storage, database } = makeHarness(make, sqliteSchemaSql);
       await storage.replaceDatabase(buildFullDatabase() as any);
 
-      const full = (await storage.loadCharacter("char-1")) as any;
-      const assets = (await storage.loadCharacterAssetFields("char-1")) as any;
+      const full = (await storage.character.document("char-1")) as any;
+      const assets = (await storage.character.assetFields("char-1")) as any;
 
       for (const key of sqliteEntity.CHARACTER_ASSET_FIELD_KEYS) {
         expect(assets[key]).toEqual(full[key]);
@@ -47,7 +47,7 @@ describe.each(backendFactories)(
       await storage.replaceDatabase(buildFullDatabase() as any);
       queryLog.clear();
 
-      const assets = (await storage.loadCharacterAssetFields("char-1")) as any;
+      const assets = (await storage.character.assetFields("char-1")) as any;
       expect(assets.emotionImages).toEqual([["joy", "img://joy.png"]]);
       expect(assets.image).toBe("img://alpha.png");
       expect(
@@ -63,7 +63,7 @@ describe.each(backendFactories)(
     it("returns null for missing characters", async () => {
       const { storage, database } = makeHarness(make, sqliteSchemaSql);
       await storage.replaceDatabase(buildFullDatabase() as any);
-      expect(await storage.loadCharacterAssetFields("missing-char")).toBeNull();
+      expect(await storage.character.assetFields("missing-char")).toBeNull();
       database.close();
     });
   },

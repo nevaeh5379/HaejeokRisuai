@@ -64,8 +64,8 @@
         error = ''
         try {
             const storage = getNodeStorage().sql
-            if (typeof storage.getRevisionDiff === 'function') {
-                diffResult = await storage.getRevisionDiff(currentBaseId, currentTargetId)
+            if (typeof storage.revision.diff === 'function') {
+                diffResult = await storage.revision.diff(currentBaseId, currentTargetId)
             } else {
                 diffResult = null
             }

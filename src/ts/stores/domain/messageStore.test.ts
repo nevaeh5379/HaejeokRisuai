@@ -12,6 +12,12 @@ import type { SqlCommit, SqlCommitResult } from "../../storage/sql/sqlCommit";
 import type { character, Message } from "@risuai/protocol/domain/database.ts";
 
 class MockSqlStorage {
+  character = {
+    document: async (): Promise<any> => {
+      return null;
+    },
+  };
+
   chat = {
     load: async (): Promise<any> => {
       return null;
@@ -48,9 +54,6 @@ class MockSqlStorage {
   async close(): Promise<void> {}
   async replaceDatabase(): Promise<boolean> {
     return true;
-  }
-  async loadCharacter(): Promise<any> {
-    return null;
   }
 }
 

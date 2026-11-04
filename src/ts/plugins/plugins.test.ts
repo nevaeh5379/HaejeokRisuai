@@ -21,8 +21,12 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   beforeEach(() => {
     committed = [];
     mockStorage = {
+      module: { list: vi.fn(async () => []) },
+      setting: { get: vi.fn(async () => undefined) },
+      pluginCustomStorage: { get: vi.fn(async () => undefined) },
+
       getRevision: vi.fn(() => committed.length),
-      loadPluginCustomStorageKey: vi.fn(async () => undefined),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         committed.push(structuredClone(commit));
         return { revision: committed.length };
@@ -60,7 +64,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("lists unloaded keys and fetches a plugin storage value on first access", async () => {
-    mockStorage.loadPluginCustomStorageKey = vi.fn(async (key: string) => {
+    mockStorage.pluginCustomStorage.get = vi.fn(async (key: string) => {
       return key === "lazyKey" ? { loaded: true } : undefined;
     });
     settingsStore.hydratePluginCustomStorageKeys(["lazyKey"]);
@@ -76,7 +80,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
     await expect(apis.pluginStorage.getItem("lazyKey")).resolves.toEqual({
       loaded: true,
     });
-    expect(mockStorage.loadPluginCustomStorageKey).toHaveBeenCalledTimes(1);
+    expect(mockStorage.pluginCustomStorage.get).toHaveBeenCalledTimes(1);
 
     await settingsStore.flush();
     expect(mockStorage.commit).not.toHaveBeenCalled();
@@ -175,8 +179,8 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
     const untouched = { id: "untouched", name: "Untouched module" };
     const updated = { id: "existing", name: "Updated existing module" };
     const created = { id: "plugin-module", name: "Plugin module" };
-    mockStorage.loadModules = vi.fn(async () => [existing, untouched] as any);
-    mockStorage.loadSettingKey = vi.fn(async () => []);
+    mockStorage.module.list = vi.fn(async () => [existing, untouched] as any);
+    mockStorage.setting.get = vi.fn(async () => []);
     await moduleStore.init(mockStorage);
 
     const apis = getV2PluginAPIs();
@@ -208,7 +212,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("commits an updated plugin to SQL before reloading plugins", async () => {
-    mockStorage.loadSettingKey = vi.fn(async () => undefined);
+    mockStorage.setting.get = vi.fn(async () => undefined);
     (mockStorage as { plugin: ISqlStorage["plugin"] }).plugin = {
       load: vi.fn(async () => null),
       loadAll: vi.fn(async () => [

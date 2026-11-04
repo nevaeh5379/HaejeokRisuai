@@ -264,12 +264,12 @@ export class CapacitorSqliteStorage
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
-    const baseRevision = this.revision;
+    const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,
       onProgress,
       onCommitted: (revision) => {
-        this.revision = revision;
+        this.currentRevision = revision;
       },
       runTransaction: (task) =>
         this.writeQueue.run(async () => {
@@ -287,7 +287,7 @@ export class CapacitorSqliteStorage
   ): Promise<boolean> {
     onProgress?.("Building SQL restore plan...", 0.01);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const rootCommit = buildSqlReplaceRootCommit(database, this.revision);
+    const rootCommit = buildSqlReplaceRootCommit(database, this.currentRevision);
     await this.writeQueue.run(async () => {
       if (!this._enabled || !this.isStorageReady()) {
         throw new Error("SQLite storage is not enabled");
@@ -429,7 +429,7 @@ export class CapacitorSqliteStorage
           `Native SQLite restore applied ${appliedResult}/${written} statements`,
         );
       }
-      this.revision = revision;
+      this.currentRevision = revision;
     } catch (error) {
       await stream.abort().catch(() => {});
       throw error;
@@ -500,7 +500,7 @@ export class CapacitorSqliteStorage
         },
       );
     });
-    this.revision = revision;
+    this.currentRevision = revision;
     return {
       revision,
       ...(authorNotes.length

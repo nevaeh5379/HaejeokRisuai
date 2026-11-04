@@ -105,36 +105,40 @@ describe("character export with shallow details", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorage = {
+      character: {
+        document: vi.fn(async (id: string) => {
+          if (id === "char-shallow-1") {
+            return {
+              type: "character",
+              chaId: "char-shallow-1",
+              name: "Fully Loaded Character",
+              image: "asset-1",
+              desc: "A rich detailed character description",
+              personality: "Kind and curious",
+              scenario: "In an ancient library",
+              firstMessage: "Hello, traveler!",
+              globalLore: [
+                {
+                  key: "library",
+                  comment: "Ancient Library",
+                  content: "A massive library full of ancient scrolls",
+                  alwaysActive: true,
+                  insertorder: 0,
+                  secondkey: "",
+                  selective: false,
+                },
+              ],
+              chats: [],
+              chatPage: 0,
+              detailsLoaded: true,
+            } as unknown as character;
+          }
+          return null;
+        }),
+      },
+
       getRevision: vi.fn(() => 0),
-      loadCharacter: vi.fn(async (id: string) => {
-        if (id === "char-shallow-1") {
-          return {
-            type: "character",
-            chaId: "char-shallow-1",
-            name: "Fully Loaded Character",
-            image: "asset-1",
-            desc: "A rich detailed character description",
-            personality: "Kind and curious",
-            scenario: "In an ancient library",
-            firstMessage: "Hello, traveler!",
-            globalLore: [
-              {
-                key: "library",
-                comment: "Ancient Library",
-                content: "A massive library full of ancient scrolls",
-                alwaysActive: true,
-                insertorder: 0,
-                secondkey: "",
-                selective: false,
-              },
-            ],
-            chats: [],
-            chatPage: 0,
-            detailsLoaded: true,
-          } as unknown as character;
-        }
-        return null;
-      }),
+
       commit: vi.fn(async () => ({ revision: 1 })),
     } as unknown as ISqlStorage;
   });

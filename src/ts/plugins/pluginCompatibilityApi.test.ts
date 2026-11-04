@@ -30,8 +30,10 @@ describe("plugin compatibility database writes", () => {
       releaseCommit = resolve;
     });
     storage = {
+      setting: { get: vi.fn(async () => undefined) },
+
       getRevision: vi.fn(() => 0),
-      loadSettingKey: vi.fn(async () => undefined),
+
       commit: vi.fn(async (_commit: SqlCommit) => {
         await commitGate;
         return { revision: 1 };

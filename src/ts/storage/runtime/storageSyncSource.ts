@@ -61,24 +61,24 @@ async function* iterateSettings(
   storage: ISqlStorage,
   expectedRevision: number,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  if (!storage.listSettingKeys) {
+  if (!storage.setting.keys) {
     throw new Error(
       "This SQL backend cannot enumerate persisted setting keys.",
     );
   }
-  const keys = [...new Set(await storage.listSettingKeys())].sort();
+  const keys = [...new Set(await storage.setting.keys())].sort();
   for (let offset = 0; offset < keys.length; offset += SETTING_BATCH_SIZE) {
     assertCachedRevision(storage, expectedRevision);
     const batch = keys.slice(offset, offset + SETTING_BATCH_SIZE);
-    if (storage.loadSettingKeys) {
-      const values = await storage.loadSettingKeys(batch);
+    if (storage.setting.getMany) {
+      const values = await storage.setting.getMany(batch);
       for (const key of batch) {
         yield { type: "setting", key, value: values.get(key) };
       }
       continue;
     }
     for (const key of batch) {
-      yield { type: "setting", key, value: await storage.loadSettingKey(key) };
+      yield { type: "setting", key, value: await storage.setting.get(key) };
     }
   }
 }
@@ -86,12 +86,12 @@ async function* iterateSettings(
 async function* iteratePluginStorage(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const keys = [...new Set(await storage.listPluginCustomStorageKeys())].sort();
+  const keys = [...new Set(await storage.pluginCustomStorage.keys())].sort();
   for (const key of keys) {
     yield {
       type: "plugin-storage",
       key,
-      value: await storage.loadPluginCustomStorageKey(key),
+      value: await storage.pluginCustomStorage.get(key),
     };
   }
 }
@@ -112,7 +112,7 @@ async function* iteratePlugins(
 async function* iterateModules(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const modules = await storage.loadModules();
+  const modules = await storage.module.list();
   for (let position = 0; position < modules.length; position++) {
     const module = modules[position];
     if (!module?.id)
@@ -124,12 +124,12 @@ async function* iterateModules(
 async function* iteratePresets(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const summaries = [...(await storage.listBotPresets())].sort(
+  const summaries = [...(await storage.preset.list())].sort(
     (left, right) =>
       left.position - right.position || left.id.localeCompare(right.id),
   );
   for (const summary of summaries) {
-    const preset = await storage.loadBotPreset(summary.id);
+    const preset = await storage.preset.load(summary.id);
     if (!preset)
       throw new Error(`Storage sync preset disappeared: ${summary.id}`);
     const { id: _id, ...data } = preset;
@@ -140,13 +140,13 @@ async function* iteratePresets(
 async function* iterateColdStorage(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const { items } = await storage.listColdStorageItems();
+  const { items } = await storage.coldStorage.list();
   const keys = [...new Set(items)].sort();
   for (const key of keys) {
     yield {
       type: "cold-storage",
       key,
-      value: await storage.getColdStorageItem(key),
+      value: await storage.coldStorage.get(key),
     };
   }
 }
@@ -244,7 +244,7 @@ async function* iterateEntities(
     const id = characters[position].chaId;
     if (!id)
       throw new Error("Storage sync encountered a character without an id.");
-    const character = await storage.loadCharacter(id);
+    const character = await storage.character.document(id);
     if (!character)
       throw new Error(`Storage sync character disappeared: ${id}`);
     yield {
@@ -294,16 +294,16 @@ export async function* iterateStorageSyncSqlRecords(
     revision: options.expectedRevision,
   };
   yield* iterateSettings(storage, options.expectedRevision);
-  for (const note of await storage.listGlobalAuthorNotes()) {
+  for (const note of await storage.authorNote.list()) {
     assertCachedRevision(storage, options.expectedRevision);
-    const data = await storage.readGlobalAuthorNote(note.id);
+    const data = await storage.authorNote.read(note.id);
     if (!data)
       throw new Error(`Author note disappeared during backup: ${note.id}`);
     yield { type: "author-note", data };
   }
   yield {
     type: "author-note-settings",
-    allowScriptWrite: await storage.getGlobalAuthorNoteScriptWrite(),
+    allowScriptWrite: await storage.authorNote.scriptWrite(),
   };
   assertCachedRevision(storage, options.expectedRevision);
   yield* iteratePluginStorage(storage);

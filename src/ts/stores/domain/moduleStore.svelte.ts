@@ -77,11 +77,11 @@ class ModuleStore
     // overlap with its related settings. One rejected bridge call used to
     // leave the whole module store uninitialised because runtime hydration is
     // intentionally best-effort.
-    const modules = await storage.loadModules();
-    const enabled = await storage.loadSettingKey("enabledModules");
-    const folders = await storage.loadSettingKey("moduleFolders");
-    const order = await storage.loadSettingKey("moduleOrder");
-    const sandboxGroups = await storage.loadSettingKey("moduleSandboxGroups");
+    const modules = await storage.module.list();
+    const enabled = await storage.setting.get("enabledModules");
+    const folders = await storage.setting.get("moduleFolders");
+    const order = await storage.setting.get("moduleOrder");
+    const sandboxGroups = await storage.setting.get("moduleSandboxGroups");
     this.modules = [...modules];
     this.enabledModules = Array.isArray(enabled)
       ? enabled.filter((id): id is string => typeof id === "string")

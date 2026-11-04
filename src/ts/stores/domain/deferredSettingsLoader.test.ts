@@ -8,12 +8,14 @@ describe("DeferredSettingsLoader", () => {
   it("discards a load completed after a newer initialization", async () => {
     let resolveOldLoad!: (value: unknown) => void;
     const oldStorage = {
-      loadSettingKey: vi.fn(
-        () =>
-          new Promise<unknown>((resolve) => {
-            resolveOldLoad = resolve;
-          }),
-      ),
+      setting: {
+        get: vi.fn(
+          () =>
+            new Promise<unknown>((resolve) => {
+              resolveOldLoad = resolve;
+            }),
+        ),
+      },
     } as unknown as ISqlStorage;
     const newStorage = {} as ISqlStorage;
     const oldHydrate = vi.fn();
@@ -40,7 +42,7 @@ describe("DeferredSettingsLoader", () => {
 
   it("refreshes a resident deferred domain but leaves a cold one unloaded", async () => {
     const storage = {
-      loadLorebooks: vi.fn(async () => [{ name: "remote", data: [] }]),
+      lorebook: { list: vi.fn(async () => [{ name: "remote", data: [] }]) },
     } as unknown as ISqlStorage;
     const hydrate = vi.fn();
     const hydrateRemote = vi.fn();
@@ -52,7 +54,7 @@ describe("DeferredSettingsLoader", () => {
       hydrateRemoteSettingKey: hydrateRemote,
     });
     await deferredSettingsLoader.refreshLoadedKeys(["loreBook"]);
-    expect(storage.loadLorebooks).toHaveBeenCalledTimes(1);
+    expect(storage.lorebook.list).toHaveBeenCalledTimes(1);
     expect(hydrateRemote).toHaveBeenCalledWith("loreBook", [
       { name: "remote", data: [] },
     ]);
@@ -64,18 +66,20 @@ describe("DeferredSettingsLoader", () => {
       hydrateRemoteSettingKey: hydrateRemote,
     });
     await deferredSettingsLoader.refreshLoadedKeys(["loreBook"]);
-    expect(storage.loadLorebooks).toHaveBeenCalledTimes(1);
+    expect(storage.lorebook.list).toHaveBeenCalledTimes(1);
   });
 
   it("discards a remote refresh completed after storage reinitialization", async () => {
     let resolveOldLoad!: (value: unknown[]) => void;
     const oldStorage = {
-      loadLorebooks: vi.fn(
-        () =>
-          new Promise<unknown[]>((resolve) => {
-            resolveOldLoad = resolve;
-          }),
-      ),
+      lorebook: {
+        list: vi.fn(
+          () =>
+            new Promise<unknown[]>((resolve) => {
+              resolveOldLoad = resolve;
+            }),
+        ),
+      },
     } as unknown as ISqlStorage;
     const oldHydrate = vi.fn();
     const newHydrate = vi.fn();

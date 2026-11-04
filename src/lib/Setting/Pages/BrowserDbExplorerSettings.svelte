@@ -21,7 +21,7 @@
 
     async function getLocalStorage() {
         const storage = await getSqlStorage()
-        if (!storage.listDbTables || !storage.getDbTableData) {
+        if (!storage.table.list || !storage.table.data) {
             throw new Error('This local SQL backend does not support table exploration')
         }
         if (!storage.isEnabled() && !(await storage.init())) {
@@ -35,7 +35,7 @@
         error = ''
         try {
             const storage = await getLocalStorage()
-            tables = await storage.listDbTables!()
+            tables = await storage.table.list!()
         } catch (err) {
             error = `${err}`
             tables = []
@@ -56,7 +56,7 @@
         }
     ): Promise<NodePostgresTableData> {
         const storage = await getLocalStorage()
-        return storage.getDbTableData!(table, options)
+        return storage.table.data!(table, options)
     }
 
     onMount(() => {

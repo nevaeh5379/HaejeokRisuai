@@ -221,10 +221,10 @@
             const storage = getNodeStorage().sql
             const config = await storage.getServerConfig()
             configEnabled = config.enabled
-            tables = config.enabled ? await storage.listDbTables() : []
-            revisions = config.enabled ? await storage.listRevisions() : []
-            tokenUsage = config.enabled ? await storage.getTokenUsage() : []
-            remoteBotStats = config.enabled && typeof storage.getBotChatStats === 'function' ? await storage.getBotChatStats() : null
+            tables = config.enabled ? await storage.table.list() : []
+            revisions = config.enabled ? await storage.revision.list() : []
+            tokenUsage = config.enabled ? await storage.stats.tokenUsage() : []
+            remoteBotStats = config.enabled && typeof storage.stats.botChats === 'function' ? await storage.stats.botChats() : null
         } catch (err) {
             error = `${err}`
         } finally {
@@ -338,7 +338,7 @@
                         {configEnabled}
                         onRefreshAll={refreshTables}
                         onGoToConfig={() => currentTab = 'config'}
-                        loadTableData={(table, options) => getNodeStorage().sql.getDbTableData(table, options)}
+                        loadTableData={(table, options) => getNodeStorage().sql.table.data(table, options)}
                     />
                 {/if}
             </main>

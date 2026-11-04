@@ -9,7 +9,7 @@ export async function repairLegacyModuleIntegration(
   legacyValue: unknown,
 ): Promise<boolean> {
   if (typeof legacyValue !== "string" || !legacyValue) return false;
-  const preset = await storage.loadBotPreset(activeId);
+  const preset = await storage.preset.load(activeId);
   if (!preset || preset.moduleIntergration !== undefined) return false;
   const { id, ...data } = preset;
   await commitSqlChanges(storage, {

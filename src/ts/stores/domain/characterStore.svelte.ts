@@ -750,7 +750,7 @@ class CharacterStore
       incoming.chaId = id;
       this.identifySnapshotInputs([incoming]);
       await this.enqueueCharacterSnapshotWrite([incoming], async (storage) => {
-        const current = await storage.loadCharacter(id);
+        const current = await storage.character.document(id);
         if (!current || current.detailsLoaded === false)
           throw new Error(`Cannot load complete character: ${id}`);
         const position = this.characters.findIndex(
@@ -787,7 +787,7 @@ class CharacterStore
             const characters: SnapshotCharacter[] = [];
             for (const [position, next] of incoming.entries()) {
               const current =
-                (await storage.loadCharacter(next.chaId)) ?? undefined;
+                (await storage.character.document(next.chaId)) ?? undefined;
               characters.push(
                 await this.prepareCharacterSnapshot(
                   storage,
@@ -846,7 +846,7 @@ class CharacterStore
           );
           if (!resolved) return;
           incoming.id = resolved.chatId;
-          const current = await storage.loadCharacter(target.characterId);
+          const current = await storage.character.document(target.characterId);
           if (!current || current.detailsLoaded === false)
             throw new Error(
               `Cannot load complete character: ${target.characterId}`,
@@ -900,7 +900,7 @@ class CharacterStore
       chat: SnapshotTarget;
     },
   ) {
-    const current = await storage.loadCharacter(target.characterId);
+    const current = await storage.character.document(target.characterId);
     if (!current || current.detailsLoaded === false)
       throw new Error(`Cannot load complete character: ${target.characterId}`);
     const chatId =
@@ -932,7 +932,7 @@ class CharacterStore
     storage: ISqlStorage,
     id: string,
   ): Promise<SnapshotCharacter> {
-    const stored = await storage.loadCharacter(id);
+    const stored = await storage.character.document(id);
     if (!stored || stored.detailsLoaded === false)
       throw new Error(`Cannot load complete character: ${id}`);
 
@@ -997,7 +997,7 @@ class CharacterStore
     if ([...needed].some((id) => !owners.has(id))) {
       for (const character of this.characters) {
         if (character.detailsLoaded !== false) continue;
-        const current = await storage.loadCharacter(character.chaId);
+        const current = await storage.character.document(character.chaId);
         if (!current || current.detailsLoaded === false)
           throw new Error(`Cannot load complete character: ${character.chaId}`);
         for (const chat of current.chats ?? []) {
@@ -1482,8 +1482,8 @@ class CharacterStore
     const storage = this.storage || (await getSqlStorage());
     const promise = (async () => {
       try {
-        const fullChar = await (storage.loadCharacterForSelection?.(chaId) ??
-          storage.loadCharacter(chaId));
+        const fullChar = await (storage.character.forSelection?.(chaId) ??
+          storage.character.document(chaId));
         if (fullChar) {
           const idx = this.characters.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {

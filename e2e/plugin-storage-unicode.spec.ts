@@ -106,7 +106,7 @@ test("plugin storage preserves NUL-containing text through Node SQL storage", as
       /* @vite-ignore */ nodeStorageUrl
     )) as {
       NodeSqlStorage: new (getAuth: () => Promise<string>) => {
-        loadPluginCustomStorageKey: (key: string) => Promise<unknown>;
+        pluginCustomStorage: { get: (key: string) => Promise<unknown> };
       };
     };
 
@@ -121,7 +121,7 @@ test("plugin storage preserves NUL-containing text through Node SQL storage", as
     getV2PluginAPIs().pluginStorage.setItem("wiglore-memory", expected);
     await settingsStore.flush();
     const pendingAfterFlush = settingsStore.hasPendingWrites();
-    const loaded = await storage.loadPluginCustomStorageKey("wiglore-memory");
+    const loaded = await storage.pluginCustomStorage.get("wiglore-memory");
     settingsStore.dispose();
 
     return { expected, loaded, pendingAfterFlush };

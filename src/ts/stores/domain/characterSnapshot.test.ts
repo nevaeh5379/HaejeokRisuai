@@ -296,7 +296,7 @@ describe.each([
     const restored = await storage.chat.load("chat-1");
     expect(restored!.scriptstate!.$plugin).toBe("via-database");
     expect(restored!.message[12].data).toBe("request from database setter");
-    expect(await storage.loadSettingKey("language")).toBe("en");
+    expect(await storage.setting.get("language")).toBe("en");
   });
 
   it("supports chat additions and removals in a character snapshot", async () => {
@@ -309,7 +309,7 @@ describe.each([
       message: [{ role: "user", data: "new" }],
     });
     await setPluginCharacter(0, snapshot!);
-    const restored = await storage.loadCharacter("char-1");
+    const restored = await storage.character.document("char-1");
     expect(restored!.chats.map((chat) => chat.name)).toEqual(["Main", "New"]);
     expect(await storage.chat.load("chat-2")).toBeNull();
     expect(
@@ -368,7 +368,7 @@ describe.each([
       "char-new",
       "char-1",
     ]);
-    expect(await storage.loadCharacter("char-2")).toBeNull();
+    expect(await storage.character.document("char-2")).toBeNull();
     expect(characterStore.currentCharacter!.chaId).toBe("char-1");
   });
   async function restart() {
@@ -481,7 +481,7 @@ describe.each([
     ];
     snapshot.chatPage = 200;
     await characterStore.snapshot.save("char-1", snapshot);
-    const restored = (await storage.loadCharacter("char-1"))!;
+    const restored = (await storage.character.document("char-1"))!;
     expect(restored.chats.map((chat) => chat.name)).toEqual(["Second", "Z"]);
     expect(restored.chats[0].id).toBe("chat-2");
     expect(restored.chats[1].id).toBeTruthy();
@@ -692,10 +692,10 @@ describe.each([
     characterStore.characters.reverse();
     flushSync();
     await saving;
-    expect((await storage.loadCharacter("char-1"))!.name).toBe(
+    expect((await storage.character.document("char-1"))!.name).toBe(
       "captured character",
     );
-    expect((await storage.loadCharacter("char-2"))!.name).toBe("Beta");
+    expect((await storage.character.document("char-2"))!.name).toBe("Beta");
   });
 
   it("clones all write inputs before yielding and returns independent nested read values", async () => {
@@ -766,8 +766,8 @@ describe.each([
 
   it("rejects unavailable stored character details instead of treating them as an empty chat list", async () => {
     expect(characterStore.characters[0].chats).toEqual([]);
-    vi.spyOn(storage, "loadCharacter").mockResolvedValue(null);
-    vi.spyOn(storage, "loadCharacterForSelection").mockResolvedValue(null);
+    vi.spyOn(storage.character, "document").mockResolvedValue(null);
+    vi.spyOn(storage.character, "forSelection").mockResolvedValue(null);
     await expect(characterStore.snapshot.chat.load(0, 0)).rejects.toThrow(
       "Cannot load complete character",
     );
@@ -901,7 +901,7 @@ describe.each([
       restarted.chats[0].message[0].chatId,
     ]).toEqual(ids);
     expect(characterStore.selectedId).toBe(-1);
-    expect(await storage.loadCharacter("char-1")).toBeNull();
+    expect(await storage.character.document("char-1")).toBeNull();
   });
 
   it("treats empty complete histories and chat lists as explicit deletion", async () => {
@@ -949,7 +949,7 @@ describe.each([
     release();
     await pending;
     await replacement;
-    expect(await storage.loadCharacter("char-1")).toBeNull();
+    expect(await storage.character.document("char-1")).toBeNull();
     expect(characterStore.characters).toEqual([]);
   });
 
@@ -1000,7 +1000,7 @@ describe.each([
       "storage writes are pending",
     );
     expect(characterStore.characters).toHaveLength(2);
-    expect(await storage.loadCharacter("char-1")).not.toBeNull();
+    expect(await storage.character.document("char-1")).not.toBeNull();
     commit.mockRestore();
     await messageStore.flush();
     expect(messageStore.hasUnsavedWrites()).toBe(false);

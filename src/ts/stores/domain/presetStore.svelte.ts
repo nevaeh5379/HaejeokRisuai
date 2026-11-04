@@ -204,7 +204,7 @@ class PresetStore
     const input = { ...preset };
     if (this.policyProvider().doNotChangeSeperateModels) {
       for (const key of Object.keys(getSeparateModelSettings(preset))) {
-        const value = await this.storage!.loadSettingKey(key);
+        const value = await this.storage!.setting.get(key);
         if (value !== undefined) Object.assign(input, { [key]: value });
       }
     }
@@ -265,8 +265,8 @@ class PresetStore
     this.error = null;
     try {
       const [initialSummaries, storedActiveId] = await Promise.all([
-        storage.listBotPresets(),
-        storage.loadSettingKey("activeBotPresetId"),
+        storage.preset.list(),
+        storage.setting.get("activeBotPresetId"),
       ]);
       let summaries = initialSummaries;
       let preferredActiveId =
@@ -291,7 +291,7 @@ class PresetStore
           messages: [],
           messageManifests: [],
         });
-        summaries = await storage.listBotPresets();
+        summaries = await storage.preset.list();
         preferredActiveId = id;
       }
       this.summaries = summaries;
@@ -317,7 +317,7 @@ class PresetStore
       if (active) return active;
     }
     if (!force && this.cache.has(id)) return this.cache.get(id)!;
-    const preset = await this.storage.loadBotPreset(id);
+    const preset = await this.storage.preset.load(id);
     if (!preset) throw new Error(`Preset not found: ${id}`);
     this.cache.set(id, preset);
     return preset;
@@ -350,8 +350,8 @@ class PresetStore
     this.error = null;
     try {
       const [summaries, storedActiveId] = await Promise.all([
-        storage.listBotPresets(),
-        storage.loadSettingKey("activeBotPresetId"),
+        storage.preset.list(),
+        storage.setting.get("activeBotPresetId"),
       ]);
       if (summaries.length === 0) {
         throw new Error("Remote storage has no bot preset");
@@ -364,7 +364,7 @@ class PresetStore
             ? this.activeId
             : summaries[0].id;
 
-      const activePreset = await storage.loadBotPreset(activeId);
+      const activePreset = await storage.preset.load(activeId);
       if (!activePreset) throw new Error(`Preset not found: ${activeId}`);
       this.presetCache.clear();
       this.summaries = summaries;
@@ -459,7 +459,7 @@ class PresetStore
     } else {
       this.cache.set(id, { ...data, id });
     }
-    this.summaries = await this.storage.listBotPresets();
+    this.summaries = await this.storage.preset.list();
   }
   private async setActiveId(
     id: string,
@@ -524,7 +524,7 @@ class PresetStore
       messages: [],
       messageManifests: [],
     });
-    this.summaries = await this.storage.listBotPresets();
+    this.summaries = await this.storage.preset.list();
   }
   async delete(id: string): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
@@ -558,7 +558,7 @@ class PresetStore
     });
     this.cache.delete(id);
     if (nextPreset) this.installActivePreset(nextPreset, nextState);
-    this.summaries = await this.storage.listBotPresets();
+    this.summaries = await this.storage.preset.list();
     this.activeStatus = "ready";
   }
   async setPresets(presets: botPreset[], activeIndex = 0): Promise<void> {
@@ -587,7 +587,7 @@ class PresetStore
       messageManifests: [],
     });
     this.cache.clear();
-    this.summaries = await this.storage.listBotPresets();
+    this.summaries = await this.storage.preset.list();
     const preset = await this.load(selected);
     const state = applyPresetSettings(
       preset,

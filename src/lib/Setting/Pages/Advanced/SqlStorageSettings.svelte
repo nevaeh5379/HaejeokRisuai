@@ -128,8 +128,8 @@
             } catch (e) {
                 // /api/db-config 미지원 서버일 수 있음 - 레거시 폼으로 폴백
             }
-            revisions = config.enabled ? await storage.sql.listRevisions(20) : []
-            tokenUsage = config.enabled ? await storage.sql.getTokenUsage() : []
+            revisions = config.enabled ? await storage.sql.revision.list(20) : []
+            tokenUsage = config.enabled ? await storage.sql.stats.tokenUsage() : []
         } catch (error) {
             loadError = `${error}`
         } finally {
@@ -143,7 +143,7 @@
         }
         busy = true
         try {
-            await getNodeStorage().sql.restoreRevision(revision.id)
+            await getNodeStorage().sql.revision.restore(revision.id)
             alertNormal(language.postgresRestoreSuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {

@@ -139,7 +139,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    await expect(storage.listSettingKeys()).resolves.toEqual([
+    await expect(storage.setting.keys()).resolves.toEqual([
       "alpha-setting",
       "beta-setting",
     ]);
@@ -376,7 +376,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
-    const revisions = await storage.listRevisions(10);
+    const revisions = await storage.revision.list(10);
     expect(revisions).toHaveLength(1);
     expect(revisions[0].id).toBe(2);
     expect(fetchMock.mock.calls[1][0]).toBe(
@@ -439,12 +439,12 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
-    expect(await storage.listDbTables()).toEqual([
+    expect(await storage.table.list()).toEqual([
       { name: "character.characters", rowCount: 2 },
       { name: "chat.messages", rowCount: 42 },
     ]);
     expect(
-      await storage.getDbTableData("character.characters", {
+      await storage.table.data("character.characters", {
         offset: 50,
         limit: 50,
         sortColumn: "id",
@@ -512,7 +512,7 @@ describe("NodeSqlStorage browser client", () => {
     await storage.getServerConfig();
 
     expect(
-      await storage.getDbTableData("chat.messages", {
+      await storage.table.data("chat.messages", {
         search: "hello",
         columns: ["id", "content"],
         limit: 25,
@@ -607,7 +607,7 @@ describe("NodeSqlStorage browser client", () => {
 
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
-    (storage as any).revision = 11;
+    storage.applyRemoteRevision(11);
     await storage.plugin.setEnabled("plugin-id", true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -1010,7 +1010,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.loadStartupData();
 
-    const char = await storage.loadCharacter("char-123");
+    const char = await storage.character.document("char-123");
     expect(char?.chaId).toBe("char-123");
     expect(char?.name).toBe("Loaded Character");
     expect((char as any)?.globalLore).toHaveLength(1);
@@ -1047,21 +1047,21 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    const keys = await storage.listPluginCustomStorageKeys();
+    const keys = await storage.pluginCustomStorage.keys();
     expect(keys).toEqual(["cache_key_1", "cache_key_2"]);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/database-v2/plugin-custom-storage/keys",
     );
 
     // First load of key: 200 OK -> saves to local cache
-    const val1 = await storage.loadPluginCustomStorageKey("cache_key_1");
+    const val1 = await storage.pluginCustomStorage.get("cache_key_1");
     expect(val1).toEqual({ count: 42, label: "test" });
     expect(fetchMock.mock.calls[1][0]).toBe(
       "/api/database-v2/plugin-custom-storage/keys/cache_key_1",
     );
 
     // Second load of key: sends If-None-Match, returns 304 -> uses cached value
-    const val2 = await storage.loadPluginCustomStorageKey("cache_key_1");
+    const val2 = await storage.pluginCustomStorage.get("cache_key_1");
     expect(val2).toEqual({ count: 42, label: "test" });
     expect(fetchMock.mock.calls[2][1].headers["If-None-Match"]).toBe(
       '"risu-plugin-key-key-1-hash"',
@@ -1130,9 +1130,9 @@ describe("NodeSqlStorage browser client", () => {
         ([url]) => url === "/api/database-v2/bootstrap",
       ),
     ).toBe(false);
-    const summaries = await storage.listBotPresets();
+    const summaries = await storage.preset.list();
     expect(summaries[0]).toMatchObject({ name: "Preset Alpha", position: 0 });
-    const preset = await storage.loadBotPreset(summaries[0].id);
+    const preset = await storage.preset.load(summaries[0].id);
     expect(preset).toMatchObject({ name: "Preset Alpha", temperature: 75 });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/presets");
     expect(fetchMock.mock.calls[2][0]).toBe(
@@ -1185,7 +1185,7 @@ describe("NodeSqlStorage browser client", () => {
 
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
-    const stats = await storage.getBotChatStats();
+    const stats = await storage.stats.botChats();
 
     expect(stats).toHaveLength(1);
     expect(stats[0]).toMatchObject({

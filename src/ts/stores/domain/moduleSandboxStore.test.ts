@@ -10,9 +10,12 @@ describe("module sandbox group storage", () => {
   beforeEach(() => {
     commits = [];
     storage = {
+      setting: { get: vi.fn(async () => []) },
+
+      module: { list: vi.fn(async () => []) },
+
       getRevision: vi.fn(() => 0),
-      loadModules: vi.fn(async () => []),
-      loadSettingKey: vi.fn(async () => []),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         commits.push(structuredClone(commit));
         return { revision: commits.length };
@@ -22,7 +25,7 @@ describe("module sandbox group storage", () => {
   });
 
   it("loads bundle metadata independently from module definitions", async () => {
-    storage.loadSettingKey = vi.fn(async (key: string) => {
+    storage.setting.get = vi.fn(async (key: string) => {
       if (key === "moduleSandboxGroups") {
         return [
           {

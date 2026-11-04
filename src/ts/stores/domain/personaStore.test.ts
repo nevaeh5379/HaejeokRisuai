@@ -13,9 +13,12 @@ describe("PersonaStore", () => {
     personaStore.resetForTesting();
     commits = [];
     storage = {
+      setting: { get: vi.fn(async () => undefined) },
+
+      persona: { list: vi.fn(async () => []) },
+
       getRevision: vi.fn(() => commits.length),
-      loadPersonas: vi.fn(async () => []),
-      loadSettingKey: vi.fn(async () => undefined),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         commits.push(structuredClone(commit));
         return { revision: commits.length };
@@ -24,11 +27,11 @@ describe("PersonaStore", () => {
   });
 
   it("loads and owns the selected persona without SettingsStore mirrors", async () => {
-    storage.loadPersonas = vi.fn(async () => [
+    storage.persona.list = vi.fn(async () => [
       { name: "A", icon: "a.png", personaPrompt: "A prompt" },
       { name: "B", icon: "b.png", personaPrompt: "B prompt" },
     ]);
-    storage.loadSettingKey = vi.fn(async (key: string) =>
+    storage.setting.get = vi.fn(async (key: string) =>
       key === "selectedPersona" ? 1 : undefined,
     );
 
@@ -41,8 +44,8 @@ describe("PersonaStore", () => {
 
   it("refreshes persona-owned state from remote storage", async () => {
     let personas = [{ name: "Before", icon: "", personaPrompt: "old" }];
-    storage.loadPersonas = vi.fn(async () => structuredClone(personas));
-    storage.loadSettingKey = vi.fn(async () => 0);
+    storage.persona.list = vi.fn(async () => structuredClone(personas));
+    storage.setting.get = vi.fn(async () => 0);
     await personaStore.init(storage);
 
     personas = [{ name: "After", icon: "", personaPrompt: "new" }];
@@ -56,10 +59,10 @@ describe("PersonaStore", () => {
   });
 
   it("fails fast instead of repairing an invalid selected persona index", async () => {
-    storage.loadPersonas = vi.fn(async () => [
+    storage.persona.list = vi.fn(async () => [
       { name: "A", icon: "", personaPrompt: "A prompt" },
     ]);
-    storage.loadSettingKey = vi.fn(async () => 3);
+    storage.setting.get = vi.fn(async () => 3);
 
     await expect(personaStore.init(storage)).rejects.toThrow(
       /Invalid persona index: 3/,
@@ -81,7 +84,7 @@ describe("PersonaStore", () => {
   });
 
   it("persists persona selection through PersonaStore itself", async () => {
-    storage.loadPersonas = vi.fn(async () => [
+    storage.persona.list = vi.fn(async () => [
       { name: "A", icon: "", personaPrompt: "A" },
       { name: "B", icon: "", personaPrompt: "B" },
     ]);

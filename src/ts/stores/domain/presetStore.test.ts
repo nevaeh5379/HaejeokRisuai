@@ -37,22 +37,31 @@ describe("PresetStore independent active ownership", () => {
       ["two", preset("two")],
     ]);
     storage = {
-      getRevision: () => 0,
-      listBotPresets: vi.fn(async () =>
-        [...documents.values()].map(
-          ({ id, name, image, apiType, aiModel }) => ({
-            id,
-            name,
-            image,
-            apiType,
-            aiModel,
-          }),
+      setting: {
+        get: vi.fn(async (key: string) =>
+          key === "activeBotPresetId"
+            ? activeId
+            : structuredClone(root.get(key)),
         ),
-      ),
-      loadSettingKey: vi.fn(async (key: string) =>
-        key === "activeBotPresetId" ? activeId : structuredClone(root.get(key)),
-      ),
-      loadBotPreset: vi.fn(async (id) => structuredClone(documents.get(id))),
+      },
+
+      preset: {
+        list: vi.fn(async () =>
+          [...documents.values()].map(
+            ({ id, name, image, apiType, aiModel }) => ({
+              id,
+              name,
+              image,
+              apiType,
+              aiModel,
+            }),
+          ),
+        ),
+        load: vi.fn(async (id) => structuredClone(documents.get(id))),
+      },
+
+      getRevision: () => 0,
+
       commit: vi.fn(async (commit: SqlCommit) => {
         for (const entry of commit.root.upserts)
           root.set(entry.key, structuredClone(entry.value));
@@ -75,7 +84,7 @@ describe("PresetStore independent active ownership", () => {
     await presetStore.flush();
     expect(presetStore.state.mainPrompt).toBe("one");
     expect(presetStore.cache.has("one")).toBe(false);
-    expect(storage.loadBotPreset).toHaveBeenCalledTimes(1);
+    expect(storage.preset.load).toHaveBeenCalledTimes(1);
     expect(storage.commit).not.toHaveBeenCalled();
   });
 
@@ -133,7 +142,7 @@ describe("PresetStore independent active ownership", () => {
         return commit(value);
       });
       if (failure === "load")
-        storage.loadBotPreset = vi.fn(async () => {
+        storage.preset.load = vi.fn(async () => {
           throw new Error("load failed");
         });
       await expect(presetStore.activate("two")).rejects.toThrow();
@@ -178,7 +187,7 @@ describe("PresetStore independent active ownership", () => {
   it("preserves active state and summaries when a remote document fails to load", async () => {
     await presetStore.init(storage);
     activeId = "two";
-    storage.loadBotPreset = vi.fn().mockRejectedValue(new Error("offline"));
+    storage.preset.load = vi.fn().mockRejectedValue(new Error("offline"));
     await expect(presetStore.refreshFromStorage()).rejects.toThrow("offline");
     expect(presetStore.activeId).toBe("one");
     expect(presetStore.state.mainPrompt).toBe("one");

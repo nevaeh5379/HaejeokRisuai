@@ -59,7 +59,7 @@ export async function getColdStorageItem(key: string) {
   if (nodeStorage) {
     try {
       if (nodeStorage.sql.isEnabled()) {
-        return await nodeStorage.sql.getColdStorageItem(key);
+        return await nodeStorage.sql.coldStorage.get(key);
       }
       const f = await nodeStorage.getItem("coldstorage/" + key);
       if (!f) {
@@ -136,7 +136,7 @@ export async function setColdStorageItem(
   if (nodeStorage) {
     try {
       if (nodeStorage.sql.isEnabled()) {
-        return await nodeStorage.sql.setColdStorageItem(key, value);
+        return await nodeStorage.sql.coldStorage.set(key, value);
       }
     } catch (error) {
       console.error("Cold storage PostgreSQL write failed:", error);
@@ -193,7 +193,7 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
   const nodeStorage = getActiveNodeStorage();
   if (nodeStorage) {
     if (nodeStorage.sql.isEnabled()) {
-      return await nodeStorage.sql.listColdStorageItems();
+      return await nodeStorage.sql.coldStorage.list();
     }
     const fullKeys = await nodeStorage.keys();
     const keys = fullKeys
@@ -231,7 +231,7 @@ export async function cleanColdStorage() {
   const actualUsedKeys = await listColdDataKeys();
   const nodeStorage = getActiveNodeStorage();
   if (nodeStorage?.sql.isEnabled()) {
-    const deleted = await nodeStorage.sql.pruneColdStorage(actualUsedKeys);
+    const deleted = await nodeStorage.sql.coldStorage.prune(actualUsedKeys);
     console.log(
       "Cleaned PostgreSQL cold storage, retained keys:",
       actualUsedKeys,
@@ -273,7 +273,7 @@ async function removeColdStorageItems(keys: string[]) {
   if (nodeStorage) {
     try {
       if (nodeStorage.sql.isEnabled()) {
-        await nodeStorage.sql.removeColdStorageItems(keys);
+        await nodeStorage.sql.coldStorage.remove(keys);
         return;
       }
       const deleteKeys = keys.map((k) => "coldstorage/" + k);
