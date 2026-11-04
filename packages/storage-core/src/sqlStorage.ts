@@ -12,9 +12,10 @@ import type {
 } from "../../protocol/domain/database.ts";
 import type { Database } from "../../protocol/domain/legacy/database.ts";
 import type {
-  AuthorNoteMetadata,
-  AuthorNoteRow,
-} from "../../protocol/src/authorNotes.ts";
+  AuthorNote,
+  AuthorNoteFields,
+  AuthorNoteUpdate,
+} from "../../protocol/domain/authorNote.ts";
 import type { RisuModule } from "../../protocol/domain/modules.ts";
 import type { IPluginStorage } from "../../protocol/domain/pluginStorage.ts";
 import type { SqlCommit } from "../../protocol/domain/sqlCommit.ts";
@@ -132,14 +133,6 @@ export interface SqlCharacterListItem {
   type: "character" | "group";
 }
 
-export interface SqlChatMetadata {
-  id: string;
-  name: string;
-  note: string;
-  folderId: string | null;
-  lastDate: number | null;
-}
-
 export interface RecentChat {
   characterId: string;
   characterName: string;
@@ -246,10 +239,7 @@ export interface ISqlStorage {
     /** Moves within the same character, updating affected sibling positions atomically. */
     move(id: string, position: number): Promise<void>;
     /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
-    listRecent(
-      limit?: number,
-      activeChatId?: string,
-    ): Promise<RecentChat[]>;
+    listRecent(limit?: number, activeChatId?: string): Promise<RecentChat[]>;
   };
 
   message: {
@@ -363,10 +353,30 @@ export interface ISqlStorage {
   };
 
   authorNote: {
-    list(): Promise<AuthorNoteMetadata[]>;
-    get(id: string): Promise<AuthorNoteMetadata | null>;
-    read(id: string): Promise<AuthorNoteRow | null>;
-    scriptWrite(): Promise<boolean>;
+    /** Creates a handle without querying or checking existence. */
+    ref(id: string): AuthorNote;
+    /** Checks existence and returns a handle; rejects with AuthorNoteError("missing"). */
+    load(id: string): Promise<AuthorNote>;
+    /** Reads only requested fields. */
+    read<K extends keyof AuthorNoteFields>(
+      id: string,
+      ...keys: [K, ...K[]]
+    ): Promise<Pick<AuthorNoteFields, K>>;
+    /** Atomic patch; unspecified fields are preserved. Uses the shared revision-guarded write path. */
+    update(id: string, patch: AuthorNoteUpdate): Promise<void>;
+    create(name: string, content?: string): Promise<AuthorNote>;
+    /** Reserved NO_AUTHOR_NOTE cannot be modified or deleted. */
+    delete(id: string): Promise<void>;
+    count(): Promise<number>;
+    /** Bounded range ordered by name then ID; never loads content. */
+    list<K extends "name" | "updatedAt" = never>(
+      options: { offset: number; limit: number },
+      ...keys: K[]
+    ): Promise<Array<Pick<AuthorNoteFields, K> & { id: string }>>;
+    scriptWrite: {
+      get(): Promise<boolean>;
+      set(enabled: boolean): Promise<void>;
+    };
   };
 
   persona: { list(): Promise<RisuPersona[]> };

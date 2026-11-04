@@ -1,15 +1,13 @@
+import type { AuthorNoteFields } from "../domain/authorNote.ts";
 import { Sha256 } from "@aws-crypto/sha256-js";
 
 export const NO_AUTHOR_NOTE = "__none__";
 export const EMPTY_AUTHOR_NOTE_HASH =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /** Serialization rows only; never used as the runtime note object. */
-export interface AuthorNoteRow {
-  id: string;
-  name: string;
-  content: string;
+export interface AuthorNoteRow extends AuthorNoteFields {
+  /** Existing serialized/backend format; not part of the new domain contract. */
   contentHash: string;
-  updatedAt: number;
 }
 export type AuthorNoteMetadata = Omit<AuthorNoteRow, "content" | "contentHash">;
 export type AuthorNoteOperation =
