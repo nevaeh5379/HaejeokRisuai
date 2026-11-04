@@ -172,7 +172,7 @@ for (const mode of ["form", "html"] as const) {
       )) as typeof import("../src/ts/storage/sql/sqlStorageFactory");
       await characterStore.flush();
       return {
-        saved: await (await getSqlStorage()).loadChat(id),
+        saved: await (await getSqlStorage()).chat.load(id),
         other: characterStore.currentChat?.scriptstate,
       };
     }, chatId);

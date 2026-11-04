@@ -147,7 +147,7 @@
     async function refreshSessions() {
         const token = ++refreshToken;
         const storage = getSqlRuntime().storage;
-        if (!storage?.listRecentChats) {
+        if (!storage?.chat.listRecent) {
             allSessions = buildLocalSessionSnapshot();
             return;
         }
@@ -164,7 +164,7 @@
         );
         const activeChatId = activeTarget?.chatId;
         try {
-            const rows = await storage.listRecentChats(50, activeChatId);
+            const rows = await storage.chat.listRecent(50, activeChatId);
             if (token !== refreshToken) return;
             const indexById = new Map(
                 (characterStore.characters ?? []).map((character, index) => [character.chaId, index]),

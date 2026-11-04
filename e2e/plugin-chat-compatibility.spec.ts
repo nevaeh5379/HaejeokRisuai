@@ -74,7 +74,7 @@ test("plugin snapshots and writes preserve request tags and two chat states afte
     const siblingId = characterStore.characters[siblingIndex].chaId;
     await characterStore.flush();
     await changeChar(index);
-    characterStore.characters[index].chats[0] = (await storage.loadChat(
+    characterStore.characters[index].chats[0] = (await storage.chat.load(
       character.chats[0].id!,
       { messageLimit: 12 },
     ))!;
@@ -169,7 +169,7 @@ try {
     await characterStore.flush();
     await settingsStore.flush();
     return {
-      stored: (await (await getSqlStorage()).loadChat(chatId))!.message[12]
+      stored: (await (await getSqlStorage()).chat.load(chatId))!.message[12]
         .data,
       residentLength: characterStore.currentChat!.message.length,
     };

@@ -72,7 +72,10 @@ export async function currentIllustrationContext(
       char.loreSettings?.scanDepth ?? settingsStore.state.loreBookDepth,
     );
     const history = await readIllustrationHistory(
-      storage,
+      {
+        loadChat: storage.chat.load,
+        loadChatMessagePage: storage.message.page,
+      },
       target.chatId,
       position,
       scanDepth,
@@ -93,7 +96,9 @@ export async function currentIllustrationContext(
     context.lorebook = lore.actives.map((l) => parse(l.prompt)).join("\n\n");
   }
   if (settings.includeMemory) {
-    const metadata = await storage.loadChat(target.chatId, { messageLimit: 1 });
+    const metadata = await storage.chat.load(target.chatId, {
+      messageLimit: 1,
+    });
     const candidates = [
       ...(metadata?.hypaV3Data?.summaries ?? []),
       ...(metadata?.hypaV2Data?.mainChunks ?? []),
@@ -125,7 +130,7 @@ export async function currentIllustrationContext(
     const preceding = new Set<string>();
     let before = position;
     while (needed.size && before > 0) {
-      const page = await storage.loadChatMessagePage(target.chatId, before, 50);
+      const page = await storage.message.page(target.chatId, before, 50);
       for (const m of page.messages)
         if (needed.delete(m.chatId)) preceding.add(m.chatId);
       if (!page.hasMore || page.offset >= before) break;

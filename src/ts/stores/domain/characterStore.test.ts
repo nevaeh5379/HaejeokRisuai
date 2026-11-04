@@ -40,16 +40,19 @@ describe("CharacterStore", () => {
   beforeEach(() => {
     committed = [];
     mockStorage = {
+      chat: { load: vi.fn(async () => null) },
+      message: {
+        list: vi.fn(async () => []),
+        page: vi.fn(async () => ({
+          messages: [],
+          offset: 0,
+          total: 0,
+          hasMore: false,
+        })),
+      },
       getRevision: vi.fn(() => committed.length),
       loadCharacter: vi.fn(async () => null),
-      loadChat: vi.fn(async () => null),
-      loadChatMessages: vi.fn(async () => []),
-      loadChatMessagePage: vi.fn(async () => ({
-        messages: [],
-        offset: 0,
-        total: 0,
-        hasMore: false,
-      })),
+
       commit: vi.fn(async (commit: SqlCommit) => {
         committed.push(structuredClone(commit));
         return { revision: committed.length };
@@ -261,7 +264,7 @@ describe("CharacterStore", () => {
     delete chat.GLGlobalVariables;
 
     let resolveLoad!: (value: Chat) => void;
-    vi.mocked(mockStorage.loadChat).mockImplementationOnce(
+    vi.mocked(mockStorage.chat.load).mockImplementationOnce(
       () => new Promise<Chat>((resolve) => (resolveLoad = resolve)),
     );
     characterStore.init(chars, mockStorage);
@@ -307,7 +310,7 @@ describe("CharacterStore", () => {
     chat.id = "chat-initial-page";
     chat.messagesLoaded = false;
     chat.detailsLoaded = false;
-    vi.mocked(mockStorage.loadChat).mockResolvedValue({
+    vi.mocked(mockStorage.chat.load).mockResolvedValue({
       ...chat,
       message: [],
       messageOffset: 0,
@@ -324,7 +327,7 @@ describe("CharacterStore", () => {
 
     await characterStore.ensureChatMessages(chat.id);
 
-    expect(mockStorage.loadChat).toHaveBeenCalledWith(chat.id, {
+    expect(mockStorage.chat.load).toHaveBeenCalledWith(chat.id, {
       messageLimit: 7,
     });
   });
@@ -336,7 +339,7 @@ describe("CharacterStore", () => {
     chat.messagesLoaded = false;
     chat.detailsLoaded = false;
     delete (chat as any).localLore;
-    vi.mocked(mockStorage.loadChat).mockResolvedValue({
+    vi.mocked(mockStorage.chat.load).mockResolvedValue({
       ...chat,
       note: "hydrated from storage",
       localLore: [{ key: "loaded" }] as any,
@@ -377,16 +380,16 @@ describe("CharacterStore", () => {
       { role: "char", data: "older" },
       { role: "user", data: "recent" },
     ] as any[];
-    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue(allMessages);
+    vi.mocked(mockStorage.message.list).mockResolvedValue(allMessages);
     characterStore.init(chars, mockStorage);
 
     await characterStore.ensureChatMessages(chat.id, { full: true });
 
     const loadedChat = characterStore.characters[0].chats[0];
-    expect(mockStorage.loadChatMessages).toHaveBeenCalledWith(chat.id, {
+    expect(mockStorage.message.list).toHaveBeenCalledWith(chat.id, {
       mode: "full",
     });
-    expect(mockStorage.loadChat).not.toHaveBeenCalled();
+    expect(mockStorage.chat.load).not.toHaveBeenCalled();
     expect(loadedChat.message).toEqual(allMessages);
     expect(loadedChat.messageOffset).toBe(0);
     expect(loadedChat.messageTotal).toBe(3);
@@ -412,7 +415,7 @@ describe("CharacterStore", () => {
     chat.messageOffset = 1;
     chat.messageTotal = 2;
 
-    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue([
+    vi.mocked(mockStorage.message.list).mockResolvedValue([
       { chatId: "msg-old", role: "user", data: "old" } as any,
       { chatId: "msg-recent", role: "char", data: "recent" } as any,
     ]);
@@ -424,7 +427,7 @@ describe("CharacterStore", () => {
     });
 
     const loaded = characterStore.characters[0].chats[0];
-    expect(mockStorage.loadChatMessages).toHaveBeenCalledWith(chat.id, {
+    expect(mockStorage.message.list).toHaveBeenCalledWith(chat.id, {
       mode: "generation",
     });
     expect(loaded.message).toHaveLength(2);
@@ -446,7 +449,7 @@ describe("CharacterStore", () => {
     chat.messageOffset = 1;
     chat.messageTotal = 2;
 
-    vi.mocked(mockStorage.loadChatMessages)
+    vi.mocked(mockStorage.message.list)
       .mockResolvedValueOnce([
         { chatId: "msg-old", role: "user", data: "old" } as any,
         { chatId: "msg-recent", role: "char", data: "recent" } as any,
@@ -478,10 +481,10 @@ describe("CharacterStore", () => {
     } as any);
     await characterStore.ensureChatMessages(chat.id, { full: true });
 
-    expect(mockStorage.loadChatMessages).toHaveBeenNthCalledWith(1, chat.id, {
+    expect(mockStorage.message.list).toHaveBeenNthCalledWith(1, chat.id, {
       mode: "generation",
     });
-    expect(mockStorage.loadChatMessages).toHaveBeenNthCalledWith(2, chat.id, {
+    expect(mockStorage.message.list).toHaveBeenNthCalledWith(2, chat.id, {
       mode: "full",
     });
     const loaded = characterStore.characters[0].chats[0];
@@ -502,10 +505,10 @@ describe("CharacterStore", () => {
     chat.messagesFullyLoaded = false;
 
     let resolvePartial!: (chat: Chat) => void;
-    vi.mocked(mockStorage.loadChat).mockImplementationOnce(
+    vi.mocked(mockStorage.chat.load).mockImplementationOnce(
       () => new Promise<Chat>((resolve) => (resolvePartial = resolve)),
     );
-    vi.mocked(mockStorage.loadChatMessages).mockResolvedValue([
+    vi.mocked(mockStorage.message.list).mockResolvedValue([
       { role: "user", data: "old" } as any,
       { role: "char", data: "new" } as any,
     ]);
@@ -527,8 +530,8 @@ describe("CharacterStore", () => {
     await Promise.all([partialLoad, fullLoad]);
 
     const loadedChat = characterStore.characters[0].chats[0];
-    expect(mockStorage.loadChat).toHaveBeenCalledTimes(1);
-    expect(mockStorage.loadChatMessages).toHaveBeenCalledTimes(1);
+    expect(mockStorage.chat.load).toHaveBeenCalledTimes(1);
+    expect(mockStorage.message.list).toHaveBeenCalledTimes(1);
     expect(loadedChat.message).toHaveLength(2);
     expect(loadedChat.messagesFullyLoaded).toBe(true);
   });

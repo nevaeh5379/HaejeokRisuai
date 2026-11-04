@@ -1,3 +1,4 @@
+import { createSqlMessageMutations } from "./sqlCommitCoordinator";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
 import { beginSave } from "./saveActivity.svelte";
@@ -6,24 +7,22 @@ import { isCapacitor, isTauri, isNodeServer } from "../../platform";
 let storageSingleton: ISqlStorage | null = null;
 let storageCreationPromise: Promise<ISqlStorage> | null = null;
 
-export type SqlBranchStorage = ISqlStorage &
-  Required<
-    Pick<
-      ISqlStorage,
-      | "listChatBranches"
-      | "loadChatBranchGraph"
-      | "loadBranchMessages"
-      | "createChatBranch"
-      | "activateChatBranch"
-    >
-  >;
+export type SqlBranchStorage = ISqlStorage & {
+  branch: ISqlStorage["branch"] &
+    Required<
+      Pick<
+        ISqlStorage["branch"],
+        "list" | "graph" | "messages" | "create" | "activate"
+      >
+    >;
+};
 
 const REQUIRED_BRANCH_STORAGE_METHODS = [
-  "listChatBranches",
-  "loadChatBranchGraph",
-  "loadBranchMessages",
-  "createChatBranch",
-  "activateChatBranch",
+  "list",
+  "graph",
+  "messages",
+  "create",
+  "activate",
 ] as const;
 
 /**
@@ -38,31 +37,49 @@ const REQUIRED_BRANCH_STORAGE_METHODS = [
  */
 function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
   let commitChain: Promise<unknown> = Promise.resolve();
+  let message: ISqlStorage["message"] | undefined;
+  let branch: ISqlStorage["branch"] | undefined;
 
   return new Proxy(inner, {
     get(target, prop, receiver) {
       if (prop === "commit") {
         return async (commit: SqlCommit): Promise<SqlCommitResult> => {
           const run = async (): Promise<SqlCommitResult> => {
-            if (commit.action !== "illustration") commit.baseRevision = target.getRevision();
+            if (commit.action !== "illustration")
+              commit.baseRevision = target.getRevision();
             return await target.commit(commit);
           };
           commitChain = commitChain.then(run, run);
           return commitChain as Promise<SqlCommitResult>;
         };
       }
-      if (prop === "createChatBranch" || prop === "activateChatBranch") {
-        const orig = Reflect.get(target, prop, receiver);
-        if (typeof orig === "function") {
-          return async (...args: any[]) => {
-            const finish = beginSave();
-            try {
-              return await orig.apply(target, args);
-            } finally {
-              finish();
+      if (prop === "message") {
+        return (message ??= {
+          ...target.message,
+          ...createSqlMessageMutations(receiver),
+        });
+      }
+      if (prop === "branch") {
+        if (!target.branch) return target.branch;
+        return (branch ??= new Proxy(target.branch, {
+          get(branch, method, receiver) {
+            const original = Reflect.get(branch, method, receiver);
+            if (
+              (method === "create" || method === "activate") &&
+              typeof original === "function"
+            ) {
+              return async (...args: unknown[]) => {
+                const finish = beginSave();
+                try {
+                  return await original.apply(branch, args);
+                } finally {
+                  finish();
+                }
+              };
             }
-          };
-        }
+            return original;
+          },
+        }));
       }
       return Reflect.get(target, prop, receiver);
     },
@@ -130,7 +147,7 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
 export async function getSqlBranchStorage(): Promise<SqlBranchStorage> {
   const storage = await getSqlStorage();
   const missing = REQUIRED_BRANCH_STORAGE_METHODS.filter(
-    (method) => typeof storage[method] !== "function",
+    (method) => typeof storage.branch?.[method] !== "function",
   );
   if (missing.length > 0) {
     throw new Error(

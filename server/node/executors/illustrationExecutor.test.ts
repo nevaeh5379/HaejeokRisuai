@@ -113,7 +113,7 @@ async function fixture(
   db.characters[0].chats[0].message[1].data = "A sunset.<Illustration>";
   await storage.replaceDatabase(db);
   cleanups.push(() => database.close());
-  const chat = await storage.loadChat("chat-1");
+  const chat = await storage.chat.load("chat-1");
   const message = chat.message[1];
   const [item] = prepareIllustrations(
     message,
@@ -155,8 +155,8 @@ async function fixture(
   );
   const deps = {
     getStorage: () => ({
-      loadChat: storage.loadChat.bind(storage),
-      loadChatMessagePage: storage.loadChatMessagePage.bind(storage),
+      loadChat: storage.chat.load.bind(storage),
+      loadChatMessagePage: storage.message.page.bind(storage),
       loadCharacter: storage.loadCharacter.bind(storage),
       loadSettingKey: async (key: string) => ({
         value: await storage.loadSettingKey(key),
@@ -217,7 +217,9 @@ async function fixture(
     },
     tagConcurrency: () => maximumTags,
     message: async () =>
-      (await storage.loadChat("chat-1")).message.find((m) => m.chatId === "m2"),
+      (await storage.chat.load("chat-1")).message.find(
+        (m) => m.chatId === "m2",
+      ),
   };
 }
 
@@ -234,7 +236,7 @@ async function finished(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 async function addSlots(f: Awaited<ReturnType<typeof fixture>>, count: number) {
-  const chat = await f.storage.loadChat("chat-1");
+  const chat = await f.storage.chat.load("chat-1");
   const message = chat.message.find((m) => m.chatId === "m2");
   message.data = "A sunset." + "<Illustration>".repeat(count);
   message.illustrations = [];
@@ -682,10 +684,10 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
       { enabled: true, basePrompt: "quality" },
     );
     expect(
-      (await restored.storage.loadChat("chat-1")).message[1].illustrations,
+      (await restored.storage.chat.load("chat-1")).message[1].illustrations,
     ).toEqual((await f.message()).illustrations);
-    const sourceChat = await restored.storage.loadChat("chat-1");
-    const branch = await restored.storage.createChatBranch({
+    const sourceChat = await restored.storage.chat.load("chat-1");
+    const branch = await restored.storage.branch.create({
       id: "illustration-branch",
       chatId: "chat-1",
       parentBranchId: sourceChat.activeBranchId,
@@ -694,7 +696,7 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
       createdAt: 100,
     });
     expect(
-      (await restored.storage.loadBranchMessages("chat-1", branch.id)).find(
+      (await restored.storage.branch.messages("chat-1", branch.id)).find(
         (m) => m.chatId === "m2",
       ).illustrations,
     ).toEqual((await f.message()).illustrations);

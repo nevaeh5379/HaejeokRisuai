@@ -61,7 +61,7 @@ describe("WebSqliteStorage", () => {
         ('chat-1', 'm2', 'm1', 'root-1'),
         ('chat-1', 'm3', 'm2', 'root-1');
     `);
-    const chat = await storage.loadChat("chat-1", { messageLimit: 0 });
+    const chat = await storage.chat.load("chat-1", { messageLimit: 0 });
     expect(chat?.messageOffset).toBe(2);
     expect(chat?.message).toHaveLength(1);
     database.close();
@@ -91,7 +91,7 @@ describe("WebSqliteStorage", () => {
     const rpc = (storage as any).rpc;
     const batchSpy = vi.spyOn(rpc, "selectBatch");
 
-    const chat = await storage.loadChat("chat-1", { messageLimit: 2 });
+    const chat = await storage.chat.load("chat-1", { messageLimit: 2 });
 
     expect(batchSpy).toHaveBeenCalledTimes(1);
     const statements = batchSpy.mock.calls[0][0] as Array<{
@@ -450,7 +450,7 @@ describe("WebSqliteStorage", () => {
     const character = await storage.loadCharacter("char-roundtrip");
     expect(character?.name).toBe("Roundtrip");
     expect(character?.chats[0].messagesLoaded).toBe(false);
-    const chat = await storage.loadChat("chat-roundtrip");
+    const chat = await storage.chat.load("chat-roundtrip");
     expect(chat?.message).toEqual(source.characters[0].chats[0].message);
     const summaries = await storage.listBotPresets();
     expect(summaries).toHaveLength(1);
@@ -530,7 +530,7 @@ describe("TauriSqliteStorage", () => {
     const storage = makeTauriStorage(database);
     const queryLog = (storage as any).__log as QueryLog;
 
-    const chat = await storage.loadChat("chat-1", { messageLimit: 0 });
+    const chat = await storage.chat.load("chat-1", { messageLimit: 0 });
     expect(chat?.messageOffset).toBe(2);
     const limitedCall = queryLog.entries.find(
       ({ sql }) => sql.includes("FROM messages") && sql.includes("LIMIT"),

@@ -544,8 +544,8 @@ import type { Chat as ChatSession, Message } from "@risuai/protocol/domain/datab
     async function persistBranchSwitch(activeChat: ChatSession, branchId: string) {
         if(!activeChat.id) return false
         const storage = await getSqlBranchStorage()
-        await storage.activateChatBranch(activeChat.id, branchId)
-        const loaded = await storage.loadChat(activeChat.id, {
+        await storage.branch.activate(activeChat.id, branchId)
+        const loaded = await storage.chat.load(activeChat.id, {
             messageLimit: Math.max(12, activeChat.message.length),
         })
         if(!loaded) return false
@@ -567,7 +567,7 @@ import type { Chat as ChatSession, Message } from "@risuai/protocol/domain/datab
         const storage = await getSqlBranchStorage()
         const forkMessage = activeChat.message[branchMessageIndex]
         if(!forkMessage?.chatId) throw new Error('Cannot reroll a message without a persistent message id')
-        const branch = await storage.createChatBranch({
+        const branch = await storage.branch.create({
             id: v4(),
             chatId: activeChat.id,
             parentBranchId,
@@ -589,7 +589,7 @@ import type { Chat as ChatSession, Message } from "@risuai/protocol/domain/datab
     ) {
         if(!activeChat.id) return null
         const storage = await getSqlBranchStorage()
-        const branches = await storage.listChatBranches(activeChat.id)
+        const branches = await storage.branch.list(activeChat.id)
         const forkMessageId = activeChat.message[branchMessageIndex]?.chatId
         const activeId = activeChat.activeBranchId
             ?? branches.find((branch) => branch.reason === 'root')?.id

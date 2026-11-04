@@ -143,13 +143,13 @@ export async function loadAndroidRecentChats(
   limit = SHORTCUT_LIMIT,
 ): Promise<SqlRecentChatMetadata[]> {
   const storage = getSqlRuntime().storage;
-  if (!storage?.listRecentChats) return localRecentChats(limit);
+  if (!storage?.chat.listRecent) return localRecentChats(limit);
   try {
     const activeTarget = resolveRecentChatActiveTarget(
       characterStore.characters,
       characterStore.selectedId,
     );
-    const recent = await storage.listRecentChats(limit, activeTarget?.chatId);
+    const recent = await storage.chat.listRecent(limit, activeTarget?.chatId);
     return recent.length > 0 ? recent : localRecentChats(limit);
   } catch (error) {
     console.warn("[NativeIntegration] Recent chat query failed:", error);

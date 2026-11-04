@@ -722,7 +722,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.loadStartupData();
 
-    const chat = await storage.loadChat("chat-123");
+    const chat = await storage.chat.load("chat-123");
     expect(chat?.id).toBe("chat-123");
     expect(chat?.message).toHaveLength(2);
     expect(chat?.localLore).toHaveLength(1);
@@ -745,7 +745,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    const messages = await storage.loadChatMessages("chat-123");
+    const messages = await storage.message.list("chat-123");
 
     expect(messages).toHaveLength(2);
     expect(messages[0].chatId).toBe("msg-1");
@@ -773,7 +773,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    await storage.loadChatMessages("chat-123", { mode: "generation" });
+    await storage.message.list("chat-123", { mode: "generation" });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
@@ -797,7 +797,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    const page = await storage.loadChatMessagePage("chat-123", 60, 20);
+    const page = await storage.message.page("chat-123", 60, 20);
 
     expect(page).toMatchObject({ offset: 40, total: 100, hasMore: true });
     expect(fetchMock.mock.calls[0][0]).toBe(
@@ -859,12 +859,12 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    const branches = await storage.listChatBranches("chat-123");
-    const messages = await storage.loadBranchMessages("chat-123", "root", {
+    const branches = await storage.branch.list("chat-123");
+    const messages = await storage.branch.messages("chat-123", "root", {
       messageLimit: 12,
       mode: "generation",
     });
-    const created = await storage.createChatBranch({
+    const created = await storage.branch.create({
       id: "reroll-1",
       chatId: "chat-123",
       parentBranchId: "root",
@@ -872,7 +872,7 @@ describe("NodeSqlStorage browser client", () => {
       reason: "reroll",
       createdAt: 123,
     });
-    await storage.activateChatBranch("chat-123", "reroll-1");
+    await storage.branch.activate("chat-123", "reroll-1");
 
     expect(branches[0]?.id).toBe("root");
     expect(messages[0]?.chatId).toBe("msg-1");
@@ -924,9 +924,7 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    await expect(storage.loadChatBranchGraph("chat-123")).resolves.toEqual(
-      graph,
-    );
+    await expect(storage.branch.graph("chat-123")).resolves.toEqual(graph);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/database-v2/chats/chat-123/branches/graph",
@@ -968,7 +966,7 @@ describe("NodeSqlStorage browser client", () => {
     (storage as any).status = "enabled";
 
     await expect(
-      storage.loadChatBranchGraphPage("chat-123", 256, 128),
+      storage.branch.graphPage("chat-123", 256, 128),
     ).resolves.toEqual(page);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(

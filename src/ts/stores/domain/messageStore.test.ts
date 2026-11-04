@@ -12,6 +12,21 @@ import type { SqlCommit, SqlCommitResult } from "../../storage/sql/sqlCommit";
 import type { character, Message } from "@risuai/protocol/domain/database.ts";
 
 class MockSqlStorage {
+  chat = {
+    load: async (): Promise<any> => {
+      return null;
+    },
+  };
+
+  message = {
+    page: async (): Promise<any> => {
+      return { messages: [], offset: 0, total: 0, hasMore: false };
+    },
+    search: async (): Promise<any[]> => {
+      return [];
+    },
+  };
+
   backendKind = "web-sqlite" as const;
   revision = 1;
   commits: SqlCommit[] = [];
@@ -36,15 +51,6 @@ class MockSqlStorage {
   }
   async loadCharacter(): Promise<any> {
     return null;
-  }
-  async loadChat(): Promise<any> {
-    return null;
-  }
-  async loadChatMessagePage(): Promise<any> {
-    return { messages: [], offset: 0, total: 0, hasMore: false };
-  }
-  async searchMessages(): Promise<any[]> {
-    return [];
   }
 }
 

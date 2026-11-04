@@ -311,13 +311,13 @@ async function loadRecentChats(
   limit: number,
 ): Promise<TauriRecentChatMenuSource[]> {
   const storage = getSqlRuntime().storage;
-  if (!storage?.listRecentChats) return localRecentChats(limit);
+  if (!storage?.chat.listRecent) return localRecentChats(limit);
   const activeChatId = resolveRecentChatActiveTarget(
     characterStore.characters,
     characterStore.selectedId,
   )?.chatId;
   try {
-    const rows = await storage.listRecentChats(limit, activeChatId);
+    const rows = await storage.chat.listRecent(limit, activeChatId);
     return rows.map((row) => ({
       characterId: row.characterId,
       characterName: row.characterName || "Unknown Bot",

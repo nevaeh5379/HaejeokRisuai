@@ -185,11 +185,64 @@ export interface BotPresetSummary {
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
  *  - `loadCharacter(id)` returns a full character (with chats list but without
  *    message arrays).
- *  - `loadChat(id)` returns a full chat *with* its message array.
+ *  - `chat.load(id)` returns a full chat *with* its message array.
  *  - Domain loaders (`loadPersonas`, `listBotPresets`/`loadBotPreset`, …) fetch one domain at
  *    a time, allowing the adapter to keep unloaded domains out of memory.
  */
 export interface ISqlStorage {
+  chat: {
+    load(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
+    /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
+    listRecent?(
+      limit?: number,
+      activeChatId?: string,
+    ): Promise<SqlRecentChatMetadata[]>;
+  };
+
+  message: {
+    /** Saves one message through the revision-guarded commit path. */
+    save(
+      chatId: string,
+      message: Message & { position: number },
+    ): Promise<SqlCommitResult>;
+    delete(chatId: string, messageId: string): Promise<SqlCommitResult>;
+    list(
+      chatId: string,
+      options?: { mode?: "full" | "generation" },
+    ): Promise<Message[]>;
+    page(
+      chatId: string,
+      before: number | undefined,
+      limit: number,
+    ): Promise<SqlMessagePage>;
+    search(
+      query: string,
+      scope?: "all" | "active" | "cold",
+      limit?: number,
+    ): Promise<NodePostgresMessageSearchResult[]>;
+  };
+
+  /** Optional during remote protocol rollout; branch features must require these APIs. */
+  branch: {
+    list?(chatId: string): Promise<SqlChatBranchSummary[]>;
+    graph?(chatId: string): Promise<SqlChatBranchGraphData>;
+    graphPage?(
+      chatId: string,
+      offset: number,
+      limit: number,
+    ): Promise<SqlChatBranchGraphPage>;
+    messages?(
+      chatId: string,
+      branchId: string,
+      options?: {
+        messageLimit?: number;
+        mode?: "full" | "generation" | "graph";
+      },
+    ): Promise<Message[]>;
+    create?(input: SqlCreateChatBranchInput): Promise<SqlChatBranchSummary>;
+    activate?(chatId: string, branchId: string): Promise<void>;
+  };
+
   readonly backendKind: SqlBackendKind;
   readonly plugin: IPluginStorage;
 
@@ -255,46 +308,6 @@ export interface ISqlStorage {
   loadCharacterAssetFields?(
     characterId: string,
   ): Promise<Partial<character> | null>;
-  loadChat(chatId: string, options?: SqlChatLoadOptions): Promise<Chat | null>;
-  loadChatMessages(
-    chatId: string,
-    options?: { mode?: "full" | "generation" },
-  ): Promise<Message[]>;
-  loadChatMessagePage(
-    chatId: string,
-    before: number | undefined,
-    limit: number,
-  ): Promise<SqlMessagePage>;
-  /**
-   * Persistent branch graph APIs. These remain optional only at the transport
-   * boundary while remote SQL servers roll out the protocol. Runtime branch
-   * features must require them and fail fast; they must never fall back to the
-   * legacy in-memory branchState path.
-   */
-  listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
-  loadChatBranchGraph?(chatId: string): Promise<SqlChatBranchGraphData>;
-  loadChatBranchGraphPage?(
-    chatId: string,
-    offset: number,
-    limit: number,
-  ): Promise<SqlChatBranchGraphPage>;
-  loadBranchMessages?(
-    chatId: string,
-    branchId: string,
-    options?: { messageLimit?: number; mode?: "full" | "generation" | "graph" },
-  ): Promise<Message[]>;
-  createChatBranch?(
-    input: SqlCreateChatBranchInput,
-  ): Promise<SqlChatBranchSummary>;
-  activateChatBranch?(chatId: string, branchId: string): Promise<void>;
-  /** Lightweight recent-chat feed; avoids hydrating character/chat trees.
-   * `activeChatId` pins the most recently opened chat ahead of the LIMIT and
-   * lets it inherit character interaction time without boosting that
-   * character's other chats. */
-  listRecentChats?(
-    limit?: number,
-    activeChatId?: string,
-  ): Promise<SqlRecentChatMetadata[]>;
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
@@ -358,14 +371,6 @@ export interface ISqlStorage {
   restoreRevision(
     revisionId: number,
   ): Promise<{ revision: number; revisionId: number }>;
-
-  // ── Search ───────────────────────────────────────────────────────────
-
-  searchMessages(
-    query: string,
-    scope?: "all" | "active" | "cold",
-    limit?: number,
-  ): Promise<NodePostgresMessageSearchResult[]>;
   getTokenUsage(): Promise<NodePostgresTokenUsage[]>;
   getBotChatStats(): Promise<NodePostgresBotChatStats[]>;
   searchCharactersByTag(

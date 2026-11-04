@@ -29,6 +29,92 @@ function makeStorage() {
   let revision = 7;
   const pageCalls: number[] = [];
   const storage = {
+    chat: {
+      load: vi.fn(
+        async () =>
+          ({
+            id: "chat-1",
+            name: "Chat",
+            detailsLoaded: true,
+            messagesLoaded: true,
+            messagesFullyLoaded: false,
+            message: [
+              {
+                chatId: "ignored-active-message",
+                role: "user",
+                data: "not exported here",
+              },
+            ],
+          }) as any,
+      ),
+    },
+    branch: {
+      graph: vi.fn(async () => {
+        throw new Error("whole graph loader must not be used");
+      }),
+      graphPage: vi.fn(async (_chatId: string, offset: number) => {
+        pageCalls.push(offset);
+        const branches = [
+          {
+            id: "root",
+            chatId: "chat-1",
+            reason: "root",
+            createdAt: 0,
+            headMessageId: "m2",
+          },
+          {
+            id: "reroll",
+            chatId: "chat-1",
+            parentBranchId: "root",
+            forkMessageId: "m1",
+            reason: "reroll",
+            createdAt: 1,
+            headMessageId: "m-alt",
+          },
+        ] as any[];
+        if (offset === 0) {
+          return {
+            branches,
+            activeBranchId: "reroll",
+            messages: [
+              { chatId: "m1", role: "user", data: "one" },
+              { chatId: "m2", role: "char", data: "two" },
+            ],
+            links: [
+              { messageId: "m1", position: 0, originBranchId: "root" },
+              {
+                messageId: "m2",
+                position: 1,
+                parentMessageId: "m1",
+                originBranchId: "root",
+              },
+            ],
+            offset: 0,
+            total: 3,
+            hasMore: true,
+          } as any;
+        }
+        if (offset === 2) {
+          return {
+            branches,
+            activeBranchId: "reroll",
+            messages: [{ chatId: "m-alt", role: "char", data: "alternate" }],
+            links: [
+              {
+                messageId: "m-alt",
+                position: 1,
+                parentMessageId: "m1",
+                originBranchId: "reroll",
+              },
+            ],
+            offset: 2,
+            total: 3,
+            hasMore: false,
+          } as any;
+        }
+        throw new Error(`unexpected graph offset ${offset}`);
+      }),
+    },
     getRevision: () => revision,
     getStorageSyncSummary: vi.fn(async () => ({
       revision,
@@ -86,88 +172,6 @@ function makeStorage() {
           chats: [{ id: "chat-1", name: "Chat", message: [] }],
         }) as any,
     ),
-    loadChat: vi.fn(
-      async () =>
-        ({
-          id: "chat-1",
-          name: "Chat",
-          detailsLoaded: true,
-          messagesLoaded: true,
-          messagesFullyLoaded: false,
-          message: [
-            {
-              chatId: "ignored-active-message",
-              role: "user",
-              data: "not exported here",
-            },
-          ],
-        }) as any,
-    ),
-    loadChatBranchGraph: vi.fn(async () => {
-      throw new Error("whole graph loader must not be used");
-    }),
-    loadChatBranchGraphPage: vi.fn(async (_chatId: string, offset: number) => {
-      pageCalls.push(offset);
-      const branches = [
-        {
-          id: "root",
-          chatId: "chat-1",
-          reason: "root",
-          createdAt: 0,
-          headMessageId: "m2",
-        },
-        {
-          id: "reroll",
-          chatId: "chat-1",
-          parentBranchId: "root",
-          forkMessageId: "m1",
-          reason: "reroll",
-          createdAt: 1,
-          headMessageId: "m-alt",
-        },
-      ] as any[];
-      if (offset === 0) {
-        return {
-          branches,
-          activeBranchId: "reroll",
-          messages: [
-            { chatId: "m1", role: "user", data: "one" },
-            { chatId: "m2", role: "char", data: "two" },
-          ],
-          links: [
-            { messageId: "m1", position: 0, originBranchId: "root" },
-            {
-              messageId: "m2",
-              position: 1,
-              parentMessageId: "m1",
-              originBranchId: "root",
-            },
-          ],
-          offset: 0,
-          total: 3,
-          hasMore: true,
-        } as any;
-      }
-      if (offset === 2) {
-        return {
-          branches,
-          activeBranchId: "reroll",
-          messages: [{ chatId: "m-alt", role: "char", data: "alternate" }],
-          links: [
-            {
-              messageId: "m-alt",
-              position: 1,
-              parentMessageId: "m1",
-              originBranchId: "reroll",
-            },
-          ],
-          offset: 2,
-          total: 3,
-          hasMore: false,
-        } as any;
-      }
-      throw new Error(`unexpected graph offset ${offset}`);
-    }),
   };
   return {
     storage: storage as unknown as ISqlStorage,
@@ -188,7 +192,7 @@ describe("storage sync SQL source", () => {
       }),
     );
     expect(pageCalls).toEqual([0, 2]);
-    expect(storage.loadChatBranchGraph as any).not.toHaveBeenCalled();
+    expect(storage.branch.graph as any).not.toHaveBeenCalled();
     expect(records.map((record) => record.type)).toEqual([
       "meta",
       "setting",
@@ -325,8 +329,8 @@ describe("storage sync SQL source", () => {
   });
   it("rejects graph pages that cannot preserve original message positions", async () => {
     const { storage } = makeStorage();
-    const original = storage.loadChatBranchGraphPage!.bind(storage);
-    (storage as any).loadChatBranchGraphPage = vi.fn(async (...args: any[]) => {
+    const original = storage.branch.graphPage!.bind(storage);
+    (storage as any).branch.graphPage = vi.fn(async (...args: any[]) => {
       const page = await original(...args);
       if (page.links[0]) delete page.links[0].position;
       return page;

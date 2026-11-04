@@ -117,7 +117,13 @@ async function update(
   const result = await mutateSqlMessage(storage, async () => {
     const resolved = resolveTarget(target);
     if (!resolved) return null;
-    const stored = await readIllustrationMessage(storage, target);
+    const stored = await readIllustrationMessage(
+      {
+        loadChat: storage.chat.load,
+        loadChatMessagePage: storage.message.page,
+      },
+      target,
+    );
     if (!stored || stored.branchId !== resolved.chat.activeBranchId)
       return null;
     const resident = resolved.chat.message.find(
@@ -196,13 +202,16 @@ async function tagArguments(
   record: IllustrationRecord,
 ) {
   const storage = await getSqlStorage();
-  const located = await readIllustrationMessage(storage, target);
+  const located = await readIllustrationMessage(
+    { loadChat: storage.chat.load, loadChatMessagePage: storage.message.page },
+    target,
+  );
   const resolved = resolveTarget(target);
   if (!located || !resolved)
     throw new Error("The illustration message was removed");
   const settings = getSettings(target);
   const history = await readIllustrationHistory(
-    storage,
+    { loadChat: storage.chat.load, loadChatMessagePage: storage.message.page },
     target.chatId,
     located.position,
     settings.recentMessages,
@@ -425,8 +434,9 @@ async function submit(
     const storage = forageStorage.realStorage;
     if (item.executor === "server" && storage instanceof NodeStorage) {
       await serverSubmissions.enqueue(`${key}:${item.version}`, async () => {
+        const sql = await getSqlStorage();
         const located = await readIllustrationMessage(
-          await getSqlStorage(),
+          { loadChat: sql.chat.load, loadChatMessagePage: sql.message.page },
           target,
         );
         const latestItem = located?.message.illustrations?.find(
@@ -571,7 +581,7 @@ export async function enqueueAnswerIllustrations(
     await messageStore.flush();
     const storedChat = await (
       await getSqlStorage()
-    ).loadChat(target.chatId, {
+    ).chat.load(target.chatId, {
       messageLimit: 1,
     });
     targetChat = resolveTarget(target)?.chat;

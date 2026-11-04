@@ -917,7 +917,7 @@ class CharacterStore
     storage: ISqlStorage,
     chatId: string,
   ): Promise<Chat> {
-    const chat = await storage.loadChat(chatId);
+    const chat = await storage.chat.load(chatId);
     if (
       !chat ||
       chat.detailsLoaded === false ||
@@ -1461,7 +1461,7 @@ class CharacterStore
       const character = this.getById(id);
       for (const previous of warmChangedChats.get(id) ?? []) {
         if (!previous.id) continue;
-        const loaded = await storage.loadChat(previous.id);
+        const loaded = await storage.chat.load(previous.id);
         if (!loaded) continue;
         const position =
           character?.chats.findIndex((chat) => chat.id === previous.id) ?? -1;
@@ -1545,7 +1545,7 @@ class CharacterStore
       activeStreamingDisplayOptimizationMode:
         chat.activeStreamingDisplayOptimizationMode,
     };
-    const refreshed = await storage.loadChat(
+    const refreshed = await storage.chat.load(
       chatId,
       fullyLoaded
         ? undefined
@@ -1617,7 +1617,7 @@ class CharacterStore
           chat?.messagesLoaded !== false
         ) {
           const previousMessages = chat.message ?? [];
-          const messages = await storage.loadChatMessages(chatId, {
+          const messages = await storage.message.list(chatId, {
             mode: options.generation ? "generation" : "full",
           });
           chat.message = mergeLoadedMessages(messages, previousMessages);
@@ -1633,7 +1633,7 @@ class CharacterStore
           return;
         }
 
-        const fullChat = await storage.loadChat(
+        const fullChat = await storage.chat.load(
           chatId,
           options.full ? undefined : { messageLimit: initialMessagePageSize },
         );
@@ -1693,7 +1693,7 @@ class CharacterStore
         return 0;
 
       const before = chat.messageOffset;
-      const page = await storage.loadChatMessagePage(chatId, before, limit);
+      const page = await storage.message.page(chatId, before, limit);
       const known = new Set(chat.message.map((m) => m.chatId).filter(Boolean));
       const older = page.messages.filter(
         (m) => !m.chatId || !known.has(m.chatId),

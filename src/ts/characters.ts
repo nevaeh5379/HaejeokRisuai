@@ -410,9 +410,9 @@ export async function exportChat(page: number) {
         const branchStorage = await getSqlBranchStorage();
         branchGraph = await loadPortableBranchGraphForExport(
           chat.id,
-          (id) => branchStorage.loadChatBranchGraph(id),
+          (id) => branchStorage.branch.graph(id),
           (id, branchId) =>
-            branchStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+            branchStorage.branch.messages(id, branchId, { mode: "full" }),
         );
       }
       const payload = buildChatJsonExportPayload(
@@ -704,7 +704,7 @@ export async function importChat() {
           newChat.id,
           branchGraph,
         );
-        const restoredChat = await branchStorage.loadChat(newChat.id);
+        const restoredChat = await branchStorage.chat.load(newChat.id);
         if (restoredChat) currentCharacter.chats[0] = restoredChat;
         changeChatTo(0);
         alertNormal(language.successImport);

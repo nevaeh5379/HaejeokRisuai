@@ -209,7 +209,7 @@ describe("CapacitorSqliteStorage", () => {
     const chatId = source.characters[0].chats[0].id;
     const stats = (storage as any).__bridgeStats;
     stats.queryStreamCalls = 0;
-    const chat = await storage.loadChat(chatId, { messageLimit: 24 });
+    const chat = await storage.chat.load(chatId, { messageLimit: 24 });
 
     expect(chat?.id).toBe(chatId);
     expect(chat?.messagesLoaded).toBe(true);

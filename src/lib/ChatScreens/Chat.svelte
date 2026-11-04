@@ -211,11 +211,11 @@ import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode }
         if (createBranch) {
             currentChat.id ??= v4()
             const storage = await getSqlBranchStorage()
-            const branches = await storage.listChatBranches(currentChat.id)
+            const branches = await storage.branch.list(currentChat.id)
             const parentBranchId = currentChat.activeBranchId
                 ?? branches.find((branch) => branch.reason === 'root')?.id
             const forkMessageId = currentChat.message[targetIndex - 1]?.chatId
-            const branch = await storage.createChatBranch({
+            const branch = await storage.branch.create({
                 id: v4(),
                 chatId: currentChat.id,
                 parentBranchId,
@@ -1169,10 +1169,10 @@ import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode }
         const currentMessage = currentChat.message[targetIndex]
         if(!currentMessage?.chatId) throw new Error('Cannot branch a message without a persistent message id')
         const storage = await getSqlBranchStorage()
-        const branches = await storage.listChatBranches(currentChat.id)
+        const branches = await storage.branch.list(currentChat.id)
         const parentBranchId = currentChat.activeBranchId
             ?? branches.find((branch) => branch.reason === 'root')?.id
-        const branch = await storage.createChatBranch({
+        const branch = await storage.branch.create({
             id: v4(),
             chatId: currentChat.id,
             parentBranchId,

@@ -1,8 +1,14 @@
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+import {
+  createEmptySqlCommit,
+  type SqlCommit,
+  type SqlCommitResult,
+} from "./sqlCommit";
 import { beginSave } from "./saveActivity.svelte";
 
-const storageQueues = new WeakMap<ISqlStorage, Promise<void>>();
+type SqlCommitStorage = Pick<ISqlStorage, "commit" | "getRevision">;
+
+const storageQueues = new WeakMap<SqlCommitStorage, Promise<void>>();
 
 function conflictRevision(error: unknown): number | null {
   if (
@@ -23,7 +29,7 @@ function conflictRevision(error: unknown): number | null {
  * are written. A single retry handles a revision advanced by another client.
  */
 export function commitSqlChanges(
-  storage: ISqlStorage,
+  storage: SqlCommitStorage,
   commit: SqlCommit,
 ): Promise<SqlCommitResult> {
   const finishSave = beginSave();
@@ -103,4 +109,34 @@ export function mutateSqlMessage<T>(
     ),
   );
   return operation;
+}
+
+/** Message mutations share the existing revision, save activity and commit queue. */
+export function createSqlMessageMutations(
+  storage: SqlCommitStorage,
+): Pick<ISqlStorage["message"], "save" | "delete"> {
+  return {
+    save: (chatId, message) => {
+      if (!message.chatId) throw new Error("Message ID is required");
+      const commit = createEmptySqlCommit(
+        storage.getRevision(),
+        "message:save",
+      );
+      commit.messages.push({
+        id: message.chatId,
+        chatId,
+        position: message.position,
+        data: message,
+      });
+      return commitSqlChanges(storage, commit);
+    },
+    delete: (chatId, messageId) => {
+      const commit = createEmptySqlCommit(
+        storage.getRevision(),
+        "message:delete",
+      );
+      commit.messageDeletes = [{ chatId, ids: [messageId] }];
+      return commitSqlChanges(storage, commit);
+    },
+  };
 }

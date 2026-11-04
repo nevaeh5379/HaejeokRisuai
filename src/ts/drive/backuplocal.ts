@@ -533,13 +533,13 @@ export async function createBackupDatabaseSnapshot(
   return (await attachPortableDatabaseBranchGraphs(
     normalized,
     async (chatId) => {
-      const graph = await branchStorage.loadChatBranchGraph(chatId);
+      const graph = await branchStorage.branch.graph(chatId);
       if (graph.branches.length <= 1) return graph;
       return loadPortableBranchGraphForExport(
         chatId,
         async () => graph,
         (id, branchId) =>
-          branchStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+          branchStorage.branch.messages(id, branchId, { mode: "full" }),
       );
     },
   )) as PortableDatabase;

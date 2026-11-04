@@ -81,6 +81,22 @@ function makeFreshHarness(make: MakeStorage) {
 // ── Contract suites ──────────────────────────────────────────────────
 
 describe.each(backendFactories)("$name contracts", ({ make }) => {
+  it("saves and deletes one message through the common API without replacing its siblings", async () => {
+    const { storage } = makeFreshHarness(make);
+    await seed(storage);
+    const before = await storage.message.list("chat-1");
+    const revision = storage.getRevision();
+    const updated = { ...before[0], data: "공통 API 저장", position: 0 };
+    const saved = await storage.message.save("chat-1", updated);
+    expect(saved.revision).toBe(revision + 1);
+    expect((await storage.message.list("chat-1"))[0].data).toBe(updated.data);
+    const deleted = await storage.message.delete("chat-1", updated.chatId!);
+    expect(deleted.revision).toBe(saved.revision + 1);
+    expect(
+      (await storage.message.list("chat-1")).map((message) => message.chatId),
+    ).toEqual(before.slice(1).map((message) => message.chatId));
+  });
+
   it("reads storage sync counts without exporting the aggregate database", async () => {
     const { storage } = makeFreshHarness(make);
     const empty = await storage.getStorageSyncSummary();
@@ -166,15 +182,13 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(restored?.database.language).toBe("en");
     expect(restored?.database.theme).toBe("dark");
     expect(restored?.database.modules).toEqual(buildFullDatabase().modules);
-    const chat = await targetHarness.storage.loadChat("chat-1");
+    const chat = await targetHarness.storage.chat.load("chat-1");
     expect(chat?.message.map((message) => message.data)).toEqual([
       "one",
       "two",
     ]);
-    const sourceGraph =
-      await sourceHarness.storage.loadChatBranchGraph!("chat-1");
-    const restoredGraph =
-      await targetHarness.storage.loadChatBranchGraph!("chat-1");
+    const sourceGraph = await sourceHarness.storage.branch.graph!("chat-1");
+    const restoredGraph = await targetHarness.storage.branch.graph!("chat-1");
     expect(restoredGraph.branches).toEqual(sourceGraph.branches);
     expect(restoredGraph.activeBranchId).toBe(sourceGraph.activeBranchId);
     expect(restoredGraph.links).toEqual(sourceGraph.links);
@@ -331,7 +345,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(char?.detailsLoaded).toBe(true);
     expect(char?.chats.map((c) => c.id)).toEqual(["chat-1", "chat-2"]);
 
-    const chat = await storage.loadChat("chat-1");
+    const chat = await storage.chat.load("chat-1");
     expect(chat?.message.map((m) => m.data)).toEqual(["one", "two"]);
     expect(chat?.message[0].generationInfo?.model).toBe("test-model");
     expect(chat?.message[0].promptInfo?.promptName).toBe("preset");
@@ -530,13 +544,13 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(character?.chats[0].message).toEqual([]);
     expect(queryLog.touching("message_extension_nodes")).toBe(0);
 
-    const chat = await storage.loadChat("chat-1", { messageLimit: 1 });
+    const chat = await storage.chat.load("chat-1", { messageLimit: 1 });
     expect(chat?.message.map((m) => m.data)).toEqual(["two"]);
     expect(chat?.messageOffset).toBe(1);
     expect(chat?.messageTotal).toBe(2);
     expect(chat?.messagesFullyLoaded).toBe(false);
 
-    const fullChat = await storage.loadChat("chat-1");
+    const fullChat = await storage.chat.load("chat-1");
     expect(fullChat?.message.map((m) => m.data)).toEqual(["one", "two"]);
     expect(fullChat?.messagesFullyLoaded).toBe(true);
     database.close();
@@ -546,9 +560,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
 
-    const viaChat = await storage.loadChat("chat-1");
-    const viaMessages = await storage.loadChatMessages("chat-1");
-    const page = await storage.loadChatMessagePage("chat-1", undefined, 1);
+    const viaChat = await storage.chat.load("chat-1");
+    const viaMessages = await storage.message.list("chat-1");
+    const page = await storage.message.page("chat-1", undefined, 1);
 
     expect(viaChat?.message.map((m) => m.chatId)).toEqual(["m1", "m2"]);
     expect(viaMessages.map((m) => m.chatId)).toEqual(["m1", "m2"]);
@@ -567,7 +581,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     );
     await seed(storage, db);
 
-    const all = await storage.loadChatMessages("chat-1");
+    const all = await storage.message.list("chat-1");
     expect(all).toHaveLength(7);
 
     // Pages walk oldest-ward: each request returns the `limit` messages that
@@ -576,7 +590,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     let before: number | undefined;
     let hasMore = true;
     while (hasMore && pages.length < 10) {
-      const page = await storage.loadChatMessagePage("chat-1", before, 3);
+      const page = await storage.message.page("chat-1", before, 3);
       pages.push(page.messages);
       before = page.offset;
       hasMore = page.hasMore;
@@ -673,11 +687,11 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
 
-    const zero = await storage.loadChat("chat-1", { messageLimit: 0 });
+    const zero = await storage.chat.load("chat-1", { messageLimit: 0 });
     expect(zero?.message).toHaveLength(1);
     expect(zero?.messageOffset).toBe(1);
 
-    const negative = await storage.loadChat("chat-1", { messageLimit: -5 });
+    const negative = await storage.chat.load("chat-1", { messageLimit: -5 });
     expect(negative?.message).toHaveLength(1);
     database.close();
   });
@@ -715,7 +729,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     };
     await seed(storage, source);
 
-    const loaded = await storage.loadChat("chat-1");
+    const loaded = await storage.chat.load("chat-1");
     expect(loaded?.branchState).toBeUndefined();
     expect(loaded?.activeBranchId).toBe("reroll-legacy");
     expect(loaded?.message.map((message) => message.data)).toEqual([
@@ -723,7 +737,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       "alternative",
     ]);
 
-    const branches = await storage.listChatBranches!("chat-1");
+    const branches = await storage.branch.list!("chat-1");
     expect(branches).toHaveLength(2);
     expect(
       branches.find((branch) => branch.id === "reroll-legacy"),
@@ -733,12 +747,12 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       headMessageId: "m-alt",
     });
     expect(
-      (await storage.loadBranchMessages!("chat-1", "root-legacy")).map(
+      (await storage.branch.messages!("chat-1", "root-legacy")).map(
         (message) => message.data,
       ),
     ).toEqual(["one", "two"]);
     expect(
-      (await storage.loadBranchMessages!("chat-1", "reroll-legacy")).map(
+      (await storage.branch.messages!("chat-1", "reroll-legacy")).map(
         (message) => message.data,
       ),
     ).toEqual(["one", "alternative"]);
@@ -823,7 +837,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       "INSERT INTO chats (id, character_id, position, name) VALUES ('recent-char-2', 'char-2', 0, 'Recent')",
     );
 
-    const recent = await storage.listRecentChats!(50);
+    const recent = await storage.chat.listRecent!(50);
     expect(recent).toHaveLength(50);
     expect(recent.some((row) => row.chatId === "recent-char-2")).toBe(true);
     expect(recent[0]?.chatId).toBe("recent-char-2");
@@ -842,7 +856,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     // Without an active chat hint, only the position-zero legacy
     // representative can inherit the character interaction time. Empty
     // sibling chats must not all become recent together.
-    const withoutActive = await storage.listRecentChats!(50);
+    const withoutActive = await storage.chat.listRecent!(50);
     expect(withoutActive[0]?.chatId).toBe("chat-1");
     expect(withoutActive.find((row) => row.chatId === "chat-1")?.lastDate).toBe(
       2000,
@@ -851,7 +865,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     // With the active chat hint, only chat-1 is boosted above the fallback so
     // the open session is first; sibling chat-2 keeps its fallback ordering
     // and cannot crowd out other characters' recent rows before LIMIT.
-    const withActive = await storage.listRecentChats!(50, "chat-1");
+    const withActive = await storage.chat.listRecent!(50, "chat-1");
     expect(withActive[0]?.chatId).toBe("chat-1");
     // The boosted row is ranked first, but the returned metadata still reports
     // the chat's own last message time so the UI ago-text stays truthful.
@@ -878,7 +892,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
         "VALUES ('other-recent', 'char-2', 0, 'Other recent', 5000)",
     );
 
-    const recent = await storage.listRecentChats!(50, "chat-1");
+    const recent = await storage.chat.listRecent!(50, "chat-1");
     expect(recent.slice(0, 4).map((row) => row.chatId)).toEqual([
       "chat-1",
       "other-recent",
@@ -928,8 +942,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
   it("loads the branch graph as unique core messages without extension hydration", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);
-    const [root] = await storage.listChatBranches!("chat-1");
-    await storage.createChatBranch!({
+    const [root] = await storage.branch.list!("chat-1");
+    await storage.branch.create!({
       id: "reroll-graph",
       chatId: "chat-1",
       parentBranchId: root.id,
@@ -947,7 +961,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     await storage.commit(append);
 
     queryLog.clear();
-    const graph = await storage.loadChatBranchGraph!("chat-1");
+    const graph = await storage.branch.graph!("chat-1");
     expect(graph.branches).toHaveLength(2);
     expect(graph.activeBranchId).toBe("reroll-graph");
     expect(new Set(graph.messages.map((message) => message.chatId))).toEqual(
@@ -968,8 +982,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
   it("pages fully hydrated branch graph messages without loading the whole graph", async () => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
-    const [root] = await storage.listChatBranches!("chat-1");
-    await storage.createChatBranch!({
+    const [root] = await storage.branch.list!("chat-1");
+    await storage.branch.create!({
       id: "reroll-page",
       chatId: "chat-1",
       parentBranchId: root.id,
@@ -991,9 +1005,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     });
     await storage.commit(append);
 
-    expect(storage.loadChatBranchGraphPage).toBeTypeOf("function");
-    const first = await storage.loadChatBranchGraphPage!("chat-1", 0, 2);
-    const second = await storage.loadChatBranchGraphPage!("chat-1", 2, 2);
+    expect(storage.branch.graphPage).toBeTypeOf("function");
+    const first = await storage.branch.graphPage!("chat-1", 0, 2);
+    const second = await storage.branch.graphPage!("chat-1", 2, 2);
     expect(first).toMatchObject({ total: 3, offset: 0, hasMore: true });
     expect(second).toMatchObject({ total: 3, offset: 2, hasMore: false });
     const messages = [...first.messages, ...second.messages];
@@ -1023,14 +1037,14 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
   it("switches persistent branches without rewriting existing messages", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);
-    expect(storage.listChatBranches).toBeTypeOf("function");
-    expect(storage.createChatBranch).toBeTypeOf("function");
-    expect(storage.activateChatBranch).toBeTypeOf("function");
-    expect(storage.loadBranchMessages).toBeTypeOf("function");
+    expect(storage.branch.list).toBeTypeOf("function");
+    expect(storage.branch.create).toBeTypeOf("function");
+    expect(storage.branch.activate).toBeTypeOf("function");
+    expect(storage.branch.messages).toBeTypeOf("function");
 
-    const [root] = await storage.listChatBranches!("chat-1");
+    const [root] = await storage.branch.list!("chat-1");
     expect(root).toMatchObject({ reason: "root", headMessageId: "m2" });
-    await storage.createChatBranch!({
+    await storage.branch.create!({
       id: "reroll-1",
       chatId: "chat-1",
       parentBranchId: root.id,
@@ -1049,19 +1063,20 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     });
     await storage.commit(append);
 
+    expect((await storage.message.list("chat-1")).map((m) => m.data)).toEqual([
+      "one",
+      "alternative",
+    ]);
     expect(
-      (await storage.loadChatMessages("chat-1")).map((m) => m.data),
-    ).toEqual(["one", "alternative"]);
-    expect(
-      (await storage.loadBranchMessages!("chat-1", root.id)).map((m) => m.data),
+      (await storage.branch.messages!("chat-1", root.id)).map((m) => m.data),
     ).toEqual(["one", "two"]);
     expect(
       queryLog.where((sql) => /(?:INSERT INTO|UPDATE) messages\b/i.test(sql)),
       "reroll append must write only the new message row",
     ).toHaveLength(1);
 
-    await storage.activateChatBranch!("chat-1", root.id);
-    const switched = await storage.loadChat("chat-1");
+    await storage.branch.activate!("chat-1", root.id);
+    const switched = await storage.chat.load("chat-1");
     expect(switched?.message.map((m) => m.data)).toEqual(["one", "two"]);
     database.close();
   });
@@ -1074,7 +1089,7 @@ describe.each(backendFactories)("$name generation mode", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
 
-    const generation = await storage.loadChatMessages("chat-1", {
+    const generation = await storage.message.list("chat-1", {
       mode: "generation",
     });
     expect(generation.map((m) => m.data)).toEqual(["one", "two"]);
@@ -1083,7 +1098,7 @@ describe.each(backendFactories)("$name generation mode", ({ make }) => {
     expect(generation[0].generationInfo?.model).toBe("test-model");
     expect(generation[0].promptInfo).toBeUndefined();
 
-    const full = await storage.loadChatMessages("chat-1");
+    const full = await storage.message.list("chat-1");
     expect(full[0].promptInfo?.promptName).toBe("preset");
     expect(full[0].generationInfo?.model).toBe("test-model");
     database.close();
@@ -1094,7 +1109,7 @@ describe.each(backendFactories)("$name generation mode", ({ make }) => {
     await seed(storage);
     queryLog.clear();
 
-    await storage.loadChatMessages("chat-1", { mode: "generation" });
+    await storage.message.list("chat-1", { mode: "generation" });
     expect(queryLog.touching("message_extension_nodes")).toBeLessThanOrEqual(2);
     database.close();
   });
@@ -1112,7 +1127,7 @@ describe.each(backendFactories)("$name N+1 defense", ({ make }) => {
     await seed(storage, db);
     queryLog.clear();
 
-    const messages = await storage.loadChatMessages("chat-1");
+    const messages = await storage.message.list("chat-1");
     expect(messages).toHaveLength(50);
     expect(
       queryLog.touching("message_extension_nodes"),

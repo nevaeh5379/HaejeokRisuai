@@ -11,6 +11,76 @@ import {
 function createStorage(overrides: Record<string, unknown> = {}) {
   let summaryReads = 0;
   const storage = {
+    chat: {
+      load: vi.fn(async () => ({
+        id: "chat-1",
+        name: "Chat",
+        note: "",
+        message: [{ chatId: "m3", role: "char", data: "three" }],
+        messageOffset: 2,
+        messageTotal: 3,
+        messagesLoaded: true,
+        messagesFullyLoaded: false,
+        detailsLoaded: true,
+      })),
+    },
+    branch: {
+      graphPage: vi.fn(async (_chatId: string, offset: number) =>
+        offset === 0
+          ? {
+              branches: [
+                {
+                  id: "root",
+                  chatId: "chat-1",
+                  reason: "root",
+                  headMessageId: "m3",
+                  createdAt: 1,
+                },
+              ],
+              activeBranchId: "root",
+              messages: [
+                { chatId: "m1", role: "user", data: "one" },
+                { chatId: "m2", role: "char", data: "two" },
+              ],
+              links: [
+                { messageId: "m1", position: 0, originBranchId: "root" },
+                {
+                  messageId: "m2",
+                  position: 1,
+                  parentMessageId: "m1",
+                  originBranchId: "root",
+                },
+              ],
+              offset: 0,
+              total: 3,
+              hasMore: true,
+            }
+          : {
+              branches: [
+                {
+                  id: "root",
+                  chatId: "chat-1",
+                  reason: "root",
+                  headMessageId: "m3",
+                  createdAt: 1,
+                },
+              ],
+              activeBranchId: "root",
+              messages: [{ chatId: "m3", role: "char", data: "three" }],
+              links: [
+                {
+                  messageId: "m3",
+                  position: 2,
+                  parentMessageId: "m2",
+                  originBranchId: "root",
+                },
+              ],
+              offset: 2,
+              total: 3,
+              hasMore: false,
+            },
+      ),
+    },
     backendKind: "web-sqlite",
     isEnabled: () => true,
     init: vi.fn(async () => true),
@@ -83,72 +153,7 @@ function createStorage(overrides: Record<string, unknown> = {}) {
       detailsLoaded: true,
       chats: [{ id: "chat-1", name: "Chat", message: [] }],
     })),
-    loadChat: vi.fn(async () => ({
-      id: "chat-1",
-      name: "Chat",
-      note: "",
-      message: [{ chatId: "m3", role: "char", data: "three" }],
-      messageOffset: 2,
-      messageTotal: 3,
-      messagesLoaded: true,
-      messagesFullyLoaded: false,
-      detailsLoaded: true,
-    })),
-    loadChatBranchGraphPage: vi.fn(async (_chatId: string, offset: number) =>
-      offset === 0
-        ? {
-            branches: [
-              {
-                id: "root",
-                chatId: "chat-1",
-                reason: "root",
-                headMessageId: "m3",
-                createdAt: 1,
-              },
-            ],
-            activeBranchId: "root",
-            messages: [
-              { chatId: "m1", role: "user", data: "one" },
-              { chatId: "m2", role: "char", data: "two" },
-            ],
-            links: [
-              { messageId: "m1", position: 0, originBranchId: "root" },
-              {
-                messageId: "m2",
-                position: 1,
-                parentMessageId: "m1",
-                originBranchId: "root",
-              },
-            ],
-            offset: 0,
-            total: 3,
-            hasMore: true,
-          }
-        : {
-            branches: [
-              {
-                id: "root",
-                chatId: "chat-1",
-                reason: "root",
-                headMessageId: "m3",
-                createdAt: 1,
-              },
-            ],
-            activeBranchId: "root",
-            messages: [{ chatId: "m3", role: "char", data: "three" }],
-            links: [
-              {
-                messageId: "m3",
-                position: 2,
-                parentMessageId: "m2",
-                originBranchId: "root",
-              },
-            ],
-            offset: 2,
-            total: 3,
-            hasMore: false,
-          },
-    ),
+
     exportDatabaseSnapshot: vi.fn(() => {
       throw new Error("aggregate snapshot must not be called");
     }),
@@ -170,10 +175,10 @@ describe("portable database streaming backup", () => {
     });
 
     expect(storage.exportDatabaseSnapshot).not.toHaveBeenCalled();
-    expect(storage.loadChat).toHaveBeenCalledWith("chat-1", {
+    expect(storage.chat.load).toHaveBeenCalledWith("chat-1", {
       messageLimit: 1,
     });
-    expect(storage.loadChatBranchGraphPage).toHaveBeenCalledTimes(2);
+    expect(storage.branch.graphPage).toHaveBeenCalledTimes(2);
     expect(manifest.totalFragments).toBe(fragments.length);
     expect(manifest.counts.message).toBe(3);
 

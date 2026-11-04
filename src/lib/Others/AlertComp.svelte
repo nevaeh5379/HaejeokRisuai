@@ -227,8 +227,8 @@ import type { Chat } from "@risuai/protocol/domain/database.ts";
         const chat = getBranchGraphChat($alertStore.msg)
         if(!chat?.id) return
         const storage = await getSqlBranchStorage()
-        await storage.activateChatBranch(chat.id, branchId)
-        const loaded = await storage.loadChat(chat.id, {
+        await storage.branch.activate(chat.id, branchId)
+        const loaded = await storage.chat.load(chat.id, {
             messageLimit: Math.max(12, chat.message.length),
         })
         if(!loaded) return
@@ -273,7 +273,7 @@ import type { Chat } from "@risuai/protocol/domain/database.ts";
             branchGraphLoading = true
 
             const storage = await getSqlBranchStorage()
-            const snapshot = await storage.loadChatBranchGraph(chat.id)
+            const snapshot = await storage.branch.graph(chat.id)
             if(generation !== branchGraphLoadGeneration || $alertStore.type !== 'branches') return
             persistedBranchGraph = snapshot
             branchGraphLoading = false

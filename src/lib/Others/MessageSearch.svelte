@@ -46,7 +46,7 @@
         searching = true;
         error = '';
         try {
-            results = await storage.sql.searchMessages(q, scope, 50);
+            results = await storage.sql.message.search(q, scope, 50);
             searched = true;
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);

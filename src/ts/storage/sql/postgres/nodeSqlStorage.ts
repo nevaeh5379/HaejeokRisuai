@@ -1,3 +1,4 @@
+import { createSqlMessageMutations } from "../sqlCommitCoordinator";
 import localforage from "localforage";
 
 const SHARED_TEXT_ENCODER = new TextEncoder();
@@ -191,6 +192,128 @@ export {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
+  chat = {
+    load: async (
+      chatId: string,
+      options?: { messageLimit?: number },
+    ): Promise<Chat | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return await this.readClient.loadChat<Chat>(chatId, options);
+    },
+    listRecent: async (
+      limit?: number,
+      activeChatId?: string,
+    ): Promise<SqlRecentChatMetadata[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.readClient.listRecentChats<SqlRecentChatMetadata>(
+        limit,
+        activeChatId,
+      );
+    },
+  };
+
+  message = {
+    ...createSqlMessageMutations(this),
+    list: async (
+      chatId: string,
+      options: { mode?: "full" | "generation" } = {},
+    ): Promise<Message[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.readClient.loadChatMessages<Message>(chatId, options);
+    },
+    page: async (chatId: string, before: number | undefined, limit: number) => {
+      if (!(await this.ensureEnabled())) {
+        return { messages: [], offset: 0, total: 0, hasMore: false };
+      }
+      return await this.readClient.loadChatMessagePage<{
+        messages: Message[];
+        offset: number;
+        total: number;
+        hasMore: boolean;
+      }>(chatId, before, limit);
+    },
+    search: async (
+      query: string,
+      scope: "all" | "active" | "cold" = "all",
+      limit = 50,
+    ): Promise<NodePostgresMessageSearchResult[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.databaseAdmin.searchMessages(query, scope, limit);
+    },
+  };
+
+  branch = {
+    list: async (chatId: string): Promise<SqlChatBranchSummary[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.readClient.listChatBranches<SqlChatBranchSummary>(
+        chatId,
+      );
+    },
+    graph: async (chatId: string): Promise<SqlChatBranchGraphData> => {
+      if (!(await this.ensureEnabled())) {
+        return { branches: [], messages: [], links: [] };
+      }
+      return (
+        (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(
+          chatId,
+        )) ?? { branches: [], messages: [], links: [] }
+      );
+    },
+    graphPage: async (
+      chatId: string,
+      offset: number,
+      limit: number,
+    ): Promise<SqlChatBranchGraphPage> => {
+      const empty = {
+        branches: [],
+        messages: [],
+        links: [],
+        offset: 0,
+        total: 0,
+        hasMore: false,
+      };
+      if (!(await this.ensureEnabled())) return empty;
+      return (
+        (await this.readClient.loadChatBranchGraphPage<SqlChatBranchGraphPage>(
+          chatId,
+          offset,
+          limit,
+        )) ?? empty
+      );
+    },
+    messages: async (
+      chatId: string,
+      branchId: string,
+      options: {
+        messageLimit?: number;
+        mode?: "full" | "generation" | "graph";
+      } = {},
+    ): Promise<Message[]> => {
+      if (!(await this.ensureEnabled())) return [];
+      return await this.readClient.loadBranchMessages<Message>(
+        chatId,
+        branchId,
+        options,
+      );
+    },
+    create: async (
+      input: SqlCreateChatBranchInput,
+    ): Promise<SqlChatBranchSummary> => {
+      if (!(await this.ensureEnabled())) {
+        throw new Error("SQL storage is not enabled");
+      }
+      return await this.readClient.createChatBranch<SqlChatBranchSummary>(
+        input,
+      );
+    },
+    activate: async (chatId: string, branchId: string): Promise<void> => {
+      if (!(await this.ensureEnabled())) {
+        throw new Error("SQL storage is not enabled");
+      }
+      await this.readClient.activateChatBranch(chatId, branchId);
+    },
+  };
+
   readonly backendKind = "node" as const;
   readonly plugin: IPluginStorage;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
@@ -770,120 +893,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     );
   }
 
-  async loadChat(
-    chatId: string,
-    options?: { messageLimit?: number },
-  ): Promise<Chat | null> {
-    if (!(await this.ensureEnabled())) return null;
-    return await this.readClient.loadChat<Chat>(chatId, options);
-  }
-
-  async loadChatMessages(
-    chatId: string,
-    options: { mode?: "full" | "generation" } = {},
-  ): Promise<Message[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.readClient.loadChatMessages<Message>(chatId, options);
-  }
-
-  async loadChatMessagePage(
-    chatId: string,
-    before: number | undefined,
-    limit: number,
-  ) {
-    if (!(await this.ensureEnabled())) {
-      return { messages: [], offset: 0, total: 0, hasMore: false };
-    }
-    return await this.readClient.loadChatMessagePage<{
-      messages: Message[];
-      offset: number;
-      total: number;
-      hasMore: boolean;
-    }>(chatId, before, limit);
-  }
-
-  async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.readClient.listChatBranches<SqlChatBranchSummary>(chatId);
-  }
-
-  async loadChatBranchGraph(chatId: string): Promise<SqlChatBranchGraphData> {
-    if (!(await this.ensureEnabled())) {
-      return { branches: [], messages: [], links: [] };
-    }
-    return (
-      (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(
-        chatId,
-      )) ?? { branches: [], messages: [], links: [] }
-    );
-  }
-
-  async loadChatBranchGraphPage(
-    chatId: string,
-    offset: number,
-    limit: number,
-  ): Promise<SqlChatBranchGraphPage> {
-    const empty = {
-      branches: [],
-      messages: [],
-      links: [],
-      offset: 0,
-      total: 0,
-      hasMore: false,
-    };
-    if (!(await this.ensureEnabled())) return empty;
-    return (
-      (await this.readClient.loadChatBranchGraphPage<SqlChatBranchGraphPage>(
-        chatId,
-        offset,
-        limit,
-      )) ?? empty
-    );
-  }
-
-  async loadBranchMessages(
-    chatId: string,
-    branchId: string,
-    options: {
-      messageLimit?: number;
-      mode?: "full" | "generation" | "graph";
-    } = {},
-  ): Promise<Message[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.readClient.loadBranchMessages<Message>(
-      chatId,
-      branchId,
-      options,
-    );
-  }
-
-  async createChatBranch(
-    input: SqlCreateChatBranchInput,
-  ): Promise<SqlChatBranchSummary> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("SQL storage is not enabled");
-    }
-    return await this.readClient.createChatBranch<SqlChatBranchSummary>(input);
-  }
-
-  async activateChatBranch(chatId: string, branchId: string): Promise<void> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("SQL storage is not enabled");
-    }
-    await this.readClient.activateChatBranch(chatId, branchId);
-  }
-
-  async listRecentChats(
-    limit?: number,
-    activeChatId?: string,
-  ): Promise<SqlRecentChatMetadata[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.readClient.listRecentChats<SqlRecentChatMetadata>(
-      limit,
-      activeChatId,
-    );
-  }
-
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
     if (!(await this.ensureEnabled())) return [];
     return await this.databaseAdmin.listRevisions(limit);
@@ -1074,15 +1083,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           .catch(() => {});
       },
     };
-  }
-
-  async searchMessages(
-    query: string,
-    scope: "all" | "active" | "cold" = "all",
-    limit = 50,
-  ): Promise<NodePostgresMessageSearchResult[]> {
-    if (!(await this.ensureEnabled())) return [];
-    return await this.databaseAdmin.searchMessages(query, scope, limit);
   }
 
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {

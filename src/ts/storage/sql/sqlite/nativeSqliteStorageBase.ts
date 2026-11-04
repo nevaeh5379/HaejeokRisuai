@@ -1,3 +1,4 @@
+import { createSqlMessageMutations } from "../sqlCommitCoordinator";
 import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import type {
   botPreset,
@@ -83,6 +84,261 @@ import {
 } from "./sqliteStorageUtils";
 
 export abstract class NativeSqliteStorageBase implements ISqlStorage {
+  chat = {
+    load: async (
+      chatId: string,
+      options?: { messageLimit?: number },
+    ): Promise<Chat | null> => {
+      const plan = sqliteChat.buildLoadPlan(chatId, options?.messageLimit);
+      const [
+        chatRows,
+        chatNodeRows,
+        totalRows,
+        messageRows,
+        activeBranchRows,
+        branchCountRows,
+      ] = await this.selectRowSets(sqliteChat.loadStatements(plan));
+      const chatRow = chatRows[0] as sqliteChat.Row | undefined;
+      if (!chatRow) return null;
+      const activeBranch = activeBranchRows[0] as
+        { branch_id: string } | undefined;
+      const branchCount = Number(
+        (branchCountRows[0] as { total?: number } | undefined)?.total ?? 0,
+      );
+      const extension = (
+        chatNodeRows.length ? nodeCodec.rebuild(chatNodeRows) : {}
+      ) as Record<string, unknown>;
+      if (
+        await this.migrateLegacyBranchGraphIfNeeded(
+          chatId,
+          extension,
+          branchCount,
+        )
+      ) {
+        return this.chat.load(chatId, options);
+      }
+      if (!activeBranch) {
+        await this.ensureBranchGraph(chatId);
+        return this.chat.load(chatId, options);
+      }
+      const total = Number(
+        (totalRows[0] as { total?: number } | undefined)?.total ?? 0,
+      );
+      return sqliteChat.hydrateDocument(
+        chatRow,
+        extension,
+        rebuildMessageRows(messageRows),
+        total,
+        activeBranch.branch_id,
+      ) as unknown as Chat;
+    },
+    listRecent: async (
+      limit = 50,
+      activeChatId?: string,
+    ): Promise<SqlRecentChatMetadata[]> => {
+      return (await sqliteEntity.listRecentChats(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        limit,
+        activeChatId,
+      )) as SqlRecentChatMetadata[];
+    },
+  };
+
+  message = {
+    ...createSqlMessageMutations(this),
+    list: async (
+      chatId: string,
+      options?: { mode?: "full" | "generation" },
+    ): Promise<Message[]> => {
+      await this.ensureBranchGraph(chatId);
+      const query = sqliteMessages.buildBranchRowsQuery(
+        chatId,
+        undefined,
+        undefined,
+        options?.mode === "generation" ? "generation" : "full",
+      );
+      return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
+    },
+    page: async (chatId: string, before: number | undefined, limit: number) => {
+      await this.ensureBranchGraph(chatId);
+      const totalQuery = sqliteMessages.buildBranchCountQuery(chatId);
+      const totalRow = await this.selectOne<{ total: number }>(
+        totalQuery.sql,
+        totalQuery.bind,
+      );
+      const page = sqliteChat.buildMessagePagePlan(
+        chatId,
+        before,
+        Number(totalRow?.total ?? 0),
+        limit,
+      );
+      return {
+        messages: rebuildMessageRows(
+          await this.selectRows(page.statement.sql, page.statement.bind),
+        ),
+        offset: page.offset,
+        total: page.total,
+        hasMore: page.hasMore,
+      };
+    },
+    search: async (
+      query: string,
+      scope: "all" | "active" | "cold" = "all",
+      limit: number = 50,
+    ): Promise<NodePostgresMessageSearchResult[]> => {
+      void scope;
+      return await sqliteAdmin.searchMessages(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        query,
+        limit,
+      );
+    },
+  };
+
+  branch = {
+    list: async (chatId: string): Promise<SqlChatBranchSummary[]> => {
+      await this.ensureBranchGraph(chatId);
+      return (await sqliteBranch.list(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+      )) as SqlChatBranchSummary[];
+    },
+    graph: async (chatId: string) => {
+      await this.ensureBranchGraph(chatId);
+      const metadata = await sqliteBranch.loadMetadata(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+      );
+      const graphQuery = sqliteMessages.buildGraphRowsQuery(chatId);
+      const graphRows = await this.selectRows<Record<string, unknown>>(
+        graphQuery.sql,
+        graphQuery.bind,
+      );
+      return {
+        branches: metadata.branches as SqlChatBranchSummary[],
+        activeBranchId: metadata.activeBranchId,
+        messages: rebuildBranchGraphMessages(graphRows),
+        links: graphRows.map((row) => ({
+          messageId: String(row.message_id),
+          parentMessageId:
+            row.graph_parent_message_id == null
+              ? undefined
+              : String(row.graph_parent_message_id),
+          originBranchId: String(row.graph_origin_branch_id),
+        })),
+      };
+    },
+    graphPage: async (chatId: string, offset: number, limit: number) => {
+      await this.ensureBranchGraph(chatId);
+      const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
+      const normalizedLimit = normalizeLimit(limit);
+      const metadata = await sqliteBranch.loadMetadata(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+      );
+      const countQuery = sqliteMessages.buildGraphCountQuery(chatId);
+      const countRow = await this.selectOne<{ total: number }>(
+        countQuery.sql,
+        countQuery.bind,
+      );
+      const total = Number(countRow?.total ?? 0);
+      const pageQuery = sqliteMessages.buildGraphPageQuery(
+        chatId,
+        normalizedOffset,
+        normalizedLimit,
+      );
+      const rows = await this.selectRows<Record<string, unknown>>(
+        pageQuery.sql,
+        pageQuery.bind,
+      );
+      return {
+        branches: metadata.branches as SqlChatBranchSummary[],
+        activeBranchId: metadata.activeBranchId,
+        messages: rebuildMessageRows(rows),
+        links: sqliteMessages.rebuildGraphLinks(rows),
+        offset: normalizedOffset,
+        total,
+        hasMore: normalizedOffset + normalizedLimit < total,
+      };
+    },
+    messages: async (
+      chatId: string,
+      branchId: string,
+      options?: {
+        messageLimit?: number;
+        mode?: "full" | "generation" | "graph";
+      },
+    ): Promise<Message[]> => {
+      await this.ensureBranchGraph(chatId);
+      const limit =
+        options?.messageLimit === undefined
+          ? undefined
+          : normalizeLimit(options.messageLimit);
+      const query = sqliteMessages.buildBranchRowsQuery(
+        chatId,
+        branchId,
+        limit,
+        options?.mode === "generation"
+          ? "generation"
+          : options?.mode === "graph"
+            ? "graph"
+            : "full",
+      );
+      return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
+    },
+    create: async (
+      input: SqlCreateChatBranchInput,
+    ): Promise<SqlChatBranchSummary> => {
+      await this.writeQueue.run(async () => {
+        let parentBranchId =
+          input.parentBranchId ??
+          (await sqliteBranch.getActiveId(
+            this.selectRows.bind(this) as SqliteSelectRows,
+            input.chatId,
+          ));
+        if (!parentBranchId) {
+          await this.executeNativeTransaction(
+            null,
+            sqliteBranch.ensureGraphStatements(input.chatId),
+          );
+          parentBranchId = await sqliteBranch.getActiveId(
+            this.selectRows.bind(this) as SqliteSelectRows,
+            input.chatId,
+          );
+        }
+        if (!parentBranchId) throw new Error("Chat branch root does not exist");
+        await this.executeNativeTransaction(
+          null,
+          sqliteBranch.buildCreateStatements(input, parentBranchId),
+        );
+      });
+      const branch = await sqliteBranch.load(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        input.chatId,
+        input.id,
+      );
+      if (!branch) throw new Error("Failed to create chat branch");
+      return branch as SqlChatBranchSummary;
+    },
+    activate: async (chatId: string, branchId: string): Promise<void> => {
+      await this.ensureBranchGraph(chatId);
+      if (
+        !(await sqliteBranch.exists(
+          this.selectRows.bind(this) as SqliteSelectRows,
+          chatId,
+          branchId,
+        ))
+      ) {
+        throw new Error("Chat branch does not exist");
+      }
+      await this.writeQueue.run(() =>
+        this.executeNativeTransaction(null, [
+          sqliteBranch.buildActivateStatement(chatId, branchId),
+        ]),
+      );
+    },
+  };
+
   abstract readonly backendKind: "tauri-sqlite" | "capacitor-sqlite";
 
   readonly plugin: IPluginStorage = new SqlitePluginStorage(
@@ -313,7 +569,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       selectRowSets: this.selectRowSets.bind(this) as SqliteSelectRowSets,
       revision: this.revision,
       legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
-      loadChatMessages: (chatId) => this.loadChatMessages(chatId),
+      loadChatMessages: (chatId) => this.message.list(chatId),
     })) as SqlDatabaseSnapshotResult;
   }
 
@@ -592,95 +848,6 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     return fullChar;
   }
 
-  async loadChat(
-    chatId: string,
-    options?: { messageLimit?: number },
-  ): Promise<Chat | null> {
-    const plan = sqliteChat.buildLoadPlan(chatId, options?.messageLimit);
-    const [
-      chatRows,
-      chatNodeRows,
-      totalRows,
-      messageRows,
-      activeBranchRows,
-      branchCountRows,
-    ] = await this.selectRowSets(sqliteChat.loadStatements(plan));
-    const chatRow = chatRows[0] as sqliteChat.Row | undefined;
-    if (!chatRow) return null;
-    const activeBranch = activeBranchRows[0] as
-      { branch_id: string } | undefined;
-    const branchCount = Number(
-      (branchCountRows[0] as { total?: number } | undefined)?.total ?? 0,
-    );
-    const extension = (
-      chatNodeRows.length ? nodeCodec.rebuild(chatNodeRows) : {}
-    ) as Record<string, unknown>;
-    if (
-      await this.migrateLegacyBranchGraphIfNeeded(
-        chatId,
-        extension,
-        branchCount,
-      )
-    ) {
-      return this.loadChat(chatId, options);
-    }
-    if (!activeBranch) {
-      await this.ensureBranchGraph(chatId);
-      return this.loadChat(chatId, options);
-    }
-    const total = Number(
-      (totalRows[0] as { total?: number } | undefined)?.total ?? 0,
-    );
-    return sqliteChat.hydrateDocument(
-      chatRow,
-      extension,
-      rebuildMessageRows(messageRows),
-      total,
-      activeBranch.branch_id,
-    ) as unknown as Chat;
-  }
-
-  async loadChatMessages(
-    chatId: string,
-    options?: { mode?: "full" | "generation" },
-  ): Promise<Message[]> {
-    await this.ensureBranchGraph(chatId);
-    const query = sqliteMessages.buildBranchRowsQuery(
-      chatId,
-      undefined,
-      undefined,
-      options?.mode === "generation" ? "generation" : "full",
-    );
-    return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
-  }
-
-  async loadChatMessagePage(
-    chatId: string,
-    before: number | undefined,
-    limit: number,
-  ) {
-    await this.ensureBranchGraph(chatId);
-    const totalQuery = sqliteMessages.buildBranchCountQuery(chatId);
-    const totalRow = await this.selectOne<{ total: number }>(
-      totalQuery.sql,
-      totalQuery.bind,
-    );
-    const page = sqliteChat.buildMessagePagePlan(
-      chatId,
-      before,
-      Number(totalRow?.total ?? 0),
-      limit,
-    );
-    return {
-      messages: rebuildMessageRows(
-        await this.selectRows(page.statement.sql, page.statement.bind),
-      ),
-      offset: page.offset,
-      total: page.total,
-      hasMore: page.hasMore,
-    };
-  }
-
   private async loadLinearMessages(chatId: string): Promise<Message[]> {
     const query = sqliteMessages.buildRowsQuery(
       chatId,
@@ -756,161 +923,6 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
         sqliteBranch.ensureGraphStatements(chatId),
       ),
     );
-  }
-
-  async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
-    await this.ensureBranchGraph(chatId);
-    return (await sqliteBranch.list(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      chatId,
-    )) as SqlChatBranchSummary[];
-  }
-
-  async loadChatBranchGraph(chatId: string) {
-    await this.ensureBranchGraph(chatId);
-    const metadata = await sqliteBranch.loadMetadata(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      chatId,
-    );
-    const graphQuery = sqliteMessages.buildGraphRowsQuery(chatId);
-    const graphRows = await this.selectRows<Record<string, unknown>>(
-      graphQuery.sql,
-      graphQuery.bind,
-    );
-    return {
-      branches: metadata.branches as SqlChatBranchSummary[],
-      activeBranchId: metadata.activeBranchId,
-      messages: rebuildBranchGraphMessages(graphRows),
-      links: graphRows.map((row) => ({
-        messageId: String(row.message_id),
-        parentMessageId:
-          row.graph_parent_message_id == null
-            ? undefined
-            : String(row.graph_parent_message_id),
-        originBranchId: String(row.graph_origin_branch_id),
-      })),
-    };
-  }
-
-  async loadChatBranchGraphPage(chatId: string, offset: number, limit: number) {
-    await this.ensureBranchGraph(chatId);
-    const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
-    const normalizedLimit = normalizeLimit(limit);
-    const metadata = await sqliteBranch.loadMetadata(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      chatId,
-    );
-    const countQuery = sqliteMessages.buildGraphCountQuery(chatId);
-    const countRow = await this.selectOne<{ total: number }>(
-      countQuery.sql,
-      countQuery.bind,
-    );
-    const total = Number(countRow?.total ?? 0);
-    const pageQuery = sqliteMessages.buildGraphPageQuery(
-      chatId,
-      normalizedOffset,
-      normalizedLimit,
-    );
-    const rows = await this.selectRows<Record<string, unknown>>(
-      pageQuery.sql,
-      pageQuery.bind,
-    );
-    return {
-      branches: metadata.branches as SqlChatBranchSummary[],
-      activeBranchId: metadata.activeBranchId,
-      messages: rebuildMessageRows(rows),
-      links: sqliteMessages.rebuildGraphLinks(rows),
-      offset: normalizedOffset,
-      total,
-      hasMore: normalizedOffset + normalizedLimit < total,
-    };
-  }
-
-  async loadBranchMessages(
-    chatId: string,
-    branchId: string,
-    options?: { messageLimit?: number; mode?: "full" | "generation" | "graph" },
-  ): Promise<Message[]> {
-    await this.ensureBranchGraph(chatId);
-    const limit =
-      options?.messageLimit === undefined
-        ? undefined
-        : normalizeLimit(options.messageLimit);
-    const query = sqliteMessages.buildBranchRowsQuery(
-      chatId,
-      branchId,
-      limit,
-      options?.mode === "generation"
-        ? "generation"
-        : options?.mode === "graph"
-          ? "graph"
-          : "full",
-    );
-    return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
-  }
-
-  async createChatBranch(
-    input: SqlCreateChatBranchInput,
-  ): Promise<SqlChatBranchSummary> {
-    await this.writeQueue.run(async () => {
-      let parentBranchId =
-        input.parentBranchId ??
-        (await sqliteBranch.getActiveId(
-          this.selectRows.bind(this) as SqliteSelectRows,
-          input.chatId,
-        ));
-      if (!parentBranchId) {
-        await this.executeNativeTransaction(
-          null,
-          sqliteBranch.ensureGraphStatements(input.chatId),
-        );
-        parentBranchId = await sqliteBranch.getActiveId(
-          this.selectRows.bind(this) as SqliteSelectRows,
-          input.chatId,
-        );
-      }
-      if (!parentBranchId) throw new Error("Chat branch root does not exist");
-      await this.executeNativeTransaction(
-        null,
-        sqliteBranch.buildCreateStatements(input, parentBranchId),
-      );
-    });
-    const branch = await sqliteBranch.load(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      input.chatId,
-      input.id,
-    );
-    if (!branch) throw new Error("Failed to create chat branch");
-    return branch as SqlChatBranchSummary;
-  }
-
-  async activateChatBranch(chatId: string, branchId: string): Promise<void> {
-    await this.ensureBranchGraph(chatId);
-    if (
-      !(await sqliteBranch.exists(
-        this.selectRows.bind(this) as SqliteSelectRows,
-        chatId,
-        branchId,
-      ))
-    ) {
-      throw new Error("Chat branch does not exist");
-    }
-    await this.writeQueue.run(() =>
-      this.executeNativeTransaction(null, [
-        sqliteBranch.buildActivateStatement(chatId, branchId),
-      ]),
-    );
-  }
-
-  async listRecentChats(
-    limit = 50,
-    activeChatId?: string,
-  ): Promise<SqlRecentChatMetadata[]> {
-    return (await sqliteEntity.listRecentChats(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      limit,
-      activeChatId,
-    )) as SqlRecentChatMetadata[];
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
@@ -1094,19 +1106,6 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     revisionId: number,
   ): Promise<{ revision: number; revisionId: number }> {
     return { revision: this.revision, revisionId };
-  }
-
-  async searchMessages(
-    query: string,
-    scope: "all" | "active" | "cold" = "all",
-    limit: number = 50,
-  ): Promise<NodePostgresMessageSearchResult[]> {
-    void scope;
-    return await sqliteAdmin.searchMessages(
-      this.selectRows.bind(this) as SqliteSelectRows,
-      query,
-      limit,
-    );
   }
 
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {

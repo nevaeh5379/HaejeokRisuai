@@ -151,12 +151,12 @@ async function* iterateColdStorage(
   }
 }
 function requireBranchPageLoader(storage: ISqlStorage) {
-  if (!storage.loadChatBranchGraphPage) {
+  if (!storage.branch.graphPage) {
     throw new Error(
       "This SQL backend cannot page branch graph messages. Upgrade the storage implementation before syncing.",
     );
   }
-  return storage.loadChatBranchGraphPage.bind(storage);
+  return storage.branch.graphPage.bind(storage.branch);
 }
 
 function linkByMessageId(links: SqlChatBranchGraphLink[]) {
@@ -262,7 +262,7 @@ async function* iterateEntities(
         throw new Error(
           `Storage sync encountered a chat without an id for character ${id}.`,
         );
-      const chat = await storage.loadChat(chatId, { messageLimit: 1 });
+      const chat = await storage.chat.load(chatId, { messageLimit: 1 });
       if (!chat) throw new Error(`Storage sync chat disappeared: ${chatId}`);
       yield {
         type: "chat",

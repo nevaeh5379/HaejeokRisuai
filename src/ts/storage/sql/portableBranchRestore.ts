@@ -49,7 +49,7 @@ export async function restorePortableChatBranchGraph(
   const root = sourceRoot(graph);
   if (!root) return;
 
-  const existing = await storage.listChatBranches(chatId);
+  const existing = await storage.branch.list(chatId);
   const targetRoot =
     existing.find((branch) => branch.reason === "root") ?? existing[0];
   if (!targetRoot)
@@ -74,7 +74,7 @@ export async function restorePortableChatBranchGraph(
 
     let targetBranchId = branch.id;
     if (existingIds.has(targetBranchId)) targetBranchId = crypto.randomUUID();
-    const created = await storage.createChatBranch({
+    const created = await storage.branch.create({
       id: targetBranchId,
       chatId,
       parentBranchId,
@@ -114,7 +114,7 @@ export async function restorePortableChatBranchGraph(
   const targetActive = graph.activeBranchId
     ? idMap.get(graph.activeBranchId)
     : targetRoot.id;
-  await storage.activateChatBranch(chatId, targetActive ?? targetRoot.id);
+  await storage.branch.activate(chatId, targetActive ?? targetRoot.id);
 }
 
 export async function restorePortableDatabaseBranchGraphs(
