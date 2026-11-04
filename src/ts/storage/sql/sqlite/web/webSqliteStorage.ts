@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
   DatabaseSettings,
-  character,
   groupChat,
   Chat,
   Message,
@@ -13,6 +12,7 @@ import type {
   loreBook,
   customscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {

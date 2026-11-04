@@ -1,7 +1,5 @@
-import type {
-  character,
-  MessageGenerationInfo,
-} from "@risuai/protocol/domain/database.ts";
+import type { MessageGenerationInfo } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { messageStore } from "../../stores/domain/messageStore.svelte";

@@ -1,8 +1,5 @@
-import type {
-  character,
-  Chat,
-  groupChat,
-} from "@risuai/protocol/domain/database.ts";
+import type { Chat, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";

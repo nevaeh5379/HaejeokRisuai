@@ -2,11 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
 import { duplicateChat } from "./characters";
 import { createChatCopyName } from "./globalApi.svelte";
-import type {
-  character,
-  Chat,
-  Message,
-} from "@risuai/protocol/domain/database.ts";
+import type { Chat, Message } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
 import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";

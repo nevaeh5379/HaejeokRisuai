@@ -1,9 +1,7 @@
 import { v4 } from "uuid";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
-import type {
-  character,
-  RisuPersona,
-} from "@risuai/protocol/domain/database.ts";
+import type { RisuPersona } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { createBlankChar } from "src/ts/characters";
 
 export function convertModuleToCharacter(m: RisuModule): character {

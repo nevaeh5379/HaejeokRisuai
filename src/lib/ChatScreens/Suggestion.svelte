@@ -4,7 +4,8 @@
 import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
     import type { OpenAIChat } from "@risuai/chat-core/types.ts";
     import { activeGenerationChatIds } from "../../ts/process/chat/runtimeState";
-import type { character, Message, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { Message, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { selectedCharID } from "../../ts/stores.svelte";
     import { isTauri } from 'src/ts/platform';

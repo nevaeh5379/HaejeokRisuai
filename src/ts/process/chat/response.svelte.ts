@@ -1,10 +1,10 @@
 import type {
-  character,
   groupChat,
   Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 import { processStreamingResponse } from "./streamingResponse.svelte";
 import { processNonStreamingResponse } from "./nonStreamingResponse.svelte";

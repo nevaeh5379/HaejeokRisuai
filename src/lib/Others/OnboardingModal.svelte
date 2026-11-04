@@ -6,7 +6,8 @@
     import { language } from "src/lang";
     import { onboardingModalStore, selectedCharID } from "src/ts/stores.svelte";
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme";
-import type { character, OnboardingQuestion } from "@risuai/protocol/domain/database.ts";
+import type { OnboardingQuestion } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
     import {
         applyOnboardingAnswers,
         getActiveOnboarding,

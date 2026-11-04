@@ -9,7 +9,8 @@ import { characterStore } from "./characterStore.svelte";
 import { setSqlStorageForTesting } from "../../storage/sql/sqlStorageFactory";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
 import type { SqlCommit, SqlCommitResult } from "../../storage/sql/sqlCommit";
-import type { character, Message } from "@risuai/protocol/domain/database.ts";
+import type { Message } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 class MockSqlStorage {
   character = {

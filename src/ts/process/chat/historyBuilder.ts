@@ -1,10 +1,10 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type {
-  character,
   Chat,
   groupChat,
   Message,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { replaceTargetChat, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../../tokenizer";

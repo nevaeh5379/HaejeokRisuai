@@ -7,7 +7,8 @@ import { getModuleToggles } from "src/ts/process/modules";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
 import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
-import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
     import Accordion from '../UI/Accordion.svelte'
     import CheckInput from "../UI/GUI/CheckInput.svelte";

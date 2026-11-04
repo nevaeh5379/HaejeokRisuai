@@ -14,7 +14,8 @@
     PlusIcon,
   } from "@lucide/svelte";
 
-import type { Chat, ChatFolder, character, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { Chat, ChatFolder, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
   import {
     ReloadGUIPointer,
     selectedCharID,

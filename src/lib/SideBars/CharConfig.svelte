@@ -3,7 +3,8 @@
     import IllustrationSettings from "../Setting/Pages/IllustrationSettings.svelte";
     import { language } from "../../lang";
     import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
-import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
     import { characterStore, settingsStore, moduleStore } from 'src/ts/stores/domain';
     import { onDestroy } from 'svelte';

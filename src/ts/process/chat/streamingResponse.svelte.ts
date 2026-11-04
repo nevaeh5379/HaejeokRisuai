@@ -1,11 +1,11 @@
 import type {
-  character,
   groupChat,
   Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
   StreamingDisplayOptimizationMode,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";

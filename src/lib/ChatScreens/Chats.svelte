@@ -1,5 +1,6 @@
 <script lang="ts">
-import type { character, groupChat, Message, StreamingDisplayOptimizationMode } from "@risuai/protocol/domain/database.ts";
+import type { groupChat, Message, StreamingDisplayOptimizationMode } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
     import { mount, onDestroy, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';

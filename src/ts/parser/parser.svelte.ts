@@ -2,11 +2,11 @@ import DOMPurify from "dompurify";
 import markdownit from "markdown-it";
 import { appVer } from "../appVersion";
 import type {
-  character,
   customscript,
   groupChat,
   triggerscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { SettingsState } from "../stores/domain/stateOwnership";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 

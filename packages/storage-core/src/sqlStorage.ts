@@ -1,6 +1,5 @@
 import type {
   DatabaseSettings,
-  character,
   groupChat,
   Chat,
   Message,
@@ -9,6 +8,7 @@ import type {
   loreBook,
   customscript,
 } from "../../protocol/domain/database.ts";
+import type { character } from "../../protocol/domain/legacy/character.ts";
 import type { Database } from "../../protocol/domain/legacy/database.ts";
 import type {
   AuthorNoteMetadata,

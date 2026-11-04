@@ -56,7 +56,8 @@ type PluginSafetyError = {
     | "errorInVerification"
     | "storageAccess";
 };
-type Character = import("@risuai/protocol/domain/database.ts").character;
+type Character =
+  import("@risuai/protocol/domain/legacy/character.ts").character;
 type GroupChat = import("@risuai/protocol/domain/database.ts").groupChat;
 type Database = import("@risuai/protocol/domain/legacy/database.ts").Database;
 type SimpleCharacter = import("./parser/parser.svelte").simpleCharacterArgument;

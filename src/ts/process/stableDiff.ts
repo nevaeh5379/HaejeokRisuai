@@ -1,6 +1,6 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get } from "svelte/store";
-import type { character } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { requestChatData } from "./request/chatRequestOrchestrator";

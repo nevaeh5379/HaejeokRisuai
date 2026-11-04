@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
-import type { character } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 export function createBlankChar(): character {
   return {

@@ -113,11 +113,8 @@ export interface LogExportProgressCallbacks {
 // 4. Chat Data Model (native)
 // ============================================================================
 
-import type {
-  character,
-  groupChat,
-  Message,
-} from "@risuai/protocol/domain/database.ts";
+import type { groupChat, Message } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 /** A single rendered log entry ready for theming. */
 export interface LogMessageData {

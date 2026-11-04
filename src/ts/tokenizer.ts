@@ -3,11 +3,8 @@ import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { Tiktoken } from "@dqbd/tiktoken";
 import type { Tokenizer } from "@mlc-ai/web-tokenizers";
-import type {
-  groupChat,
-  character,
-  Chat,
-} from "@risuai/protocol/domain/database.ts";
+import type { groupChat, Chat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
 import {

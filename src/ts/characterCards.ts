@@ -16,13 +16,13 @@ import {
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import type {
   charBookExtensions,
-  character,
   customscript,
   loreSettings,
   loreBook,
   triggerscript,
   groupChat,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { importPreset } from "./storage/presets/presetService";
 
 import {

@@ -1,11 +1,11 @@
 import { readNote } from "../../authorNote";
 import { get } from "svelte/store";
 import type {
-  character,
   groupChat,
   Chat,
   MessagePresetInfo,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { changeToPreset } from "../../storage/presets/presetService";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { characterStore } from "../../stores/domain/characterStore.svelte";

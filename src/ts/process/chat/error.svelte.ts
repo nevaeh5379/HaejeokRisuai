@@ -1,5 +1,9 @@
 import { get } from "svelte/store";
-import type { character, Message, MessageGenerationInfo } from "@risuai/protocol/domain/database.ts";
+import type {
+  Message,
+  MessageGenerationInfo,
+} from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { selectedCharID } from "../../stores.svelte";

@@ -3,12 +3,12 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/files/assetPersistence";
 import type {
-  character,
   groupChat,
   Chat,
   loreBook,
   Message,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { safeStructuredClone } from "./polyfill";
 

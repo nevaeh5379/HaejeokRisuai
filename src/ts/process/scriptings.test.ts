@@ -926,7 +926,7 @@ test("author note triggers read raw text and gate shared writes, including previ
         ],
       },
     ],
-  } as unknown as import("@risuai/protocol/domain/database.ts").character;
+  } as unknown as import("@risuai/protocol/domain/legacy/character.ts").character;
   const makeChat = () =>
     ({
       message: [],

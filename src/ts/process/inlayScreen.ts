@@ -1,5 +1,5 @@
 import { writeInlayImage } from "./files/inlays";
-import type { character } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { generateAIImage } from "./stableDiff";
 
 const imggenRegex = [/<ImgGen="(.+?)">/gi, /{{ImgGen="(.+?)"}}/gi] as const;

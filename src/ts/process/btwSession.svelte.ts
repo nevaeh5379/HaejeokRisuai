@@ -3,12 +3,12 @@ import type {
   BtwSession,
   BtwSessionConfig,
   botPreset,
-  character,
   Chat,
   groupChat,
   Message,
   MessagePresetInfo,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { safeStructuredClone } from "../polyfill";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";

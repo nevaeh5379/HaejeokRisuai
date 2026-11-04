@@ -1,5 +1,6 @@
 <script lang="ts">
-import type { character, groupChat, folder } from "@risuai/protocol/domain/database.ts";
+import type { groupChat, folder } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { createNewCharacter, createNewGroup, changeChar, getCharImage, removeChar, duplicateCharacter } from "src/ts/characters";

@@ -6,11 +6,8 @@ import type {
 } from "@risuai/protocol/src/illustration.ts";
 import { readIllustrationHistory } from "@risuai/protocol/src/illustrationStorage.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type {
-  character,
-  Chat,
-  Message,
-} from "@risuai/protocol/domain/database.ts";
+import type { Chat, Message } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { getPersonaPrompt } from "../../util";
 import { risuChatParser } from "../scripts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";

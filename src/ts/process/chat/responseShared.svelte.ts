@@ -1,4 +1,5 @@
-import type { character, Chat } from "@risuai/protocol/domain/database.ts";
+import type { Chat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { pluginV2 } from "../../plugins/plugins.svelte";
 import { risuChatParser } from "../scripts";

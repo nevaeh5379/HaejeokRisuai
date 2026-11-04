@@ -1,10 +1,10 @@
 import type {
   Chat,
   Message,
-  character,
   groupChat,
   botPreset,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import { v4 as uuidv4 } from "uuid";
 import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";

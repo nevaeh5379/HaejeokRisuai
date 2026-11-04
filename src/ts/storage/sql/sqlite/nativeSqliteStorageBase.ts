@@ -2,7 +2,6 @@ import { createSqlMessageMutations } from "../sqlCommitCoordinator";
 import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import type {
   botPreset,
-  character,
   Chat,
   customscript,
   DatabaseSettings,
@@ -11,6 +10,7 @@ import type {
   Message,
   RisuPersona,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type {
   Database,
   Database as DatabaseType,

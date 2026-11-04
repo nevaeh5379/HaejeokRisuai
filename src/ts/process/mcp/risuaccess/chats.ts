@@ -5,7 +5,8 @@ import {
 } from "../mcplib";
 import { getCharacter } from "./utils";
 import type { MCPToolCallContext } from "../mcp";
-import type { character, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { resolveChatTarget } from "../../../chatTarget";
 
 export class ChatHandler extends MCPToolHandler {

@@ -1,10 +1,10 @@
 import type {
-  character,
   groupChat,
   RisuPersona,
   RisuModule,
   botPreset,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 import { characterStore } from "../../stores/domain/characterStore.svelte";

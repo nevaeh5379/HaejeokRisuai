@@ -20,10 +20,10 @@ import {
 import { LuaEngine, LuaFactory } from "wasmoon";
 import type {
   Chat,
-  character,
   groupChat,
   triggerscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import { get } from "svelte/store";
 import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";

@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  character,
-  customscript,
-} from "@risuai/protocol/domain/database.ts";
+import type { customscript } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 const database = vi.hoisted(() => ({ regex: [] as customscript[] }));
 

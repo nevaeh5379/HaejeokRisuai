@@ -4,10 +4,10 @@ import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
 import { parseChatML } from "../parser/chatML";
 import type {
-  character,
   customscript,
   groupChat,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import {
   defaultTranslatorPrompt,

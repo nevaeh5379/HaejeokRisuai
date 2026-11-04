@@ -1,10 +1,7 @@
 import { language } from "src/lang";
 import { alertConfirm } from "src/ts/alert";
-import type {
-  character,
-  groupChat,
-  loreBook,
-} from "@risuai/protocol/domain/database.ts";
+import type { groupChat, loreBook } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { pickHashRand } from "src/ts/util";
 import {

@@ -9,10 +9,10 @@ import {
   selectedCharID,
 } from "../stores.svelte";
 import type {
-  character,
   customscript,
   groupChat,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
 
 import { downloadFile } from "../globalApi.svelte";

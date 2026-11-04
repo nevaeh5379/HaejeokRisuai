@@ -1,12 +1,12 @@
 import type { ChatExecutionTarget } from "./chatTarget";
 import { v4 } from "uuid";
 import type {
-  character,
   CharacterOnboarding,
   Chat,
   groupChat,
   OnboardingQuestion,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { getChatVar, setChatVar } from "./parser/chatVar.svelte";
 
 export const onboardingVarNameAttr = "risu-change-var-name";

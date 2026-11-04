@@ -13,12 +13,12 @@ import {
 } from "../alert";
 import type {
   Chat,
-  character,
   customscript,
   groupChat,
   loreBook,
   triggerscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import {
   AppendableBuffer,

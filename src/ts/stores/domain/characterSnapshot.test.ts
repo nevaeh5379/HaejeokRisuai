@@ -30,7 +30,8 @@ import * as util from "../../util";
 import { selectedCharID } from "../../stores.svelte";
 import type { DatabaseSync } from "node:sqlite";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type { character, botPreset } from "@risuai/protocol/domain/database.ts";
+import type { botPreset } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 
 describe.each([

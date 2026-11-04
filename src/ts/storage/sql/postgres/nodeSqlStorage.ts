@@ -10,7 +10,6 @@ import { getNodeClientSessionId } from "../../../network/nodeClientSession";
 import type {
   DatabaseSettings,
   Message,
-  character,
   groupChat,
   Chat,
   RisuPersona,
@@ -18,6 +17,7 @@ import type {
   loreBook,
   customscript,
 } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import type { Database } from "@risuai/protocol/domain/legacy/database.ts";
 import type { RisuModule } from "@risuai/protocol/domain/modules.ts";
 import type {

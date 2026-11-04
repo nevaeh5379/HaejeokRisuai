@@ -1,11 +1,8 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { parseChatML } from "src/ts/parser/chatML";
-import type {
-  Chat,
-  character,
-  groupChat,
-} from "@risuai/protocol/domain/database.ts";
+import type { Chat, groupChat } from "@risuai/protocol/domain/database.ts";
+import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatTokenizer } from "src/ts/tokenizer";
