@@ -207,7 +207,7 @@ import {
   type PostgresPool,
 } from "kysely";
 import { Pool } from "pg";
-import { characterPatch } from "./characterPatch.ts";
+import { characterPatch } from "./patch/character/index.ts";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
 type SqlParameter = unknown;

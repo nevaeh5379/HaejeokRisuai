@@ -12,7 +12,7 @@
 |---|---|
 | `azure/azureStorage.ts` | 6,416 |
 | `oracle/oracleStorage.ts` | 6,685 |
-| `postgres/postgresStorage.ts` | 6,955 |
+| `postgres/storage.ts` | 6,955 |
 
 앞선 두 커밋에서 방언과 무관한 로직(옵션 파싱, 캐시 무효화, 결과 조립, read model 가공)은
 공용으로 옮겼다. 남은 중복 5,393줄 중 **3,090줄이 SQL 문장 자체**다.
@@ -54,7 +54,7 @@
 **비목표**
 
 - `*.sql` 스키마 파일 3벌(`azure-schema.sql`, `oracle-schema.sql`,
-  `postgres-schema.sql`)의 DDL 통합. 별개 프로젝트다.
+  `schema.sql`)의 DDL 통합. 별개 프로젝트다.
 - 자산 저장소(`assetStorage.ts`, S3/Azure Blob) 경로. SQL과 무관하다.
 - 클라이언트 프로토콜·응답 형태 변경.
 - 새 런타임 의존성. `pg`/`mssql`/`oracledb` 외에 아무것도 추가하지 않는다.
@@ -207,7 +207,7 @@ export interface SqlDialect {
 드라이버는 방언 인스턴스를 만들어 공용 함수에 넘긴다.
 
 ```ts
-// postgresStorage.ts
+// storage.ts
 const dialect = new PostgresDialect(client);
 await this.exportSnapshotWith(dialect);             // 공용
 await applySyncPayload(dialect, payload, ctx);      // 공용 (2단계)
