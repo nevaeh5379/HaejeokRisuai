@@ -63,17 +63,14 @@ const updateCache = new Map<
 
 export const checkPluginUpdate = async (plugin: PluginMetadata) => {
   try {
-    if (!plugin.updateURL) {
-      return;
-    }
+    if (!plugin.updateURL) return;
 
     if (updateCache.has(plugin.name)) {
       const cached = updateCache.get(plugin.name);
       if (
         compareVersions(cached.version, plugin.versionOfPlugin || "0.0.0") === 1
-      ) {
+      )
         return cached;
-      }
     }
 
     const response = await fetch(plugin.updateURL, {
@@ -111,9 +108,8 @@ export const checkPluginUpdate = async (plugin: PluginMetadata) => {
 
 export async function updatePlugin(plugin: PluginMetadata) {
   try {
-    if (!plugin.updateURL) {
-      return false;
-    }
+    if (!plugin.updateURL) return false;
+
     const response = await fetch(plugin.updateURL);
     if (response.status >= 200 && response.status < 300) {
       const jsFile = await response.text();
@@ -140,52 +136,45 @@ export async function importPlugin(
 ) {
   try {
     let jsFile = "";
-    let isUpdate = argu.isUpdate || false;
-    let originalPluginName = argu.originalPluginName || "";
+    const isUpdate = argu.isUpdate || false;
+    const originalPluginName = argu.originalPluginName || "";
     let isTypescript = argu.isTypescript || false;
 
     if (!code) {
       const f = await selectSingleFile(["js", "ts"]);
-      if (!f) {
-        return;
-      }
-      if (f.name.endsWith(".ts")) {
-        isTypescript = true;
-      }
+      if (!f) return;
+
+      if (f.name.endsWith(".ts")) isTypescript = true;
+
       //support utf-8 with BOM or without BOM
       jsFile = Buffer.from(f.data)
         .toString("utf-8")
         .replace(/^\uFEFF/gm, "");
-    } else {
-      jsFile = code;
-    }
+    } else jsFile = code;
 
     const splitedJs = jsFile.split("\n");
     let name = "";
-    for (const line of splitedJs) {
+    for (const line of splitedJs)
       if (line.startsWith("//@name")) {
         name = line.slice(7).trim();
         break;
       }
-    }
 
     const showError = (msg: string) => {
-      if (argu.isHotReload) {
+      if (argu.isHotReload)
         console.error(`Hot-reload plugin "${name}" error: ${msg}`);
-      } else {
-        alertError(msg);
-      }
+      else alertError(msg);
     };
 
     let displayName: string = undefined;
-    let arg: { [key: string]: "int" | "string" | string[] } = {};
-    let realArg: { [key: string]: number | string } = {};
-    let argMeta: { [key: string]: { [key: string]: string } } = {};
-    let customLink: PluginMetadata["customLink"] = [];
+    const arg: { [key: string]: "int" | "string" | string[] } = {};
+    const realArg: { [key: string]: number | string } = {};
+    const argMeta: { [key: string]: { [key: string]: string } } = {};
+    const customLink: PluginMetadata["customLink"] = [];
     let updateURL: string = "";
     let versionOfPlugin: string = ""; //This is the version of the plugin itself, not the API version
     let apiVersion = "2.0";
-    let ipcList: string[] = [];
+    const ipcList: string[] = [];
     for (const line of splitedJs) {
       if (line.startsWith("//@name")) {
         const provied = line.slice(7);
@@ -200,14 +189,11 @@ export async function importPlugin(
       if (line.startsWith("//@api")) {
         const proviedVersions = line.slice(6).trim().split(" ");
         const supportedVersions = ["2.0", "2.1", "3.0"];
-        for (const ver of proviedVersions) {
+        for (const ver of proviedVersions)
           if (supportedVersions.includes(ver)) {
             apiVersion = ver;
             break;
-          } else {
-            console.warn(`Plugin API version "${ver}" is not supported.`);
-          }
-        }
+          } else console.warn(`Plugin API version "${ver}" is not supported.`);
       }
       if (line.startsWith("//@display-name")) {
         const provied = line.slice("//@display-name".length + 1);
@@ -231,13 +217,13 @@ export async function importPlugin(
           return;
         }
         const hoverText = line.split(" ").slice(2).join(" ").trim();
-        if (hoverText === "") {
+        if (hoverText === "")
           // OK, no hover text. It's fine.
           customLink.push({
             link: link,
             hoverText: undefined,
           });
-        } else
+        else
           customLink.push({
             link: link,
             hoverText: hoverText || undefined,
@@ -270,7 +256,7 @@ export async function importPlugin(
         if (provied.length > 3) {
           const meta: { [key: string]: string } = {};
           //Compatibility layer for unofficial meta
-          let metaStr = provied
+          const metaStr = provied
             .slice(3)
             .join(" ")
             .replace(
@@ -283,9 +269,7 @@ export async function importPlugin(
             )
             .trim();
 
-          if (metaStr) {
-            meta["description"] = metaStr;
-          }
+          if (metaStr) meta["description"] = metaStr;
 
           argMeta[provKey] = meta;
         }
@@ -357,14 +341,13 @@ export async function importPlugin(
       return;
     }
 
-    if (isTypescript) {
+    if (isTypescript)
       try {
         const { pluginCodeTranspiler } = await import("./apiV3/transpiler");
         jsFile = await pluginCodeTranspiler(jsFile);
       } catch (error) {
         showError("Failed to transpile TypeScript code: " + error.message);
       }
-    }
 
     let apiInternalVersion: 2 | "2.1" | "3.0" = "2.1";
 
@@ -379,9 +362,7 @@ export async function importPlugin(
         "Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 3.0.",
       );
       return;
-    } else if (apiVersion === "3.0") {
-      apiInternalVersion = "3.0";
-    }
+    } else if (apiVersion === "3.0") apiInternalVersion = "3.0";
 
     if (apiInternalVersion !== "3.0" && argu.isHotReload) {
       showError("Only API version 3.0 plugins can be hot-reloaded.");
@@ -413,18 +394,14 @@ export async function importPlugin(
 
     if (!isUpdate && oldPlugin) {
       const c = await alertConfirm(language.duplicatePluginFoundUpdateIt);
-      if (!c) {
-        return;
-      }
+      if (!c) return;
     }
 
-    if (oldPlugin || !isUpdate || argu.isHotReload) {
+    if (oldPlugin || !isUpdate || argu.isHotReload)
       await pluginStore.install(pluginMetadata, jsFile, oldPlugin?.id);
-    }
 
-    if (argu.isHotReload && !hotReloading.includes(pluginMetadata.name)) {
+    if (argu.isHotReload && !hotReloading.includes(pluginMetadata.name))
       hotReloading.push(pluginMetadata.name);
-    }
 
     console.log(`Imported plugin: ${pluginMetadata.name} (API v${apiVersion})`);
     await loadPlugins();
@@ -434,7 +411,7 @@ export async function importPlugin(
   }
 }
 
-let pluginTranslator = false;
+const pluginTranslator = false;
 let runtimePlugins: PluginMetadata[] = [];
 
 export function getRuntimePlugin(name: string): PluginMetadata | undefined {
@@ -480,9 +457,7 @@ export async function loadPlugins() {
     await loadV3Plugins(pluginV3);
   }
 
-  if (blockedPresent.length > 0) {
-    await applyBlockedPlugins(blockedPresent);
-  }
+  if (blockedPresent.length > 0) await applyBlockedPlugins(blockedPresent);
 }
 
 /**
@@ -497,7 +472,7 @@ async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
     `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
   );
   const crashGuard = PluginCrashGuard.getInstance();
-  for (const plugin of blockedPresent) {
+  for (const plugin of blockedPresent)
     try {
       await pluginStore.setEnabled(plugin.id, false);
       await crashGuard?.clearBlocked(plugin.name);
@@ -507,7 +482,7 @@ async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
         error,
       );
     }
-  }
+
   const { alertToast } = await import("../alert");
   alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
 }
@@ -629,18 +604,18 @@ function setDomainDbValue(
     case "characters":
       return characterStore.snapshot.saveAll(value);
     case "modules":
-      if (!Array.isArray(value)) {
+      if (!Array.isArray(value))
         throw new TypeError("Plugin database modules must be an array");
-      }
+
       moduleStore.upsertModules(value);
       return true;
     case "enabledModules":
       moduleStore.enabledModules = value;
       return true;
     case "plugins":
-      if (!Array.isArray(value)) {
+      if (!Array.isArray(value))
         throw new TypeError("Plugin database plugins must be an array");
-      }
+
       return pluginStore.replaceCompatibilityPlugins(value);
     case "personas":
       personaStore.replace(value);
@@ -661,14 +636,11 @@ function getAllowedDbValue(key: string): any {
 
 function setAllowedDbValue(key: string, value: any): void | Promise<void> {
   const domainResult = setDomainDbValue(key, value);
-  if (domainResult !== false) {
+  if (domainResult !== false)
     return domainResult === true ? undefined : domainResult;
-  }
-  if (isPresetStoreSettingKey(key)) {
-    presetStore.set(key, value);
-  } else {
-    settingsStore.set(key as any, value);
-  }
+
+  if (isPresetStoreSettingKey(key)) presetStore.set(key, value);
+  else settingsStore.set(key as any, value);
 }
 
 function hasAllowedDbValue(key: string): boolean {
@@ -686,11 +658,8 @@ export const getV2PluginAPIs = () => {
     nativeFetch: fetchNative,
     getArg: (arg: string) => {
       const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins) {
-        if (plugin.name === name) {
-          return plugin.realArg[realArg];
-        }
-      }
+      for (const plugin of pluginStore.plugins)
+        if (plugin.name === name) return plugin.realArg[realArg];
     },
     getChar: async () =>
       (await characterStore.snapshot.load(get(selectedCharID))) ?? undefined,
@@ -706,70 +675,49 @@ export const getV2PluginAPIs = () => {
       ) => Promise<{ success: boolean; content: string }>,
       options?: PluginV2ProviderOptions,
     ) => {
-      let provs = get(customProviderStore);
+      const provs = get(customProviderStore);
       provs.push(name);
       pluginV2.providers.set(name, func);
       pluginV2.providerOptions.set(name, options ?? {});
       customProviderStore.set(provs);
     },
     addRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
-      if (pluginV2["edit" + name]) {
-        pluginV2["edit" + name].add(func);
-      } else {
-        throw `script handler named ${name} not found`;
-      }
+      if (pluginV2["edit" + name]) pluginV2["edit" + name].add(func);
+      else throw `script handler named ${name} not found`;
     },
     removeRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
-      if (pluginV2["edit" + name]) {
-        pluginV2["edit" + name].delete(func);
-      } else {
-        throw `script handler named ${name} not found`;
-      }
+      if (pluginV2["edit" + name]) pluginV2["edit" + name].delete(func);
+      else throw `script handler named ${name} not found`;
     },
     addRisuReplacer: (name: string, func: ReplacerFunction) => {
-      if (pluginV2["replacer" + name]) {
-        pluginV2["replacer" + name].add(func);
-      } else {
-        throw `replacer handler named ${name} not found`;
-      }
+      if (pluginV2["replacer" + name]) pluginV2["replacer" + name].add(func);
+      else throw `replacer handler named ${name} not found`;
     },
     removeRisuReplacer: (name: string, func: ReplacerFunction) => {
-      if (pluginV2["replacer" + name]) {
-        pluginV2["replacer" + name].delete(func);
-      } else {
-        throw `replacer handler named ${name} not found`;
-      }
+      if (pluginV2["replacer" + name]) pluginV2["replacer" + name].delete(func);
+      else throw `replacer handler named ${name} not found`;
     },
     addRisuChatListener: (mode: string, func: ChatOutputListener) => {
-      if (mode === "output") {
-        pluginV2.chatOutput.add(func);
-      } else {
-        throw `chat listener mode ${mode} not found`;
-      }
+      if (mode === "output") pluginV2.chatOutput.add(func);
+      else throw `chat listener mode ${mode} not found`;
     },
     removeRisuChatListener: (mode: string, func: ChatOutputListener) => {
-      if (mode === "output") {
-        pluginV2.chatOutput.delete(func);
-      } else {
-        throw `chat listener mode ${mode} not found`;
-      }
+      if (mode === "output") pluginV2.chatOutput.delete(func);
+      else throw `chat listener mode ${mode} not found`;
     },
     onUnload: (func: () => void | Promise<void>) => {
       pluginV2.unload.add(func);
     },
     setArg: (arg: string, value: string | number) => {
       const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins) {
-        if (plugin.name === name) {
-          plugin.realArg[realArg] = value;
-        }
-      }
+      for (const plugin of pluginStore.plugins)
+        if (plugin.name === name) plugin.realArg[realArg] = value;
     },
     safeGlobalThis: {} as any,
     getSafeGlobalThis: () => {
-      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0) {
+      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0)
         return globalThis.__pluginApis__.safeGlobalThis;
-      }
+
       //safeGlobalThis
       const keys = Object.keys(globalThis);
       const safeGlobal: any = {};
@@ -780,11 +728,9 @@ export const getV2PluginAPIs = () => {
         "URL",
         "URLSearchParams",
       ];
-      for (const key of keys) {
-        if (allowedKeys.includes(key)) {
+      for (const key of keys)
+        if (allowedKeys.includes(key))
           safeGlobal[key] = (globalThis as any)[key];
-        }
-      }
 
       //compatibility layer with old unsafe APIs
 
@@ -858,34 +804,31 @@ export const getV2PluginAPIs = () => {
       return new Proxy({} as any, {
         get(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
-              return getAllowedDbValue(prop);
-            }
+            if (allowedDbKeys.includes(prop)) return getAllowedDbValue(prop);
+
             const custom = settingsStore.state.pluginCustomStorage;
-            if (custom && prop in custom) {
-              return $state.snapshot(custom[prop]);
-            }
+            if (custom && prop in custom) return $state.snapshot(custom[prop]);
           }
           return undefined;
         },
         set(target, prop, value) {
-          if (typeof prop === "string") {
+          if (typeof prop === "string")
             if (allowedDbKeys.includes(prop)) {
               const pending = setAllowedDbValue(prop, value);
-              if (pending) {
+              if (pending)
                 void pending.catch((error) => {
                   console.error(
                     `Failed to persist compatibility database key '${prop}':`,
                     error,
                   );
                 });
-              }
+
               return true;
             } else {
               settingsStore.setPluginCustomStorageKey(prop, value);
               return true;
             }
-          }
+
           return false;
         },
         ownKeys(target) {
@@ -903,31 +846,30 @@ export const getV2PluginAPIs = () => {
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
+            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop))
               return {
                 value: getAllowedDbValue(prop),
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
-            }
+
             const custom = settingsStore.state.pluginCustomStorage;
-            if (custom && prop in custom) {
+            if (custom && prop in custom)
               return {
                 value: custom[prop],
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
-            }
-            if (settingsStore.hasPluginCustomStorageKey(prop)) {
+
+            if (settingsStore.hasPluginCustomStorageKey(prop))
               return {
                 value: undefined,
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
-            }
           }
           return undefined;
         },
@@ -986,13 +928,10 @@ export const getV2PluginAPIs = () => {
     },
     setDatabaseLite: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
-      for (const key of Object.keys(newDb)) {
-        if (allowedDbKeys.includes(key)) {
+      for (const key of Object.keys(newDb))
+        if (allowedDbKeys.includes(key))
           await setAllowedDbValue(key, newDb[key]);
-        } else {
-          settingsStore.setPluginCustomStorageKey(key, newDb[key]);
-        }
-      }
+        else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
     },
     setDatabase: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
@@ -1004,11 +943,9 @@ export const getV2PluginAPIs = () => {
           newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins);
         }
 
-        if (allowedDbKeys.includes(key)) {
+        if (allowedDbKeys.includes(key))
           await setAllowedDbValue(key, newDb[key]);
-        } else {
-          settingsStore.setPluginCustomStorageKey(key, newDb[key]);
-        }
+        else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
       }
     },
     SafeFunction: new Proxy(Function, {
@@ -1027,15 +964,15 @@ export const getV2PluginAPIs = () => {
     }),
     loadPlugins: loadPlugins,
     readImage: (path: string) => {
-      if (path.startsWith("assets/")) {
+      if (path.startsWith("assets/"))
         //trim assets/ prefix temporarily
         path = path.slice(7);
-      }
-      if (path.includes("/") || path.includes("\\")) {
+
+      if (path.includes("/") || path.includes("\\"))
         throw new Error(
           "readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.",
         );
-      }
+
       //re-add assets/ prefix
       return readImage("assets/" + path);
     },
@@ -1093,14 +1030,11 @@ export async function handlePluginInstallViaPlugin(
       const confirmation = await alertConfirm(
         language.confirmInstallPluginViaPlugin.replace("{plugin}", plugin.name),
       );
-      if (confirmation) {
-        trimmedPlugins.push(plugin);
-      }
-    } else {
+      if (confirmation) trimmedPlugins.push(plugin);
+    } else
       console.warn(
         `Plugin "${plugin.name}" already exists, skipping installation via plugin.`,
       );
-    }
   }
 
   return trimmedPlugins;
