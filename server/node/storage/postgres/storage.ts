@@ -652,7 +652,7 @@ export class PostgresStorage implements ISqlStorage {
 
   /** Plugin registry and metadata */
   readonly plugin: IPluginStorage = {
-    readonly script: {
+     script: {
       /**
        * Load plugin script by ID
        * TODO: Query plugin script record
