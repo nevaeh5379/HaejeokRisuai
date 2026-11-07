@@ -1,10 +1,4 @@
-import { type SqlStorageRow } from "../relationalRows.ts";
-import { decodeJsonValue, encodeJsonValue } from "./jsonCodec.ts";
-import {
-  DEFERRED_SETTING_KEYS,
-  createSqlStorageHelpers,
-  type SqlStorageHelpers,
-} from "../sqlStorageCommon.ts";
+import { encodeJsonValue } from "./jsonCodec.ts";
 import {
   Character,
   validateCharacterKeys,
@@ -40,18 +34,10 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
   Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || "1000", 10) || 1000,
 );
 
-import {
-  PostgresRevisionConflictError,
-  PostgresPayloadError,
-} from "../storageErrors.ts";
 import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
 import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
-const helpers: SqlStorageHelpers = createSqlStorageHelpers({
-  PayloadError: PostgresPayloadError,
-  maxIdLength: 1024,
-});
 
 /** Cold-storage value shape produced by the shared splitter. */
 
@@ -407,18 +393,3 @@ export class PostgresStorage implements Pick<
     },
   };
 }
-
-export type { SqlStorageRow };
-
-export {
-  DEFERRED_SETTING_KEYS,
-  PostgresPayloadError,
-  PostgresRevisionConflictError,
-  buildUpsertClause,
-  decodeJsonValue,
-  encodeJsonValue,
-  normalizeColdStorageKey,
-  validateColdStorageKeys,
-  validateColdStorageValue,
-  validateSyncPayload,
-};
