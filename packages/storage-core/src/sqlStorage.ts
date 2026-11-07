@@ -5,9 +5,7 @@ import type {
 } from "../../protocol/domain/chat.ts";
 import type {
   Message,
-  RisuPersona,
   botPreset,
-  loreBook,
   customscript,
 } from "../../protocol/domain/database.ts";
 import type { Database } from "../../protocol/domain/legacy/database.ts";
@@ -16,7 +14,30 @@ import type {
   AuthorNoteFields,
   AuthorNoteUpdate,
 } from "../../protocol/domain/authorNote.ts";
-import type { RisuModule } from "../../protocol/domain/modules.ts";
+import type {
+  Persona,
+  PersonaFields,
+  PersonaUpdate,
+} from "../../protocol/domain/persona.ts";
+import type {
+  Preset,
+  PresetFields,
+  PresetUpdate,
+} from "../../protocol/domain/preset.ts";
+import type {
+  LorebookFields,
+  LorebookUpdate,
+} from "../../protocol/domain/lorebook.ts";
+import type {
+  Module,
+  ModuleFields,
+  ModuleUpdate,
+} from "../../protocol/domain/module.ts";
+import type {
+  PromptFields,
+  PromptUpdate,
+} from "../../protocol/domain/prompt.ts";
+import type { PluginStorageValue } from "../../protocol/domain/pluginTypes.ts";
 import type { IPluginStorage } from "../../protocol/domain/pluginStorage.ts";
 import type { SqlCommit } from "../../protocol/domain/sqlCommit.ts";
 import type { SqlCommitResult } from "../../protocol/src/sqlCommit.ts";
@@ -165,6 +186,9 @@ export interface BotPresetSummary {
  * call sites.
  *
  * Domain loading contract:
+ *  - Domain mutations share the revision-guarded write path. Partial updates preserve omitted fields.
+ *  - Collection moves update affected ordering atomically. Positions address the current order,
+ *    not stable identities; resolve them again after reordering or a write conflict.
  *  - Initial loading is composed by the app from state, settings and character count APIs.
  *  - `exportDatabaseSnapshot()` is the only aggregate Database read boundary.
  *  - `chat.load(id)` returns a stateless handle; messages use the message APIs.
@@ -376,36 +400,151 @@ export interface ISqlStorage {
     };
   };
 
-  persona: { list(): Promise<RisuPersona[]> };
+  persona: {
+    ref(id: string): Persona;
+    /** Checks existence; rejects if missing. */
+    load(id: string): Promise<Persona>;
+    read(id: string): Promise<PersonaFields>;
+    update(id: string, patch: PersonaUpdate): Promise<void>;
+    create(name: string): Promise<Persona>;
+    delete(id: string): Promise<void>;
+    count(): Promise<number>;
+    /** Ordered by position then ID. No icon or embedded module is read unless requested. */
+    list<K extends keyof PersonaFields = never>(
+      options: { offset: number; limit: number },
+      ...keys: K[]
+    ): Promise<
+      Array<Pick<PersonaFields, K> & { id: string; position: number }>
+    >;
+    move(id: string, position: number): Promise<void>;
+    /** Persists selection by ID; converting legacy selectedPersona indices belongs to the adapter. */
+    active: {
+      get(): Promise<Persona | null>;
+      set(id: string): Promise<void>;
+    };
+  };
+
   preset: {
-    list(): Promise<BotPresetSummary[]>;
-    load(id: string): Promise<StoredBotPreset | null>;
+    ref(id: string): Preset;
+    /** Checks existence; rejects if missing. */
+    load(id: string): Promise<Preset>;
+    /** Reads only requested fields, excluding unrelated prompts and model settings. */
+    read<K extends keyof PresetFields>(
+      id: string,
+      ...keys: [K, ...K[]]
+    ): Promise<Pick<PresetFields, K>>;
+    update(id: string, patch: PresetUpdate): Promise<void>;
+    create(name: string): Promise<Preset>;
+    delete(id: string): Promise<void>;
+    count(): Promise<number>;
+    /** Ordered by position then ID; always includes identity and ordering. */
+    list<K extends keyof PresetFields = never>(
+      options: { offset: number; limit: number },
+      ...keys: K[]
+    ): Promise<Array<Pick<PresetFields, K> & { id: string; position: number }>>;
+    move(id: string, position: number): Promise<void>;
+    /** Persists the selected ID only. Applying preset values is app orchestration. */
+    active: {
+      get(): Promise<Preset | null>;
+      set(id: string): Promise<void>;
+    };
   };
-  lorebook: { list(): Promise<{ name: string; data: loreBook[] }[]> };
-  module: { list(): Promise<RisuModule[]> };
-  prompt: { load(): Promise<Record<string, unknown>> };
-  script: { list(): Promise<customscript[]> };
 
+  /** Global books have positional addresses, not stable IDs. Positions change after reordering. */
+  lorebook: {
+    count(): Promise<number>;
+    /** Book names only; entries remain unloaded. Ordered by position. */
+    list(options: {
+      offset: number;
+      limit: number;
+    }): Promise<Array<Pick<LorebookFields, "position" | "name">>>;
+    read(position: number): Promise<LorebookFields>;
+    update(position: number, patch: LorebookUpdate): Promise<void>;
+    /** Appends an empty book and returns its position. */
+    create(name: string): Promise<number>;
+    delete(position: number): Promise<void>;
+    move(position: number, to: number): Promise<void>;
+  };
+
+  module: {
+    ref(id: string): Module;
+    /** Checks existence; rejects if missing. */
+    load(id: string): Promise<Module>;
+    read(id: string): Promise<ModuleFields>;
+    update(id: string, patch: ModuleUpdate): Promise<void>;
+    create(name: string): Promise<Module>;
+    delete(id: string): Promise<void>;
+    count(): Promise<number>;
+    /** Ordered by position then ID. Scripts, lore and assets are read only if requested. */
+    list<K extends keyof ModuleFields = never>(
+      options: { offset: number; limit: number },
+      ...keys: K[]
+    ): Promise<Array<Pick<ModuleFields, K> & { id: string; position: number }>>;
+    move(id: string, position: number): Promise<void>;
+  };
+
+  /** Typed view of the existing root prompt settings, not a second copy or a saved preset. */
+  prompt: {
+    read(): Promise<PromptFields>;
+    update(patch: PromptUpdate): Promise<void>;
+  };
+
+  /** Global regex rules; positions refer to the current order, not stable identities. */
+  script: {
+    count(): Promise<number>;
+    /** Ordered by position; rule input/output text is loaded only through read(). */
+    list(options: { offset: number; limit: number }): Promise<
+      Array<
+        Pick<customscript, "comment" | "type" | "ableFlag"> & {
+          position: number;
+        }
+      >
+    >;
+    read(position: number): Promise<customscript>;
+    update(position: number, patch: Partial<customscript>): Promise<void>;
+    /** Appends when position is omitted and returns the inserted position. */
+    create(value: customscript, position?: number): Promise<number>;
+    delete(position: number): Promise<void>;
+    move(position: number, to: number): Promise<void>;
+  };
+
+  /** Arbitrary plugin-owned values; no aggregate load and no per-key handle objects. */
   pluginCustomStorage: {
-    load(): Promise<Record<string, unknown> | null>;
-    keys(): Promise<string[]>;
-    get(key: string): Promise<unknown>;
+    count(): Promise<number>;
+    /** Keys only, ordered lexically. */
+    keys(options: { offset: number; limit: number }): Promise<string[]>;
+    /** Missing keys return undefined. */
+    get(key: string): Promise<PluginStorageValue>;
+    set(key: string, value: PluginStorageValue): Promise<void>;
+    /** Missing keys are a no-op. */
+    delete(key: string): Promise<void>;
+    clear(): Promise<void>;
   };
 
+  /** Root setting values. Unknown is intentional for migration and extension keys. */
   setting: {
+    /** Missing keys return undefined. */
     get(key: string): Promise<unknown>;
-    /** Enumerates every persisted root setting key without hydrating values. */
+    set(key: string, value: unknown): Promise<void>;
+    /** Missing keys are a no-op. */
+    delete(key: string): Promise<void>;
+    /** Enumerates persisted root setting keys without hydrating values. */
     keys(): Promise<string[]>;
-    /** Batched multi-key read; backends may collapse it into one query. */
+    /** Reads only requested keys; absent keys are omitted from the result. */
     getMany(keys: string[]): Promise<Map<string, unknown>>;
   };
 
+  /** Archive payloads are read one key at a time, never through an aggregate loader. */
   coldStorage: {
+    count(): Promise<number>;
+    /** Keys only, ordered lexically. */
+    keys(options: { offset: number; limit: number }): Promise<string[]>;
+    /** Missing archives return null. */
     get(key: string): Promise<unknown | null>;
-    list(): Promise<{ items: string[] }>;
-    set(key: string, value: unknown): Promise<boolean>;
-    remove(keys: string[]): Promise<number>;
-    prune(retainedKeys: string[]): Promise<number>;
+    set(key: string, value: unknown): Promise<void>;
+    /** Deletes specified archives and returns the number removed; duplicate keys count once. */
+    delete(keys: readonly string[]): Promise<number>;
+    prune(retainedKeys: readonly string[]): Promise<number>;
   };
 }
 
