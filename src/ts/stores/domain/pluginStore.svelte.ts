@@ -12,10 +12,6 @@ import { StoreCommitQueue } from "./storeCommitQueue";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 type PluginMetadataDraft = Omit<PluginMetadata, "id" | "position">;
-type CompatibilityPlugin = Omit<PluginMetadata, "id" | "position"> & {
-  script: string;
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -185,52 +181,6 @@ class PluginStore
     this.scriptCache.set(id, { pluginId: id, script });
     this.captureCommittedState();
     return storedMetadata;
-  }
-
-  compatibilityPlugins(): CompatibilityPlugin[] {
-    return this.plugins.map((plugin) => {
-      const { id, position: _position, ...metadata } = plugin;
-      const script = this.scriptCache.get(id);
-      if (!script) {
-        throw new Error(
-          `Plugin script is not loaded for compatibility access: ${id}`,
-        );
-      }
-
-      return {
-        ...metadata,
-        script: script.script,
-      };
-    });
-  }
-
-  async loadCompatibilityPlugins(): Promise<CompatibilityPlugin[]> {
-    // Keep reads sequential. A compatibility snapshot necessarily contains all
-    // scripts, but decoding them one at a time avoids a transient memory spike
-    // on older Android devices.
-    for (const plugin of this.plugins) await this.loadScript(plugin.id);
-
-    return this.compatibilityPlugins();
-  }
-
-  async replaceCompatibilityPlugins(
-    plugins: readonly (Omit<PluginMetadata, "id" | "position"> & {
-      script: string;
-    })[],
-  ): Promise<void> {
-    const metadata = plugins.map((plugin, position) => {
-      const { script: _script, ...data } = plugin;
-      return {
-        ...data,
-        id: this.getByName(plugin.name)?.id ?? uuidv4(),
-        position,
-      };
-    });
-    const scripts = plugins.map((plugin, position) => ({
-      pluginId: metadata[position].id,
-      script: plugin.script,
-    }));
-    await this.replaceAll(metadata, scripts);
   }
 
   async replaceAll(
@@ -419,8 +369,19 @@ class PluginStore
   private metadataData(
     plugin: PluginMetadata,
   ): Omit<PluginMetadata, "id" | "position"> {
-    const { id: _id, position: _position, ...data } = plugin;
-    return data;
+    return {
+      name: plugin.name,
+      displayName: plugin.displayName,
+      arguments: plugin.arguments,
+      realArg: plugin.realArg,
+      version: plugin.version,
+      customLink: plugin.customLink,
+      argMeta: plugin.argMeta,
+      versionOfPlugin: plugin.versionOfPlugin,
+      updateURL: plugin.updateURL,
+      enabled: plugin.enabled,
+      allowedIPC: plugin.allowedIPC,
+    };
   }
 
   private captureCommittedState(): void {

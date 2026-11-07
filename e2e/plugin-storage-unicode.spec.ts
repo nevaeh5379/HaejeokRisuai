@@ -80,13 +80,13 @@ test("plugin storage preserves NUL-containing text through Node SQL storage", as
   );
 
   const result = await page.evaluate(async () => {
-    const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
+    const pluginsUrl = "/src/ts/plugins/apiV3/host/services.ts";
     const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
     const nodeStorageUrl = "/src/ts/storage/sql/postgres/nodeSqlStorage.ts";
-    const { getV2PluginAPIs } = (await import(
+    const { createPluginServices } = (await import(
       /* @vite-ignore */ pluginsUrl
     )) as {
-      getV2PluginAPIs: () => {
+      createPluginServices: () => {
         pluginStorage: {
           setItem: (key: string, value: unknown) => void;
         };
@@ -118,7 +118,7 @@ test("plugin storage preserves NUL-containing text through Node SQL storage", as
       summary: "memory before\0memory after",
       nested: ["ordinary text", "another\0NUL"],
     };
-    getV2PluginAPIs().pluginStorage.setItem("wiglore-memory", expected);
+    createPluginServices().pluginStorage.setItem("wiglore-memory", expected);
     await settingsStore.flush();
     const pendingAfterFlush = settingsStore.hasPendingWrites();
     const loaded = await storage.pluginCustomStorage.get("wiglore-memory");

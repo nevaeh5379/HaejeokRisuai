@@ -1,9 +1,9 @@
+import { loadPluginRecords } from "../../plugins/apiV3/host/data.svelte";
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import { pluginStore } from "./pluginStore.svelte";
 
 function plugin(id: string, name: string): PluginMetadata {
@@ -31,7 +31,7 @@ describe("PluginStore", () => {
 
       getRevision: vi.fn(() => 0),
 
-      commit: vi.fn(async (_commit: SqlCommit) => ({ revision: 1 })),
+      commit: vi.fn(async () => ({ revision: 1 })),
       plugin: {
         load: vi.fn(async () => null),
         loadAll: vi.fn(async () => structuredClone(records)),
@@ -72,11 +72,7 @@ describe("PluginStore", () => {
     }));
     await pluginStore.init(storage);
 
-    expect(() => pluginStore.compatibilityPlugins()).toThrow(
-      "Plugin script is not loaded for compatibility access",
-    );
-
-    await expect(pluginStore.loadCompatibilityPlugins()).resolves.toEqual([
+    await expect(loadPluginRecords()).resolves.toEqual([
       expect.objectContaining({ name: "Enabled", script: "plugin-1-source" }),
       expect.objectContaining({ name: "Disabled", script: "plugin-2-source" }),
     ]);

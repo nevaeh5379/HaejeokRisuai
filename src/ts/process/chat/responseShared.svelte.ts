@@ -1,3 +1,7 @@
+import {
+  toLegacyCharacterSnapshot,
+  toLegacyChatSnapshot,
+} from "../../plugins/legacyObjects";
 import type { ChatState as Chat } from "@risuai/protocol/domain/database.ts";
 import type { character } from "@risuai/protocol/domain/legacy/character.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
@@ -22,8 +26,8 @@ export async function runChatOutputListeners(
   messageIndex: number,
 ) {
   if (pluginV2.chatOutput.size === 0) return;
-  const charSnapshot = $state.snapshot(char);
-  const chatSnapshot = $state.snapshot(chat);
+  const charSnapshot = toLegacyCharacterSnapshot($state.snapshot(char));
+  const chatSnapshot = toLegacyChatSnapshot($state.snapshot(chat));
   for (const listener of pluginV2.chatOutput) {
     try {
       await listener({

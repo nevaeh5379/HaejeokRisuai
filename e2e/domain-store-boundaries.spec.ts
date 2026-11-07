@@ -100,17 +100,14 @@ test.describe("domain store boundaries", () => {
     await waitForDomainStores(page);
 
     const result = await page.evaluate(async () => {
-      const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
+      const pluginsUrl = "/src/ts/plugins/apiV3/host/services.ts";
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
       const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
-      const { getV2PluginAPIs } = (await import(
+      const { createPluginServices } = (await import(
         /* @vite-ignore */ pluginsUrl
       )) as {
-        getV2PluginAPIs: () => {
+        createPluginServices: () => {
           getDatabase: () => Record<string, unknown>;
-          getSafeGlobalThis: () => {
-            DBState: { db: Record<string, unknown> };
-          };
           setDatabase: (database: Record<string, unknown>) => Promise<void>;
         };
       };
@@ -145,11 +142,8 @@ test.describe("domain store boundaries", () => {
         reproducedMisrouteError = String(error);
       }
 
-      const pluginApi = getV2PluginAPIs();
-      (
-        globalThis as typeof globalThis & { __pluginApis__: unknown }
-      ).__pluginApis__ = pluginApi;
-      const databaseBefore = pluginApi.getSafeGlobalThis().DBState.db;
+      const pluginApi = createPluginServices();
+      const databaseBefore = pluginApi.getDatabase();
       const snapshotModules = (value: unknown) =>
         Array.from(
           value as Array<{
@@ -174,7 +168,7 @@ test.describe("domain store boundaries", () => {
         applyError = String(error);
       }
 
-      const databaseAfter = pluginApi.getSafeGlobalThis().DBState.db;
+      const databaseAfter = pluginApi.getDatabase();
       return {
         databaseType: typeof databaseBefore,
         modulesWasEnumerable: Object.keys(databaseBefore).includes("modules"),
@@ -222,7 +216,7 @@ test.describe("domain store boundaries", () => {
     await page.evaluate(async () => {
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
       const pluginStoreUrl = "/src/ts/stores/domain/pluginStore.svelte.ts";
-      const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
+      const pluginsUrl = "/src/ts/plugins/apiV3/host/services.ts";
       const pluginV3Url = "/src/ts/plugins/apiV3/v3.svelte.ts";
       const { moduleStore } = (await import(
         /* @vite-ignore */ moduleStoreUrl
@@ -247,10 +241,10 @@ test.describe("domain store boundaries", () => {
           ) => Promise<Record<string, unknown>>;
         };
       };
-      const { getV2PluginAPIs } = (await import(
+      const { createPluginServices } = (await import(
         /* @vite-ignore */ pluginsUrl
       )) as {
-        getV2PluginAPIs: () => {
+        createPluginServices: () => {
           getDatabase: () => { modules: Array<{ name: string }> };
         };
       };
@@ -264,7 +258,7 @@ test.describe("domain store boundaries", () => {
       ];
       await moduleStore.flush();
       if (
-        getV2PluginAPIs().getDatabase().modules[0]?.name !==
+        createPluginServices().getDatabase().modules[0]?.name !==
         "Visible Existing Module"
       ) {
         throw new Error("Compatibility database cannot read the seeded module");

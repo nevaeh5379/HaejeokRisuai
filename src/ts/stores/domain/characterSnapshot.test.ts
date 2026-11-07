@@ -24,7 +24,7 @@ const {
 } = characterStore.snapshot;
 const { load: getPluginChat, save: setPluginChat } =
   characterStore.snapshot.chat;
-import { getV2PluginAPIs } from "../../plugins/plugins.svelte";
+import { createPluginServices } from "../../plugins/apiV3/host/services";
 import { importChat } from "../../characters";
 import * as util from "../../util";
 import { selectedCharID } from "../../stores.svelte";
@@ -120,7 +120,7 @@ describe.each([
   });
 
   it("persists both chats' plugin state and old request tags through setCharacter", async () => {
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
     const snapshot = await apis.getChar();
     snapshot!.chats[0].scriptstate!.$plugin = "after";
     snapshot!.chats[0].message[0].data += " <request-id>request-1</request-id>";
@@ -290,7 +290,7 @@ describe.each([
     const snapshots = await getPluginCharacters();
     snapshots[0].chats[0].scriptstate!.$plugin = "via-database";
     snapshots[0].chats[0].message[12].data = "request from database setter";
-    await getV2PluginAPIs().setDatabase({ characters: snapshots });
+    await createPluginServices().setDatabase({ characters: snapshots });
     const restored = await storage.chat.load("chat-1");
     expect(restored!.scriptstate!.$plugin).toBe("via-database");
     expect(restored!.message[12].data).toBe("request from database setter");

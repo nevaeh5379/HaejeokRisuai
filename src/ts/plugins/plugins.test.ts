@@ -1,12 +1,8 @@
+import { createPluginServices } from "./apiV3/host/services";
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import {
-  getRuntimePlugin,
-  getV2PluginAPIs,
-  importPlugin,
-  loadPlugins,
-} from "./plugins.svelte";
+import { getRuntimePlugin, importPlugin, loadPlugins } from "./plugins.svelte";
 import { PluginCrashGuard } from "./pluginCrashGuard";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
@@ -36,14 +32,14 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
     settingsStore.init(
       {
         pluginCustomStorage: {},
-      } as any,
+      } as Parameters<typeof settingsStore.init>[0],
       mockStorage,
     );
     moduleStore.resetForTesting();
   });
 
   it("persists pluginStorage.setItem to settingsStore and SQL", async () => {
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
 
     apis.pluginStorage.setItem("testKey", { value: 123 });
 
@@ -68,7 +64,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
       return key === "lazyKey" ? { loaded: true } : undefined;
     });
     settingsStore.hydratePluginCustomStorageKeys(["lazyKey"]);
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
 
     expect(apis.pluginStorage.keys()).toEqual(["lazyKey"]);
     expect(apis.pluginStorage.length()).toBe(1);
@@ -87,7 +83,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("persists pluginStorage.removeItem and clear to settingsStore and SQL", async () => {
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
 
     apis.pluginStorage.setItem("keyA", "valA");
     apis.pluginStorage.setItem("keyB", "valB");
@@ -123,7 +119,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("persists custom property writes via safeDatabase proxy", async () => {
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
     const db = apis.getDatabase();
 
     // Write custom property
@@ -157,7 +153,7 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("persists allowed DB property writes via safeDatabase proxy", async () => {
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
     const db = apis.getDatabase();
 
     db.theme = "dracula";
@@ -175,15 +171,24 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("commits plugin module upserts without replacing existing modules", async () => {
-    const existing = { id: "existing", name: "Existing module" };
-    const untouched = { id: "untouched", name: "Untouched module" };
+    const existing = {
+      id: "existing",
+      name: "Existing module",
+    };
+    const untouched = {
+      id: "untouched",
+      name: "Untouched module",
+    };
     const updated = { id: "existing", name: "Updated existing module" };
     const created = { id: "plugin-module", name: "Plugin module" };
-    mockStorage.module.list = vi.fn(async () => [existing, untouched] as any);
+    mockStorage.module.list = vi.fn(async () => [
+      existing,
+      untouched,
+    ]) as unknown as typeof mockStorage.module.list;
     mockStorage.setting.get = vi.fn(async () => []);
     await moduleStore.init(mockStorage);
 
-    const apis = getV2PluginAPIs();
+    const apis = createPluginServices();
     const db = apis.getDatabase();
 
     expect(db.modules).toEqual([existing, untouched]);

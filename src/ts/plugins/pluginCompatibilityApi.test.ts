@@ -2,9 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
-import { getV2PluginAPIs } from "./plugins.svelte";
+import { createPluginServices } from "./apiV3/host/services";
 import type { ISqlStorage } from "@risuai/storage-core/sqlStorage";
-import type { SqlCommit } from "../storage/sql/sqlCommit";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
 
 function storedPlugin(): PluginMetadata {
@@ -34,7 +33,7 @@ describe("plugin compatibility database writes", () => {
 
       getRevision: vi.fn(() => 0),
 
-      commit: vi.fn(async (_commit: SqlCommit) => {
+      commit: vi.fn(async () => {
         await commitGate;
         return { revision: 1 };
       }),
@@ -61,7 +60,7 @@ describe("plugin compatibility database writes", () => {
   });
 
   it("does not resolve setDatabase before the plugin replacement commits", async () => {
-    const writing = getV2PluginAPIs().setDatabase({ plugins: [] });
+    const writing = createPluginServices().setDatabase({ plugins: [] });
     let settled = false;
     void writing.finally(() => {
       settled = true;
@@ -86,7 +85,7 @@ describe("plugin compatibility database writes", () => {
     });
 
     await expect(
-      getV2PluginAPIs().setDatabase({ plugins: [] }),
+      createPluginServices().setDatabase({ plugins: [] }),
     ).rejects.toThrow("plugin commit failed");
     expect(pluginStore.plugins).toHaveLength(1);
   });

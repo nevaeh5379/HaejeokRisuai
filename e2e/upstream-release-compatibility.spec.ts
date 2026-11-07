@@ -246,11 +246,11 @@ test("V3 parser, element-scoped events and per-permission consent work together"
   await page.getByRole("button", { name: "NO", exact: true }).click();
   const read = (key: string) =>
     page.evaluate(async (storageKey) => {
-      const url = "/src/ts/plugins/plugins.svelte.ts";
-      const { getV2PluginAPIs } = (await import(
+      const url = "/src/ts/plugins/apiV3/host/services.ts";
+      const { createPluginServices } = (await import(
         /* @vite-ignore */ url
-      )) as typeof import("../src/ts/plugins/plugins.svelte");
-      return getV2PluginAPIs().pluginStorage.getItem(storageKey);
+      )) as typeof import("../src/ts/plugins/apiV3/host/services");
+      return createPluginServices().pluginStorage.getItem(storageKey);
     }, key);
   await expect
     .poll(() => read("release-result"))

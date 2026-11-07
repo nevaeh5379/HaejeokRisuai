@@ -137,11 +137,13 @@ try {
   });
   const readResult = () =>
     page.evaluate(async () => {
-      const url = "/src/ts/plugins/plugins.svelte.ts";
-      const { getV2PluginAPIs } = (await import(
+      const url = "/src/ts/plugins/apiV3/host/services.ts";
+      const { createPluginServices } = (await import(
         /* @vite-ignore */ url
-      )) as typeof import("../src/ts/plugins/plugins.svelte");
-      return getV2PluginAPIs().pluginStorage.getItem("compatibility-result");
+      )) as typeof import("../src/ts/plugins/apiV3/host/services");
+      return createPluginServices().pluginStorage.getItem(
+        "compatibility-result",
+      );
     });
   await page.getByRole("button", { name: "YES", exact: true }).click();
   await expect.poll(readResult).toMatchObject({
@@ -156,7 +158,10 @@ try {
       "Added by plugin",
     ],
   });
-  const firstResult = await readResult();
+  const firstResult = (await readResult()) as {
+    ids: string[];
+    names: string[];
+  };
   const saved = await page.evaluate(async (chatId) => {
     const domainUrl = "/src/ts/stores/domain/index.ts";
     const storageUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";

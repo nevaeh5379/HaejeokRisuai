@@ -1,29 +1,16 @@
-import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import { get, writable } from "svelte/store";
+export { pluginHooks as pluginV2 } from "./apiV3/hooks";
+export type {
+  EditFunction,
+  PluginV2ProviderArgument,
+  PluginV2ProviderOptions,
+} from "./apiV3/hooks";
+import { writable } from "svelte/store";
 import { language } from "../../lang";
-import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
-import { selectSingleFile, sleep } from "../util";
+import { alertConfirm, alertError } from "../alert";
+import { selectSingleFile } from "../util";
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
-import {
-  fetchNative,
-  globalFetch,
-  readImage,
-  saveAsset,
-} from "../globalApi.svelte";
-import { hotReloading, selectedCharID } from "../stores.svelte";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { presetStore } from "../stores/domain/presetStore.svelte";
-import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
-import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import { personaStore } from "../stores/domain/personaStore.svelte";
+import { hotReloading } from "../stores.svelte";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
-import type { ScriptMode } from "../process/scripts";
-import { checkCodeSafety } from "./pluginSafety";
-import {
-  SafeDocument,
-  SafeIdbFactory,
-  SafeLocalStorage,
-} from "./pluginSafeClass";
 import { PluginCrashGuard } from "./pluginCrashGuard";
 import type { PluginMetadata } from "@risuai/protocol/domain/pluginTypes.ts";
 import { isSafeModeEnabled } from "../safeMode";
@@ -291,7 +278,7 @@ export async function importPlugin(
             );
             return;
           }
-        } catch (error) {
+        } catch {
           showError(
             "plugin update URL is not a valid URL, did you put it correctly?",
           );
@@ -419,7 +406,6 @@ export async function importPlugin(
   }
 }
 
-const pluginTranslator = false;
 let runtimePlugins: PluginMetadata[] = [];
 
 export function getRuntimePlugin(name: string): PluginMetadata | undefined {
@@ -453,13 +439,8 @@ export async function loadPlugins() {
     blockedSet.has(plugin.name),
   );
   runtimePlugins = enabledPlugins;
-  const pluginV2 = enabledPlugins.filter(
-    (plugin) => plugin.version === 2 || plugin.version === "2.1",
-  );
   const pluginV3 = enabledPlugins.filter((plugin) => plugin.version === "3.0");
 
-  // HaejeokRisuai does not support V2 Plugins.
-  // await loadV2Plugin(pluginV2);
   if (pluginV3.length > 0) {
     const { loadV3Plugins } = await import("./apiV3/v3.svelte");
     await loadV3Plugins(pluginV3);
@@ -496,540 +477,33 @@ async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
   alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
 }
 
-export type PluginV2ProviderArgument = {
-  prompt_chat: OpenAIChat[];
-  frequency_penalty: number;
-  min_p: number;
-  presence_penalty: number;
-  repetition_penalty: number;
-  top_k: number;
-  top_p: number;
-  temperature: number;
-  mode: string;
-  max_tokens: number;
-};
-
-export type PluginV2ProviderOptions = {
-  tokenizer?: string;
-  tokenizerFunc?: (content: string) => number[] | Promise<number[]>;
-};
-
-export type EditFunction = (
-  content: string,
-) => string | null | undefined | Promise<string | null | undefined>;
-type ReplacerFunction = (
-  content: OpenAIChat[],
-  type: string,
-) => OpenAIChat[] | Promise<OpenAIChat[]>;
-type ChatOutputListenerArg = {
-  char: any;
-  chat: any;
-  characterIndex: number;
-  chatIndex: number;
-  messageIndex: number;
-};
-type ChatOutputListener = (arg: ChatOutputListenerArg) => void | Promise<void>;
-
-export const pluginV2 = {
-  providers: new Map<
-    string,
-    (
-      arg: PluginV2ProviderArgument,
-      abortSignal?: AbortSignal,
-    ) => Promise<{ success: boolean; content: string | ReadableStream<string> }>
-  >(),
-  providerOptions: new Map<string, PluginV2ProviderOptions>(),
-  editdisplay: new Set<EditFunction>(),
-  editoutput: new Set<EditFunction>(),
-  editprocess: new Set<EditFunction>(),
-  editinput: new Set<EditFunction>(),
-  replacerbeforeRequest: new Set<ReplacerFunction>(),
-  replacerafterRequest: new Set<
-    (content: string, type: string) => string | Promise<string>
-  >(),
-  chatOutput: new Set<ChatOutputListener>(),
-  unload: new Set<() => void | Promise<void>>(),
-  loaded: false,
-};
-
-export const allowedDbKeys = [
-  "characters",
-  "modules",
-  "enabledModules",
-  "moduleIntergration",
-  "pluginV2",
-  "personas",
-  "plugins",
-  "pluginCustomStorage",
-  "temperature",
-  "askRemoval",
-  "maxContext",
-  "maxResponse",
-  "frequencyPenalty",
-  "PresensePenalty",
-  "theme",
-  "textTheme",
-  "lineHeight",
-  "seperateModelsForAxModels",
-  "seperateModels",
-  "customCSS",
-  "guiHTML",
-  "colorSchemeName",
-  "selectedPersona",
-  "characterOrder",
-];
-
-const domainDbKeys = new Set([
-  "characters",
-  "modules",
-  "enabledModules",
-  "plugins",
-  "personas",
-  "selectedPersona",
-]);
-
-function getDomainDbValue(key: string): any {
-  switch (key) {
-    case "characters":
-      return characterStore.characters;
-    case "modules":
-      return moduleStore.modules;
-    case "enabledModules":
-      return moduleStore.enabledModules;
-    case "plugins":
-      return pluginStore.compatibilityPlugins();
-    case "personas":
-      return personaStore.personas;
-    case "selectedPersona":
-      return personaStore.activeIndex;
-  }
-}
-
-function setDomainDbValue(
-  key: string,
-  value: any,
-): true | false | Promise<void> {
-  switch (key) {
-    case "characters":
-      return characterStore.snapshot.saveAll(value);
-    case "modules":
-      if (!Array.isArray(value)) {
-        throw new TypeError("Plugin database modules must be an array");
-      }
-
-      moduleStore.upsertModules(value);
-      return true;
-    case "enabledModules":
-      moduleStore.enabledModules = value;
-      return true;
-    case "plugins":
-      if (!Array.isArray(value)) {
-        throw new TypeError("Plugin database plugins must be an array");
-      }
-
-      return pluginStore.replaceCompatibilityPlugins(value);
-    case "personas":
-      personaStore.replace(value);
-      return true;
-    case "selectedPersona":
-      personaStore.select(value, "plugin compatibility API");
-      return true;
-    default:
-      return false;
-  }
-}
-
-function getAllowedDbValue(key: string): any {
-  if (domainDbKeys.has(key)) return getDomainDbValue(key);
-  if (isPresetStoreSettingKey(key)) return presetStore.state[key];
-  return settingsStore.state[key];
-}
-
-function setAllowedDbValue(key: string, value: any): void | Promise<void> {
-  const domainResult = setDomainDbValue(key, value);
-  if (domainResult !== false) {
-    return domainResult === true ? undefined : domainResult;
-  }
-
-  if (isPresetStoreSettingKey(key)) presetStore.set(key, value);
-  else settingsStore.set(key as any, value);
-}
-
-function hasAllowedDbValue(key: string): boolean {
-  return (
-    domainDbKeys.has(key) ||
-    (isPresetStoreSettingKey(key)
-      ? key in presetStore.state
-      : key in settingsStore.state)
-  );
-}
-
-export const getV2PluginAPIs = () => {
-  return {
-    risuFetch: globalFetch,
-    nativeFetch: fetchNative,
-    getArg: (arg: string) => {
-      const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins) {
-        if (plugin.name === name) return plugin.realArg[realArg];
-      }
-    },
-    getChar: async () =>
-      (await characterStore.snapshot.load(get(selectedCharID))) ?? undefined,
-    setChar: (char: any) => {
-      const charid = get(selectedCharID);
-      return characterStore.snapshot.save(charid, char);
-    },
-    addProvider: (
-      name: string,
-      func: (
-        arg: PluginV2ProviderArgument,
-        abortSignal?: AbortSignal,
-      ) => Promise<{ success: boolean; content: string }>,
-      options?: PluginV2ProviderOptions,
-    ) => {
-      const provs = get(customProviderStore);
-      provs.push(name);
-      pluginV2.providers.set(name, func);
-      pluginV2.providerOptions.set(name, options ?? {});
-      customProviderStore.set(provs);
-    },
-    addRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
-      if (pluginV2["edit" + name]) pluginV2["edit" + name].add(func);
-      else throw `script handler named ${name} not found`;
-    },
-    removeRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
-      if (pluginV2["edit" + name]) pluginV2["edit" + name].delete(func);
-      else throw `script handler named ${name} not found`;
-    },
-    addRisuReplacer: (name: string, func: ReplacerFunction) => {
-      if (pluginV2["replacer" + name]) pluginV2["replacer" + name].add(func);
-      else throw `replacer handler named ${name} not found`;
-    },
-    removeRisuReplacer: (name: string, func: ReplacerFunction) => {
-      if (pluginV2["replacer" + name]) pluginV2["replacer" + name].delete(func);
-      else throw `replacer handler named ${name} not found`;
-    },
-    addRisuChatListener: (mode: string, func: ChatOutputListener) => {
-      if (mode === "output") pluginV2.chatOutput.add(func);
-      else throw `chat listener mode ${mode} not found`;
-    },
-    removeRisuChatListener: (mode: string, func: ChatOutputListener) => {
-      if (mode === "output") pluginV2.chatOutput.delete(func);
-      else throw `chat listener mode ${mode} not found`;
-    },
-    onUnload: (func: () => void | Promise<void>) => {
-      pluginV2.unload.add(func);
-    },
-    setArg: (arg: string, value: string | number) => {
-      const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins) {
-        if (plugin.name === name) plugin.realArg[realArg] = value;
-      }
-    },
-    safeGlobalThis: {} as any,
-    getSafeGlobalThis: () => {
-      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0) {
-        return globalThis.__pluginApis__.safeGlobalThis;
-      }
-
-      //safeGlobalThis
-      const keys = Object.keys(globalThis);
-      const safeGlobal: any = {};
-      const allowedKeys = [
-        "console",
-        "TextEncoder",
-        "TextDecoder",
-        "URL",
-        "URLSearchParams",
-      ];
-      for (const key of keys) {
-        if (allowedKeys.includes(key)) {
-          safeGlobal[key] = (globalThis as any)[key];
-        }
-      }
-
-      //compatibility layer with old unsafe APIs
-
-      //from PBV2
-      const directoryPicker = (
-        window as Window & {
-          showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
-        }
-      ).showDirectoryPicker;
-      safeGlobal.showDirectoryPicker = directoryPicker?.bind(window);
-
-      safeGlobal.DBState = {
-        db: globalThis.__pluginApis__.getDatabase(),
-      };
-      safeGlobal.setInterval = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into setInterval params causes type mismatch with TimerHandler signature
-        return globalThis.setInterval(...args);
-      };
-      safeGlobal.setTimeout = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into setTimeout params causes type mismatch with TimerHandler signature
-        return globalThis.setTimeout(...args);
-      };
-      safeGlobal.clearInterval = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into clearInterval - first arg should be number | undefined
-        return globalThis.clearInterval(...args);
-      };
-      safeGlobal.clearTimeout = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into clearTimeout - first arg should be number | undefined
-        return globalThis.clearTimeout(...args);
-      };
-      safeGlobal.alert = globalThis.alert;
-      safeGlobal.confirm = globalThis.confirm;
-      safeGlobal.prompt = globalThis.prompt;
-      safeGlobal.innerWidth = window.innerWidth;
-      safeGlobal.innerHeight = window.innerHeight;
-      safeGlobal.getComputedStyle = window.getComputedStyle;
-      safeGlobal.navigator = window.navigator;
-      safeGlobal.localStorage = globalThis.__pluginApis__.safeLocalStorage;
-      safeGlobal.indexedDB = globalThis.__pluginApis__.safeIdbFactory;
-      safeGlobal.__pluginApis__ = globalThis.__pluginApis__;
-      safeGlobal.Object = Object;
-      safeGlobal.Array = Array;
-      safeGlobal.String = String;
-      safeGlobal.Number = Number;
-      safeGlobal.Boolean = Boolean;
-      safeGlobal.Math = Math;
-      safeGlobal.Date = Date;
-      safeGlobal.RegExp = RegExp;
-      safeGlobal.Error = Error;
-      safeGlobal.Function = globalThis.__pluginApis__.SafeFunction;
-      safeGlobal.document = globalThis.__pluginApis__.safeDocument;
-      safeGlobal.addEventListener = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into addEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions)
-        window.addEventListener(...args);
-      };
-      safeGlobal.removeEventListener = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into removeEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions)
-        window.removeEventListener(...args);
-      };
-      return safeGlobal;
-    },
-    safeLocalStorage: new SafeLocalStorage(),
-    safeIdbFactory: SafeIdbFactory,
-    safeDocument: SafeDocument,
-    alertStore: {
-      set: (msg: string) => {},
-    },
-    apiVersion: "2.1",
-    apiVersionCompatibleWith: ["2.0", "2.1"],
-    getDatabase: () => {
-      return new Proxy({} as any, {
-        get(target, prop) {
-          if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) return getAllowedDbValue(prop);
-
-            const custom = settingsStore.state.pluginCustomStorage;
-            if (custom && prop in custom) return $state.snapshot(custom[prop]);
-          }
-          return undefined;
-        },
-        set(target, prop, value) {
-          if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
-              const pending = setAllowedDbValue(prop, value);
-              if (pending) {
-                void pending.catch((error) => {
-                  console.error(
-                    `Failed to persist compatibility database key '${prop}':`,
-                    error,
-                  );
-                });
-              }
-
-              return true;
-            } else {
-              settingsStore.setPluginCustomStorageKey(prop, value);
-              return true;
-            }
-          }
-
-          return false;
-        },
-        ownKeys(target) {
-          const keys = allowedDbKeys.filter((key) => hasAllowedDbValue(key));
-          keys.push(...settingsStore.getPluginCustomStorageKeys());
-          return Array.from(new Set(keys));
-        },
-        has(target, prop) {
-          if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
-              return true;
-            }
-            if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
-          }
-          return false;
-        },
-        getOwnPropertyDescriptor(target, prop) {
-          if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
-              return {
-                value: getAllowedDbValue(prop),
-                writable: true,
-                enumerable: true,
-                configurable: true,
-              };
-            }
-
-            const custom = settingsStore.state.pluginCustomStorage;
-            if (custom && prop in custom) {
-              return {
-                value: custom[prop],
-                writable: true,
-                enumerable: true,
-                configurable: true,
-              };
-            }
-
-            if (settingsStore.hasPluginCustomStorageKey(prop)) {
-              return {
-                value: undefined,
-                writable: true,
-                enumerable: true,
-                configurable: true,
-              };
-            }
-          }
-          return undefined;
-        },
-        deleteProperty(target, prop) {
-          if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
-              console.log(
-                "Attempt to delete db." +
-                  String(prop) +
-                  " denied in safe database proxy.",
-              );
-              return false;
-            }
-            settingsStore.removePluginCustomStorageKey(prop);
-            return true;
-          }
-          return false;
-        },
-        getPrototypeOf(target) {
-          return Reflect.getPrototypeOf(target);
-        },
-      });
-    },
-    pluginStorage: {
-      getItem: async (key: string) => {
-        try {
-          const loaded = await settingsStore.loadPluginCustomStorageKey(key);
-          return loaded === undefined ? null : $state.snapshot(loaded);
-        } catch (err) {
-          console.error(
-            `Failed to load plugin custom storage key '${key}':`,
-            err,
-          );
-          return null;
-        }
-      },
-      setItem: (key: string, value: any) => {
-        settingsStore.setPluginCustomStorageKey(key, value);
-      },
-      removeItem: (key: string) => {
-        settingsStore.removePluginCustomStorageKey(key);
-      },
-      clear: () => {
-        settingsStore.clearPluginCustomStorage();
-      },
-      key: (index: number) => {
-        const keys = settingsStore.getPluginCustomStorageKeys();
-        return keys[index] || null;
-      },
-      keys: () => {
-        return settingsStore.getPluginCustomStorageKeys();
-      },
-      length: () => {
-        return settingsStore.getPluginCustomStorageKeys().length;
-      },
-    },
-    setDatabaseLite: async (newDb: any) => {
-      if (!newDb || typeof newDb !== "object") return;
-      for (const key of Object.keys(newDb)) {
-        if (allowedDbKeys.includes(key)) {
-          await setAllowedDbValue(key, newDb[key]);
-        } else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
-      }
-    },
-    setDatabase: async (newDb: any) => {
-      if (!newDb || typeof newDb !== "object") return;
-      for (const key of Object.keys(newDb)) {
-        if (key === "plugins") {
-          console.warn(
-            "[WARN] Plugin attempted to access plugin directly. this would be blocked in future versions. Instead, use the provided APIs to manage plugins. Attempting to handle plugin installation via plugin for new plugins in the provided database object.",
-          );
-          newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins);
-        }
-
-        if (allowedDbKeys.includes(key)) {
-          await setAllowedDbValue(key, newDb[key]);
-        } else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
-      }
-    },
-    SafeFunction: new Proxy(Function, {
-      construct(target, args) {
-        return function () {
-          return globalThis.__pluginApis__.getSafeGlobalThis();
-        };
-      },
-
-      //call too
-      apply(target, thisArg, args) {
-        return function () {
-          return globalThis.__pluginApis__.getSafeGlobalThis();
-        };
-      },
-    }),
-    loadPlugins: loadPlugins,
-    readImage: (path: string) => {
-      if (path.startsWith("assets/"))
-      //trim assets/ prefix temporarily
-      {
-        path = path.slice(7);
-      }
-
-      if (path.includes("/") || path.includes("\\")) {
-        throw new Error(
-          "readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.",
-        );
-      }
-
-      //re-add assets/ prefix
-      return readImage("assets/" + path);
-    },
-    saveAsset: (data: Uint8Array) => {
-      return saveAsset(data);
-    },
-  };
-};
-
 /**
  * @deprecated HaejeokRisuai not supported V2 Plugin. do not use it.
  */
-export async function loadV2Plugin(plugins: PluginMetadata[]) {}
+export async function loadV2Plugin(plugins: PluginMetadata[]) {
+  void plugins;
+}
 
 export async function translatorPlugin(text: string, from: string, to: string) {
+  void text;
+  void from;
+  void to;
   return false;
 }
 
 export async function pluginProcess(
   arg:
     | {
-        prompt_chat: OpenAIChat;
+        prompt_chat: OpenAIChat[];
         temperature: number;
         max_tokens: number;
         presence_penalty: number;
         frequency_penalty: number;
-        bias: { [key: string]: string };
+        bias: [string, number][];
       }
-    | {},
+    | Record<string, never>,
 ) {
+  void arg;
   return {
     success: false,
     content: language.pluginProviderNotFound,
