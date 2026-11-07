@@ -56,7 +56,9 @@ test("Capture ModelList modal alignment", async ({ page }) => {
   // Click ModelList trigger button
   const auxModelButton = page
     .locator("button")
-    .filter({ hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i })
+    .filter({
+      hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i,
+    })
     .first();
   await expect(auxModelButton).toBeVisible();
   await auxModelButton.click();
@@ -68,25 +70,38 @@ test("Capture ModelList modal alignment", async ({ page }) => {
   // Verify top-level items have uniform centered text alignment
   const oobaBtn = page.getByRole("button", { name: "Ooba", exact: true });
   await expect(oobaBtn).toBeVisible();
-  const oobaAlign = await oobaBtn.evaluate((el) => window.getComputedStyle(el).textAlign);
+  const oobaAlign = await oobaBtn.evaluate(
+    (el) => window.getComputedStyle(el).textAlign,
+  );
   expect(oobaAlign).toBe("center");
 
-  const openRouterBtn = page.getByRole("button", { name: "OpenRouter", exact: true });
+  const openRouterBtn = page.getByRole("button", {
+    name: "OpenRouter",
+    exact: true,
+  });
   await expect(openRouterBtn).toBeVisible();
-  const openRouterAlign = await openRouterBtn.evaluate((el) => window.getComputedStyle(el).textAlign);
+  const openRouterAlign = await openRouterBtn.evaluate(
+    (el) => window.getComputedStyle(el).textAlign,
+  );
   expect(openRouterAlign).toBe("center");
 
   const koboldBtn = page.getByRole("button", { name: "Kobold", exact: true });
   await expect(koboldBtn).toBeVisible();
-  const koboldAlign = await koboldBtn.evaluate((el) => window.getComputedStyle(el).textAlign);
+  const koboldAlign = await koboldBtn.evaluate(
+    (el) => window.getComputedStyle(el).textAlign,
+  );
   expect(koboldAlign).toBe("center");
 
   const noneBtn = page
     .locator("button")
-    .filter({ hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i })
+    .filter({
+      hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i,
+    })
     .first();
   await expect(noneBtn).toBeVisible();
-  const noneAlign = await noneBtn.evaluate((el) => window.getComputedStyle(el).textAlign);
+  const noneAlign = await noneBtn.evaluate(
+    (el) => window.getComputedStyle(el).textAlign,
+  );
   expect(noneAlign).toBe("center");
 
   // Take screenshot of the modal unexpanded

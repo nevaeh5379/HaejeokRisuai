@@ -98,14 +98,13 @@ export async function exportDatabaseSnapshotWith(
   options: SnapshotOptions,
 ): Promise<DatabaseSnapshot> {
   const { revision, initialized } = await options.readMeta();
-  if (!initialized) {
-    return { revision, initialized: false, database: null };
-  }
+  if (!initialized) return { revision, initialized: false, database: null };
 
   const rows = new Map<string, SqlRow[]>();
   for (const table of SNAPSHOT_TABLES) {
     rows.set(table, await dialect.selectOrdered(table));
   }
+
   const read = (table: string): SqlRow[] => rows.get(table) ?? [];
 
   const database: SqlRow = rebuildSettings(
@@ -142,9 +141,7 @@ export async function exportDatabaseSnapshotWith(
       ...decodePresetData(rebuiltModules[row.module_id]),
       id: row.module_id,
     }));
-  } else {
-    database.modules = database.modules || [];
-  }
+  } else database.modules = database.modules || [];
 
   const decodeScript = options.decodeScript ?? ((value: unknown) => value);
   const pluginScriptMap = new Map<string, unknown>(
@@ -164,6 +161,7 @@ export async function exportDatabaseSnapshotWith(
     if (script === undefined) {
       throw new Error(`Plugin script is missing: ${id}`);
     }
+
     return { ...metadata, script };
   });
 
@@ -252,6 +250,7 @@ function scalarSettingValue(row: SqlRow): unknown {
       return text;
     }
   }
+
   return text;
 }
 

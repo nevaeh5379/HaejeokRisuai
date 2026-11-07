@@ -48,6 +48,7 @@ export async function requestOpenAIStreamingTransport(
       }),
     };
   }
+
   const response = await fetchNative(replacerURL, {
     body: JSON.stringify(body),
     method: "POST",
@@ -72,6 +73,7 @@ export async function requestOpenAIStreamingTransport(
       result: await textifyReadableStream(response.body),
     };
   }
+
   addFetchLog({
     body,
     response: "Streaming",

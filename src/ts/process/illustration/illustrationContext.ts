@@ -109,30 +109,35 @@ export async function currentIllustrationContext(
     if (supa[0]?.startsWith("hypa:")) {
       try {
         const legacy = JSON.parse(supa.slice(1).join("\n"));
-        if (Array.isArray(legacy))
+        if (Array.isArray(legacy)) {
           for (const summary of legacy) {
             if (
               typeof summary.id === "string" &&
               typeof summary.supa === "string"
-            )
+            ) {
               candidates.push({
                 chatMemos: [summary.id],
                 text: summary.supa,
               } as (typeof candidates)[number]);
+            }
           }
+        }
       } catch {
         /* A malformed old cache must not trigger memory regeneration. */
       }
     }
-    for (const candidate of candidates)
+
+    for (const candidate of candidates) {
       for (const id of candidate.chatMemos) needed.add(id);
+    }
     if (supa[0] && !supa[0].startsWith("hypa:")) needed.add(supa[0]);
     const preceding = new Set<string>();
     let before = position;
     while (needed.size && before > 0) {
       const page = await storage.message.page(target.chatId, before, 50);
-      for (const m of page.messages)
+      for (const m of page.messages) {
         if (needed.delete(m.chatId)) preceding.add(m.chatId);
+      }
       if (!page.hasMore || page.offset >= before) break;
       before = page.offset;
     }
@@ -143,8 +148,9 @@ export async function currentIllustrationContext(
       )
       .map((c) => c.text)
       .join("\n\n");
-    if (!context.memory && preceding.has(supa[0]))
+    if (!context.memory && preceding.has(supa[0])) {
       context.memory = supa.slice(1).join("\n");
+    }
   }
   return context;
 }

@@ -153,9 +153,7 @@ async function getAndroidUpdate(): Promise<UpdateCandidate | null> {
               `Updating to ${checked.latestVersion}...`,
               event.percent,
             );
-          } else {
-            alertProgress(`Updating to ${checked.latestVersion}...`, 0);
-          }
+          } else alertProgress(`Updating to ${checked.latestVersion}...`, 0);
         },
       );
       try {
@@ -243,5 +241,6 @@ export function checkRisuUpdate(): Promise<void> {
       activeUpdateCheck = null;
     });
   }
+
   return activeUpdateCheck;
 }

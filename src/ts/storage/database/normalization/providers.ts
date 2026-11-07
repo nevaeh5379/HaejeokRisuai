@@ -173,6 +173,7 @@ function migrateOpenRouterProvider(
       ignore: [],
     };
   }
+
   return value as Database["openrouterProvider"] | undefined;
 }
 
@@ -180,6 +181,7 @@ export function normalizePortablePreset(preset: botPreset): void {
   if (Array.isArray(preset.promptTemplate)) {
     preset.promptTemplate = normalizePromptTemplate(preset.promptTemplate);
   }
+
   normalizeLocalNetworkSettings(preset);
   const migratedProvider = migrateOpenRouterProvider(preset.openrouterProvider);
   if (migratedProvider) {

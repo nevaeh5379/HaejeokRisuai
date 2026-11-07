@@ -17,6 +17,7 @@ function parseRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
   }
+
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
@@ -27,6 +28,7 @@ function parseRecord(raw: unknown): Record<string, unknown> {
       // malformed JSON
     }
   }
+
   return {};
 }
 
@@ -93,5 +95,6 @@ export function mergeWithDefaults(saved: unknown): LogExporterSettings {
   if (saved && typeof saved === "object" && !Array.isArray(saved)) {
     return { ...DEFAULT_SETTINGS, ...(saved as Partial<LogExporterSettings>) };
   }
+
   return { ...DEFAULT_SETTINGS };
 }

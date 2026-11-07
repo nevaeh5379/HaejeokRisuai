@@ -159,8 +159,9 @@ describe("ComfyUI workflow node definitions", () => {
     complete.get("/object_info/B")!({ B: decode });
     await vi.waitFor(() => expect(getJson).toHaveBeenCalledTimes(4));
     expect(progress).toHaveBeenLastCalledWith(1, 4);
-    for (const type of ["A", "C", "D"])
+    for (const type of ["A", "C", "D"]) {
       complete.get(`/object_info/${type}`)!({ [type]: decode });
+    }
     expect(await result).toEqual({
       A: decode,
       B: decode,

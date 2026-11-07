@@ -36,9 +36,8 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
   private getApiKey(): string {
     const db = settingsStore.state;
     const apiKey = db.voyageApiKey?.trim();
-    if (!apiKey) {
-      throw new Error("Voyage Context 3 requires a Voyage API Key");
-    }
+    if (!apiKey) throw new Error("Voyage Context 3 requires a Voyage API Key");
+
     return apiKey;
   }
 
@@ -129,9 +128,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
       currentChunkCount += group.length;
     }
 
-    if (currentBatch.length > 0) {
-      batches.push(currentBatch);
-    }
+    if (currentBatch.length > 0) batches.push(currentBatch);
 
     return batches;
   }

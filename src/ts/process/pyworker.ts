@@ -30,9 +30,8 @@ type PyWorkerMessage = InitMessage | FunctionResultMessage | PythonMessage;
 let py: PyodideInterface;
 
 async function initPyodide() {
-  if (py) {
-    return py;
-  }
+  if (py) return py;
+
   py = await loadPyodide({
     indexURL: `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`,
   });
@@ -45,7 +44,7 @@ self.onmessage = async (event: MessageEvent<PyWorkerMessage>) => {
   switch (type) {
     case "init": {
       const { id, moduleFunctions, code } = event.data as InitMessage;
-      let md: Record<string, any> = {};
+      const md: Record<string, any> = {};
       for (const func of moduleFunctions) {
         md[func] = (...args: any[]) => {
           return new Promise((resolve, reject) => {
@@ -68,6 +67,7 @@ self.onmessage = async (event: MessageEvent<PyWorkerMessage>) => {
           });
         };
       }
+
       py.unregisterJsModule("js");
       py.registerJsModule("risuai", md);
       py.FS.writeFile("./cd.py", code);

@@ -201,6 +201,7 @@ function assertSqlPlanMatchesSource(
       "The staged SQL plan does not match the current local database stream.",
     );
   }
+
   if (remote.offset < 0 || remote.offset > source.size) {
     throw new StorageSyncPlanMismatchError(
       "The staged SQL offset is outside the source stream.",
@@ -262,6 +263,7 @@ async function uploadAsset(
       `Invalid staged offset for asset '${asset.key}'.`,
     );
   }
+
   const chunkSize = Math.max(
     1,
     Math.min(session.chunkSizeBytes, STORAGE_SYNC_ASSET_CHUNK_BYTES),
@@ -274,6 +276,7 @@ async function uploadAsset(
     if (data.byteLength !== length) {
       throw new StorageSyncSourceAssetsChangedError();
     }
+
     const result = await target.uploadStorageSyncAssetChunk(
       session.id,
       asset.id,
@@ -287,6 +290,7 @@ async function uploadAsset(
         `Remote asset offset did not advance for '${asset.key}'.`,
       );
     }
+
     progress.transferred += data.byteLength;
     offset = result.offset;
     onProgress?.({
@@ -348,6 +352,7 @@ async function uploadPlannedAssets(
       "Remote assets did not reach the ready state.",
     );
   }
+
   return finalPlan;
 }
 async function uploadSqlStream(
@@ -391,6 +396,7 @@ async function uploadSqlStream(
         "Remote SQL offset did not advance as expected.",
       );
     }
+
     remoteOffset = next.offset;
     remotePlan = next;
     onProgress?.({
@@ -408,6 +414,7 @@ async function uploadSqlStream(
       "Remote SQL stream did not reach the ready state.",
     );
   }
+
   return remotePlan;
 }
 
@@ -445,6 +452,7 @@ async function resolveSession(
         "Local data changed since the saved sync session was created. Refresh the preview before continuing.",
       );
     }
+
     const session = await target.getStorageSyncSession(
       resume.sessionId,
       signal,
@@ -514,6 +522,7 @@ export async function stageLocalStorageToRemote(
       "This server does not support syncing installed plugin definitions. Upgrade the server before syncing this database. No data has been uploaded by this attempt.",
     );
   }
+
   const assetManifest = await buildStorageSyncAssetManifest(sourceAssets);
   const session = await resolveSession(
     target,
@@ -529,6 +538,7 @@ export async function stageLocalStorageToRemote(
         "The finalized sync result belongs to a different local source revision.",
       );
     }
+
     throw new StorageSyncAlreadyFinalizedError(
       session.id,
       session.finalizedResult,
@@ -596,6 +606,7 @@ export async function stageLocalStorageToRemote(
   ) {
     throw new StorageSyncSourceAssetsChangedError();
   }
+
   await flushPendingWrites();
   throwIfAborted(signal);
   const finalSourceSummary = await requireSourceSummary(sourceSql);
@@ -604,6 +615,7 @@ export async function stageLocalStorageToRemote(
       "Local SQL data changed while the sync was staging. Refresh the preview and retry.",
     );
   }
+
   const finalTargetSummary = await target.getStorageSyncSummary(signal);
   assertTargetUnchanged(session.summary, finalTargetSummary);
 
@@ -672,6 +684,7 @@ export async function syncLocalStorageToRemote(
         "Remote finalize result does not match the staged source and target.",
       );
     }
+
     clearStorageSyncResumeState(staged.session.id, resumeStorage);
     onProgress?.({ phase: "completed" });
     return { finalized, staged, resumedFinalized: false };

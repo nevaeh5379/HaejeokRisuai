@@ -50,9 +50,7 @@ export async function processZip(dataArray: Uint8Array): Promise<string> {
       reader.readAsDataURL(blob);
     });
     return base64;
-  } else {
-    throw new Error("No image found in ZIP file");
-  }
+  } else throw new Error("No image found in ZIP file");
 }
 
 export class CharXWriter {
@@ -65,12 +63,9 @@ export class CharXWriter {
       LocalWriter | WritableStreamDefaultWriter<Uint8Array> | VirtualWriter,
   ) {
     const handlerAsync = (err: Error, dat: Uint8Array, final: boolean) => {
-      if (dat) {
-        this.apb.append(dat);
-      }
-      if (final) {
-        this.writeEnd = true;
-      }
+      if (dat) this.apb.append(dat);
+
+      if (final) this.writeEnd = true;
     };
 
     this.zip = new fflate.Zip();
@@ -83,9 +78,8 @@ export class CharXWriter {
   async writeJpeg(img: Uint8Array) {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return;
-    }
+    if (!ctx) return;
+
     const imgBlob = new Blob([asBuffer(img)], { type: "image/jpeg" });
     const imgURL = URL.createObjectURL(imgBlob);
     const imgElement = document.createElement("img");
@@ -113,11 +107,9 @@ export class CharXWriter {
   ) {
     key = this.#sanitizeZipFilename(key);
     let dat: Uint8Array;
-    if (typeof data === "string") {
-      dat = new TextEncoder().encode(data);
-    } else {
-      dat = data;
-    }
+    if (typeof data === "string") dat = new TextEncoder().encode(data);
+    else dat = data;
+
     this.writeEnd = false;
     const file = new fflate.ZipDeflate(key, {
       level: level ?? 0,
@@ -126,24 +118,21 @@ export class CharXWriter {
     file.push(dat, true);
     await this.writer.write(this.apb.buffer);
     this.apb.clear();
-    if (this.writeEnd) {
-      await this.writer.close();
-    }
+    if (this.writeEnd) await this.writer.close();
   }
 
   #sanitizeZipFilename(filename: string) {
     let sanitized = filename.replace(/[<>:"\\|?*\x00-\x1F]/g, "_");
     sanitized = sanitized.replace(/[. ]+$/, "");
     const reservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
-    if (reservedNames.test(sanitized)) {
-      sanitized = "_" + sanitized;
-    }
+    if (reservedNames.test(sanitized)) sanitized = "_" + sanitized;
+
     if (!sanitized || sanitized === "." || sanitized === "..") {
       sanitized = "file_" + Date.now();
     }
 
     const splitName = sanitized.split(".");
-    let baseName = splitName.slice(0, -1).join(".");
+    const baseName = splitName.slice(0, -1).join(".");
     const extension =
       splitName.length > 1 ? "." + splitName[splitName.length - 1] : "";
     let counter = 1;
@@ -161,9 +150,7 @@ export class CharXWriter {
     this.zip.end();
     await this.writer.write(this.apb.buffer);
     this.apb.clear();
-    if (this.writeEnd) {
-      await this.writer.close();
-    }
+    if (this.writeEnd) await this.writer.close();
   }
 }
 
@@ -270,9 +257,8 @@ export class CharXImporter {
     const reader = stream.getReader();
     while (true) {
       const { done, value } = await reader.read();
-      if (value) {
-        await this.#feedChunk(value, false);
-      }
+      if (value) await this.#feedChunk(value, false);
+
       if (done) {
         await this.#feedChunk(new Uint8Array(0), true);
         break;
@@ -287,9 +273,7 @@ export class CharXImporter {
   async #feedChunk(data: Uint8Array, final: boolean = false) {
     this.unzip.push(data, final);
 
-    if (final) {
-      await this.#finalize();
-    }
+    if (final) await this.#finalize();
   }
 
   /**
@@ -300,6 +284,7 @@ export class CharXImporter {
     if (!this.completionPromise) {
       throw new Error("parse() must be called before done()");
     }
+
     return this.completionPromise;
   }
 
@@ -342,9 +327,7 @@ export class CharXImporter {
     data: Uint8Array | File | ReadableStream<Uint8Array>,
   ): ReadableStream<Uint8Array> {
     // Already a stream - return as-is
-    if (data instanceof ReadableStream) {
-      return data;
-    }
+    if (data instanceof ReadableStream) return data;
 
     if (data instanceof Uint8Array) {
       let offset = 0;
@@ -415,9 +398,7 @@ export class CharXImporter {
       this.#handleFileData(assetIndex, dat, final);
 
     // Only process files smaller than MAX_ASSET_SIZE_BYTES (50MB)
-    if (file.originalSize ?? 0 < MAX_ASSET_SIZE_BYTES) {
-      file.start();
-    }
+    if (file.originalSize ?? 0 < MAX_ASSET_SIZE_BYTES) file.start();
   }
 
   /**
@@ -426,9 +407,7 @@ export class CharXImporter {
    */
   #handleFileData(fileName: string, data: Uint8Array, final: boolean) {
     this.assetBuffers[fileName].append(data);
-    if (final) {
-      this.#handleFileComplete(fileName);
-    }
+    if (final) this.#handleFileComplete(fileName);
   }
 
   /**
@@ -442,12 +421,12 @@ export class CharXImporter {
       this.excludedFiles.push(fileName);
     } else if (fileName === "card.json") {
       this.cardData = new TextDecoder().decode(assetData);
-    } else if (fileName === "module.risum") {
-      this.moduleData = assetData;
-    } else if (fileName.endsWith(".json")) {
+    } else if (fileName === "module.risum") this.moduleData = assetData;
+    else if (fileName.endsWith(".json")) {
       // Ignore other JSON files
-    } else {
-      // All other files are treated as assets (images, etc.)
+    } else
+    // All other files are treated as assets (images, etc.)
+    {
       this.#processAssetQueue({
         id: fileName,
         data: assetData,
@@ -483,9 +462,8 @@ export class CharXImporter {
         error instanceof Error ? error : new Error(String(error)),
       );
     } finally {
-      if (acquired) {
-        this.semaphore.release();
-      }
+      if (acquired) this.semaphore.release();
+
       this.totalCompleted += 1;
       this.onProgress?.(this.totalCompleted, this.totalEnqueued);
       this.#checkCompletion();
@@ -509,9 +487,7 @@ export class CharXImporter {
   }
 
   #flushNodeAssets() {
-    if (this.pendingNodeAssets.length === 0) {
-      return;
-    }
+    if (this.pendingNodeAssets.length === 0) return;
 
     const batch = this.pendingNodeAssets;
     this.pendingNodeAssets = [];

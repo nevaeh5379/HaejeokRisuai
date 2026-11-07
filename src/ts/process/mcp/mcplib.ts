@@ -154,9 +154,7 @@ export class MCPClient {
     } = {},
   ) {
     this.url = url;
-    if (arg.accessToken) {
-      this.accessToken = arg.accessToken;
-    }
+    if (arg.accessToken) this.accessToken = arg.accessToken;
   }
 
   async connectSSE(stream: ReadableStream, abortController?: AbortController) {
@@ -179,15 +177,12 @@ export class MCPClient {
         const part = buffer.slice(0, delimiterIndex);
         buffer = buffer.slice(delimiterIndex + 2);
 
-        let lines = part.split("\n");
+        const lines = part.split("\n");
         let data = "";
         let eventName = "";
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            data += line.slice(6) + "\n";
-          } else if (line.startsWith("event: ")) {
-            eventName = line.slice(7).trim();
-          }
+          if (line.startsWith("data: ")) data += line.slice(6) + "\n";
+          else if (line.startsWith("event: ")) eventName = line.slice(7).trim();
         }
 
         data = data.trim();
@@ -216,9 +211,7 @@ export class MCPClient {
           } else {
             try {
               const jsonData = JSON.parse(data) as JsonRPC | JsonPing;
-              if (this.sseIdDone.has(jsonData.id)) {
-                continue;
-              }
+              if (this.sseIdDone.has(jsonData.id)) continue;
 
               //@ts-expect-error JsonRPC type doesn't have method property, but JsonPing does
               if (jsonData.method === "ping") {
@@ -263,7 +256,7 @@ export class MCPClient {
   ): Promise<RPCRequestResult> {
     options ??= {};
     const initMethod = options.initMethod || "none";
-    let httpStatus = 500;
+    const httpStatus = 500;
     const url = this.sseEndpoint ?? this.url;
 
     const body =
@@ -284,9 +277,7 @@ export class MCPClient {
       if (options.notifications) {
         delete body.params;
         delete body.id;
-      } else if (!params) {
-        delete body.params;
-      }
+      } else if (!params) delete body.params;
     }
 
     if (this.customTransport) {
@@ -321,9 +312,7 @@ export class MCPClient {
             Accept: "*/*",
           };
 
-      if (this.sessionId) {
-        headers["Mcp-Session-Id"] = this.sessionId;
-      }
+      if (this.sessionId) headers["Mcp-Session-Id"] = this.sessionId;
 
       if (this.accessToken) {
         headers["Authorization"] = `Bearer ${this.accessToken}`;
@@ -342,16 +331,15 @@ export class MCPClient {
         signal?: AbortSignal;
       };
 
-      if (requestParams.method === "GET") {
-        delete requestParams.body;
-      }
+      if (requestParams.method === "GET") delete requestParams.body;
 
       let responsePromise: Promise<RPCRequestResult> | null = null;
       if (this.sseEndpoint && !options.notifications) {
         responsePromise = new Promise<RPCRequestResult>((resolve) => {
           const sseListener = (event: CustomEvent<SseEventDetail>) => {
-            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId)
+            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) {
               return;
+            }
             const data = event.detail.data;
             if (data.id === body.id) {
               document.removeEventListener("mcp-sse", sseListener);
@@ -409,9 +397,7 @@ export class MCPClient {
         );
       }
 
-      if (responsePromise) {
-        return responsePromise;
-      }
+      if (responsePromise) return responsePromise;
 
       if (
         (this.sessionId && response.status === 404) ||
@@ -428,8 +414,9 @@ export class MCPClient {
 
         const v = new Promise<RPCRequestResult>((resolve) => {
           const sseListener = (event: CustomEvent<SseEventDetail>) => {
-            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId)
+            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) {
               return;
+            }
             const data = event.detail.data;
             if (data.id === body.id) {
               document.removeEventListener("mcp-sse", sseListener);
@@ -470,6 +457,7 @@ export class MCPClient {
       if (response.headers.has("Mcp-Session-Id") && initMethod !== "none") {
         this.sessionId = response.headers.get("Mcp-Session-Id");
       }
+
       return {
         rpc: await response.json(),
         http: {
@@ -510,11 +498,8 @@ export class MCPClient {
   }
 
   checkHandshake() {
-    if (this.initialized) {
-      return this.serverInfo;
-    } else {
-      return this.handshake();
-    }
+    if (this.initialized) return this.serverInfo;
+    else return this.handshake();
   }
 
   async handshake() {
@@ -545,9 +530,7 @@ export class MCPClient {
         Accept: "text/event-stream",
       };
 
-      if (this.sessionId) {
-        headers["Mcp-Session-Id"] = this.sessionId;
-      }
+      if (this.sessionId) headers["Mcp-Session-Id"] = this.sessionId;
 
       if (this.accessToken) {
         headers["Authorization"] = `Bearer ${this.accessToken}`;
@@ -569,8 +552,9 @@ export class MCPClient {
       const connectionResult = await new Promise<RPCRequestResult>(
         (resolve) => {
           const sseListener = (event: CustomEvent<SseEventDetail>) => {
-            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId)
+            if (event.detail.mcpClientObjectId !== this.mcpClientObjectId) {
               return;
+            }
             const data = event.detail.data;
             if (data.id === "connected") {
               document.removeEventListener("mcp-sse", sseListener);
@@ -589,15 +573,13 @@ export class MCPClient {
 
       const endpoint = connectionResult.rpc.result.endpoint;
 
-      if (!endpoint) {
-        throw new Error("Failed to get endpoint from MCP server");
-      }
+      if (!endpoint) throw new Error("Failed to get endpoint from MCP server");
 
       const baseUrl = new URL(this.url).origin;
 
       this.sseEndpoint = `${baseUrl}${endpoint}`;
 
-      let r = await this.request(
+      const r = await this.request(
         "initialize",
         {
           protocolVersion: this.protocolVersion,
@@ -636,9 +618,7 @@ export class MCPClient {
           "MCP Server is using an unsupported protocol version",
           d.result.protocolVersion,
         );
-      } else {
-        this.protocolVersion = d.result.protocolVersion;
-      }
+      } else this.protocolVersion = d.result.protocolVersion;
 
       console.log(
         "MCP Handshake Successful",
@@ -648,9 +628,7 @@ export class MCPClient {
       this.initialized = true;
 
       return this.serverInfo;
-    } else {
-      throw "MCP Handshake Failed";
-    }
+    } else throw "MCP Handshake Failed";
   }
 
   async oauthLogin() {
@@ -797,39 +775,32 @@ export class MCPClient {
         tokenUrl: discoveryURLS.token_endpoint,
       });
     }
+
     this.accessToken = tokenData.access_token;
   }
 
   async getPromptList(): Promise<MCPPrompt[]> {
     await this.checkHandshake();
-    if (!this.serverInfo.capabilities?.prompts) {
-      return [];
-    }
-    if (this.cached.prompts.length > 0) {
-      return this.cached.prompts;
-    }
-    let prompts: MCPPrompt[] = [];
+    if (!this.serverInfo.capabilities?.prompts) return [];
+
+    if (this.cached.prompts.length > 0) return this.cached.prompts;
+
+    const prompts: MCPPrompt[] = [];
     let cursor: string | null = null;
     while (true) {
       const args = {
         cursor: cursor,
       } as Record<string, any>;
 
-      if (!args.cursor) {
-        delete args.cursor;
-      }
+      if (!args.cursor) delete args.cursor;
 
       const response = await this.request("prompts/list", args);
       if (response.rpc.result?.prompts) {
         prompts.push(...response.rpc.result.prompts);
         if (response.rpc.result.nextCursor) {
           cursor = response.rpc.result.nextCursor;
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
+        } else break;
+      } else break;
     }
 
     this.cached.prompts = prompts;
@@ -839,22 +810,18 @@ export class MCPClient {
 
   async getToolList(): Promise<MCPTool[]> {
     await this.checkHandshake();
-    if (!this.serverInfo.capabilities?.tools) {
-      return [];
-    }
-    if (this.cached.tools.length > 0) {
-      return this.cached.tools;
-    }
-    let tools: MCPTool[] = [];
+    if (!this.serverInfo.capabilities?.tools) return [];
+
+    if (this.cached.tools.length > 0) return this.cached.tools;
+
+    const tools: MCPTool[] = [];
     let cursor: string | null = null;
     while (true) {
       const args = {
         cursor: cursor,
       } as Record<string, any>;
 
-      if (!args.cursor) {
-        delete args.cursor;
-      }
+      if (!args.cursor) delete args.cursor;
 
       const response = await this.request("tools/list", args);
       console.log("MCP Tools List Response", response);
@@ -862,12 +829,8 @@ export class MCPClient {
         tools.push(...response.rpc.result.tools);
         if (response.rpc.result.nextCursor) {
           cursor = response.rpc.result.nextCursor;
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
+        } else break;
+      } else break;
     }
 
     this.cached.tools = tools;
@@ -908,9 +871,8 @@ export class MCPClient {
     this.accessToken = null;
     this.sseEndpoint = null;
     this.sseResponses = {};
-    for (const sse of this.sses) {
-      sse.abortController?.abort();
-    }
+    for (const sse of this.sses) sse.abortController?.abort();
+
     this.sseIdDone.clear();
     this.sses = [];
     this.onDestroy?.();

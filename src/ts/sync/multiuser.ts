@@ -78,9 +78,9 @@ type ReciveData =
 
 let conn: DataConnection;
 let peer: Peer;
-let connections: DataConnection[] = [];
+const connections: DataConnection[] = [];
 export let connectionOpen = false;
-let requestChatSafeQueue = new Map<
+const requestChatSafeQueue = new Map<
   string,
   { remaining: number; safe: boolean; conn?: DataConnection }
 >();
@@ -109,9 +109,8 @@ export async function createMultiuserRoom() {
       const char = safeStructuredClone(
         characterStore.characters[selectedCharId],
       );
-      if (char.type === "group") {
-        return;
-      }
+      if (char.type === "group") return;
+
       char.chats = [char.chats[char.chatPage]];
       conn.send({
         type: "receive-char",
@@ -148,16 +147,14 @@ export async function createMultiuserRoom() {
     }
 
     conn.on("data", function (data: ReciveData) {
-      if (data.type === "request-char") {
-        requestChar();
-      }
+      if (data.type === "request-char") requestChar();
+
       if (data.type === "receive-char") {
         const selectedCharId = get(selectedCharID);
         const char = characterStore.characters[selectedCharId];
         const recivedChar = data.data;
-        if (char.type === "group") {
-          return;
-        }
+        if (char.type === "group") return;
+
         char.chats[char.chatPage] = recivedChar.chats[0];
       }
       if (data.type === "request-chat-sync") {
@@ -168,9 +165,8 @@ export async function createMultiuserRoom() {
         latestSyncChat = data.data;
 
         for (const connection of connections) {
-          if (connection.connectionId === conn.connectionId) {
-            continue;
-          }
+          if (connection.connectionId === conn.connectionId) continue;
+
           const rs: ReciveSync = {
             type: "receive-chat",
             data: data.data,
@@ -226,9 +222,8 @@ export async function createMultiuserRoom() {
         const queue = requestChatSafeQueue.get(data.id);
         if (queue) {
           queue.remaining--;
-          if (!data.data) {
-            queue.safe = false;
-          }
+          if (!data.data) queue.safe = false;
+
           if (queue.remaining === 0) {
             if (waitingMultiuserId === data.id) {
               waitingMultiuserId = "";
@@ -256,9 +251,7 @@ export async function createMultiuserRoom() {
       }
     });
   });
-  while (!open) {
-    await sleep(100);
-  }
+  while (!open) await sleep(100);
 
   connectionOpen = true;
   ConnectionOpenStore.set(true);
@@ -306,15 +299,12 @@ export async function joinMultiuserRoom() {
           cha.chatPage = 0;
           const ind = findCharacterIndexbyId("§temp");
           const selectedcharIndex = get(selectedCharID);
-          if (ind === -1) {
-            characterStore.characters.push(cha);
-          } else {
-            characterStore.characters[ind] = cha;
-          }
+          if (ind === -1) characterStore.characters.push(cha);
+          else characterStore.characters[ind] = cha;
+
           const tempInd = findCharacterIndexbyId("§temp");
-          if (selectedcharIndex !== tempInd) {
-            selectedCharID.set(tempInd);
-          }
+          if (selectedcharIndex !== tempInd) selectedCharID.set(tempInd);
+
           break;
         }
         case "receive-asset": {
@@ -370,14 +360,14 @@ export async function joinMultiuserRoom() {
 }
 
 export async function peerSync() {
-  if (!connectionOpen) {
-    return;
-  }
+  if (!connectionOpen) return;
+
   await sleep(1);
   const chat = characterStore.currentChat;
   latestSyncChat = chat;
-  if (!conn) {
-    // host user
+  if (!conn)
+  // host user
+  {
     for (const connection of connections) {
       connection.send({
         type: "receive-chat",
@@ -393,9 +383,8 @@ export async function peerSync() {
 }
 
 export async function peerSafeCheck() {
-  if (!connectionOpen) {
-    return true;
-  }
+  if (!connectionOpen) return true;
+
   await sleep(500);
   if (!conn) {
     waitingMultiuserId = v4();
@@ -410,9 +399,8 @@ export async function peerSafeCheck() {
       };
       connection.send(rs);
     }
-    while (waitingMultiuserId !== "") {
-      await sleep(100);
-    }
+    while (waitingMultiuserId !== "") await sleep(100);
+
     return waitingMultiuserSafe;
   } else {
     waitingMultiuserId = v4();
@@ -421,16 +409,14 @@ export async function peerSafeCheck() {
       id: waitingMultiuserId,
     };
     conn.send(rs);
-    while (waitingMultiuserId !== "") {
-      await sleep(100);
-    }
+    while (waitingMultiuserId !== "") await sleep(100);
+
     return waitingMultiuserSafe;
   }
 }
 
 export function peerRevertChat() {
-  if (!connectionOpen || !latestSyncChat) {
-    return;
-  }
+  if (!connectionOpen || !latestSyncChat) return;
+
   characterStore.setCurrentChat(latestSyncChat);
 }

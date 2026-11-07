@@ -15,6 +15,7 @@ function decodeHex(data: string): Uint8Array {
   for (let offset: number = 0; offset < data.length; offset += 2) {
     bytes.push(Number.parseInt(data.slice(offset, offset + 2), 16));
   }
+
   return new Uint8Array(bytes);
 }
 

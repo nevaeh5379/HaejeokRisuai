@@ -17,20 +17,15 @@ export async function migrateLegacyDataIfNeeded(
 ): Promise<void> {
   LoadingStatusState.text = "Checking for Legacy Data...";
   const legacyDb = await checkAndMigrateLegacyDatabase(storage);
-  if (!legacyDb) {
-    return;
-  }
+  if (!legacyDb) return;
+
   const shouldMigrate = await alertConfirm(language.migrateLocalToSqlPrompt);
-  if (!shouldMigrate) {
-    return;
-  }
+  if (!shouldMigrate) return;
+
   LoadingStatusState.text = "Migrating Local Data to SQL...";
   const success = await migrateLegacyDatabase(storage, legacyDb, (status) => {
     LoadingStatusState.text = status;
   });
-  if (success) {
-    alertNormal(language.migrateLocalToSqlSuccess);
-  } else {
-    alertError("Migration failed. Your legacy data is preserved.");
-  }
+  if (success) alertNormal(language.migrateLocalToSqlSuccess);
+  else alertError("Migration failed. Your legacy data is preserved.");
 }

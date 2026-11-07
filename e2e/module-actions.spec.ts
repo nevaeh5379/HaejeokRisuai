@@ -16,6 +16,7 @@ async function boot(page: Page) {
   ) {
     await skip.click();
   }
+
   await expect(page.getByText("Welcome to Haejeok RisuAI")).toHaveCount(0, {
     timeout: 30_000,
   });

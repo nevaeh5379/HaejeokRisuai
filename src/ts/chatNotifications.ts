@@ -35,6 +35,7 @@ function rememberNotification(key?: string): boolean {
   if (notifiedKeys.size > MAX_DEDUPE_KEYS) {
     notifiedKeys.delete(notifiedKeys.values().next().value as string);
   }
+
   return true;
 }
 
@@ -74,8 +75,9 @@ export function resetChatNotificationPermissionForTests(): void {
  * when the user is still interacting with the app.
  */
 export async function ensureChatNotificationPermission(): Promise<void> {
-  if (!settingsStore.state.notification || permissionRequestedThisSession)
+  if (!settingsStore.state.notification || permissionRequestedThisSession) {
     return;
+  }
   permissionRequestedThisSession = true;
   if (usesNativeChatLifecycle()) {
     await requestNativeChatNotificationPermission();
@@ -104,8 +106,9 @@ export async function notifyChatResponse(
   if (
     (!settingsStore.state.notification && !settingsStore.state.playMessage) ||
     !rememberNotification(options.dedupeKey)
-  )
+  ) {
     return;
+  }
 
   const generationId = options.dedupeKey?.startsWith("model-job:")
     ? options.dedupeKey.slice("model-job:".length)
@@ -150,6 +153,7 @@ export async function notifyChatResponse(
     } else {
       await showNativeChatNotification({ title, body, characterId, chatId });
     }
+
     void refreshAndroidNativeSurfaces();
     return;
   }
@@ -161,9 +165,7 @@ export async function notifyChatResponse(
     notification.onclick = () => {
       window.focus();
       notification.close();
-      if (characterId && chatId) {
-        void openChatTargetInTab(characterId, chatId);
-      }
+      if (characterId && chatId) void openChatTargetInTab(characterId, chatId);
     };
   } catch (_error) {}
 }
@@ -181,8 +183,9 @@ function markChatResponseHandledInSw(generationId: string | null): void {
 function swAlreadyNotifiedChatResponse(
   generationId: string | null,
 ): Promise<boolean> {
-  if (!generationId || typeof navigator === "undefined")
+  if (!generationId || typeof navigator === "undefined") {
     return Promise.resolve(false);
+  }
   const controller = navigator.serviceWorker?.controller;
   if (!controller) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {

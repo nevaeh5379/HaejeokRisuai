@@ -33,6 +33,7 @@ function writeUint64BE(
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`Invalid unsigned 64-bit value: ${value}`);
   }
+
   const high = Math.floor(value / 0x1_0000_0000);
   const low = value >>> 0;
   const view = new DataView(
@@ -131,6 +132,7 @@ export class RemoteBulkAssetClient {
     for (const key of keys) {
       encodedKeys.add(Buffer.from(key, "utf8").toString("hex"));
     }
+
     if (encodedKeys.size === 0) return;
     try {
       const requests = await cache.keys();
@@ -236,6 +238,7 @@ export class RemoteBulkAssetClient {
               message = JSON.parse(request.responseText)?.error;
             } catch {}
           }
+
           reject(new Error(message ?? `setItems Error: ${request.status}`));
           return;
         }
@@ -289,9 +292,7 @@ export class RemoteBulkAssetClient {
           missingKeys.push(key);
         }),
       );
-    } else {
-      missingKeys.push(...keys);
-    }
+    } else missingKeys.push(...keys);
 
     if (missingKeys.length === 0) return results;
     const cacheWrites: Promise<void>[] = [];
@@ -307,6 +308,7 @@ export class RemoteBulkAssetClient {
           if (!chunks) {
             throw new Error(`Received chunk before file start: ${name}`);
           }
+
           chunks.push(Buffer.from(chunk));
         },
         onFileEnd: (name) => {
@@ -314,6 +316,7 @@ export class RemoteBulkAssetClient {
           if (!chunks) {
             throw new Error(`Received file end before file start: ${name}`);
           }
+
           const data = Buffer.concat(chunks);
           results.set(name, data);
           receivingChunks.delete(name);
@@ -385,9 +388,7 @@ export class RemoteBulkAssetClient {
       },
     });
 
-    if (!response.ok) {
-      throw new Error(`getItems Error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`getItems Error: ${response.status}`);
 
     if (!response.body) {
       throw new Error("getItems Error: response body is missing");
@@ -427,9 +428,7 @@ export class RemoteBulkAssetClient {
     while (true) {
       const { value, done } = await reader.read();
 
-      if (value) {
-        pending = Buffer.concat([pending, Buffer.from(value)]);
-      }
+      if (value) pending = Buffer.concat([pending, Buffer.from(value)]);
 
       let offset = 0;
 

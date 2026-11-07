@@ -83,6 +83,7 @@ const mdHighlight = markdownit({
         "</pre-hljs-placeholder>"
       );
     }
+
     return "";
   },
   ...markdownItOptions,
@@ -114,13 +115,10 @@ DOMPurify.addHook("uponSanitizeElement", (node: HTMLElement, data) => {
     }
 
     const loading = node.getAttribute("loading");
-    if (!loading) {
-      node.setAttribute("loading", "lazy");
-    }
+    if (!loading) node.setAttribute("loading", "lazy");
+
     const decoding = node.getAttribute("decoding");
-    if (!decoding) {
-      node.setAttribute("decoding", "async");
-    }
+    if (!decoding) node.setAttribute("decoding", "async");
   }
 });
 
@@ -180,16 +178,15 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
         data.attrValue = data.attrValue
           .split(" ")
           .map((v) => {
-            if (v.startsWith("hljs")) {
-              return v;
-            }
-            if (v.startsWith("x-risu-")) {
-              return v;
-            }
+            if (v.startsWith("hljs")) return v;
+
+            if (v.startsWith("x-risu-")) return v;
+
             return "x-risu-" + v;
           })
           .join(" ");
       }
+
       break;
     }
     case "href": {
@@ -257,6 +254,7 @@ function renderMarkdown(md: MarkdownItInstance, data: string) {
   if (settingsStore.state?.customQuotes) {
     quotes = settingsStore.state.customQuotesData ?? quotes;
   }
+
   data = data.replace(/\$\$(.*?)\$\$/gs, (match: string, content: string) => {
     try {
       content = content
@@ -314,9 +312,7 @@ async function renderHighlightableMarkdown(data: string) {
   const highlightPlaceholders = rendered.match(
     /<pre-hljs-placeholder lang="(.+?)">(.+?)<\/pre-hljs-placeholder>/gms,
   );
-  if (!highlightPlaceholders) {
-    return rendered;
-  }
+  if (!highlightPlaceholders) return rendered;
 
   for (const placeholder of highlightPlaceholders) {
     try {
@@ -324,9 +320,8 @@ async function renderHighlightableMarkdown(data: string) {
       const code = placeholder.match(
         /<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms,
       )?.[1];
-      if (!lang || !code) {
-        continue;
-      }
+      if (!lang || !code) continue;
+
       //import language if not already loaded
       //we do not refactor this to a function because we want to keep vite to only import the languages that are needed
       let languageModule: typeof import("highlight.js/lib/languages/*") | null =
@@ -340,6 +335,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("bash")) {
             languageModule = await import("highlight.js/lib/languages/bash");
           }
+
           break;
         }
         case "c":
@@ -349,6 +345,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("cpp")) {
             languageModule = await import("highlight.js/lib/languages/cpp");
           }
+
           break;
         }
         case "cs":
@@ -358,6 +355,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("csharp")) {
             languageModule = await import("highlight.js/lib/languages/csharp");
           }
+
           break;
         }
         case "css": {
@@ -366,6 +364,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("css")) {
             languageModule = await import("highlight.js/lib/languages/css");
           }
+
           break;
         }
         case "dart": {
@@ -374,6 +373,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("dart")) {
             languageModule = await import("highlight.js/lib/languages/dart");
           }
+
           break;
         }
         case "html":
@@ -384,6 +384,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("xml")) {
             languageModule = await import("highlight.js/lib/languages/xml");
           }
+
           break;
         }
         case "java": {
@@ -392,6 +393,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("java")) {
             languageModule = await import("highlight.js/lib/languages/java");
           }
+
           break;
         }
         case "js":
@@ -403,6 +405,7 @@ async function renderHighlightableMarkdown(data: string) {
             languageModule =
               await import("highlight.js/lib/languages/javascript");
           }
+
           break;
         }
         case "json": {
@@ -411,6 +414,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("json")) {
             languageModule = await import("highlight.js/lib/languages/json");
           }
+
           break;
         }
         case "lua": {
@@ -419,6 +423,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("lua")) {
             languageModule = await import("highlight.js/lib/languages/lua");
           }
+
           break;
         }
         case "markdown":
@@ -429,6 +434,7 @@ async function renderHighlightableMarkdown(data: string) {
             languageModule =
               await import("highlight.js/lib/languages/markdown");
           }
+
           break;
         }
         case "py":
@@ -438,6 +444,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("python")) {
             languageModule = await import("highlight.js/lib/languages/python");
           }
+
           break;
         }
         case "rust": {
@@ -446,6 +453,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("rust")) {
             languageModule = await import("highlight.js/lib/languages/rust");
           }
+
           break;
         }
         case "shell": {
@@ -454,6 +462,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("shell")) {
             languageModule = await import("highlight.js/lib/languages/shell");
           }
+
           break;
         }
         case "ts":
@@ -465,6 +474,7 @@ async function renderHighlightableMarkdown(data: string) {
             languageModule =
               await import("highlight.js/lib/languages/typescript");
           }
+
           break;
         }
         case "txt":
@@ -475,6 +485,7 @@ async function renderHighlightableMarkdown(data: string) {
             languageModule =
               await import("highlight.js/lib/languages/plaintext");
           }
+
           break;
         }
         case "yaml": {
@@ -483,6 +494,7 @@ async function renderHighlightableMarkdown(data: string) {
           if (!hljs.getLanguage("yaml")) {
             languageModule = await import("highlight.js/lib/languages/yaml");
           }
+
           break;
         }
         case "risuerror": {
@@ -495,9 +507,8 @@ async function renderHighlightableMarkdown(data: string) {
           fileExt = "none";
         }
       }
-      if (languageModule) {
-        hljs.registerLanguage(lang, languageModule.default);
-      }
+      if (languageModule) hljs.registerLanguage(lang, languageModule.default);
+
       if (lang === "none") {
         rendered = rendered.replace(
           placeholder,
@@ -558,14 +569,15 @@ const fileSrcCache = new BoundedCache<string, string>({
 });
 
 async function getFileSrcCached(path: string) {
-  let cached = fileSrcCache.get(path);
-  if (cached && isLiveObjectUrl(cached)) {
-    return cached;
-  }
-  if (cached) {
-    // Blob was revoked by asset cache eviction; reload from storage.
+  const cached = fileSrcCache.get(path);
+  if (cached && isLiveObjectUrl(cached)) return cached;
+
+  if (cached)
+  // Blob was revoked by asset cache eviction; reload from storage.
+  {
     fileSrcCache.delete(path);
   }
+
   const src = await getFileSrc(path);
   fileSrcCache.set(path, src);
   return src;
@@ -602,9 +614,7 @@ $effect.root(() => {
   $effect(() => {
     const charId = characterStore.selectedId;
     const char = characterStore.characters?.[charId];
-    if (!char || char.type !== "character") {
-      return;
-    }
+    if (!char || char.type !== "character") return;
 
     const charAssets = char.additionalAssets ?? [];
     const emoAssets = char.emotionImages ?? [];
@@ -652,15 +662,14 @@ async function parseAdditionalAssets(
       // Skip image-related assets when hideAllImages is enabled
       // raw and path are also included as they're used in CSS background-image
       if (settingsStore.state.hideAllImages && imageCBS.includes(type)) {
-        return ""; // Hide the image asset
-      }
+        return "";
+      } // Hide the image asset
 
       if (type === "emotion") {
         const srcPath = emoPaths?.[name]?.srcPaths?.[0];
         const path = srcPath ? await getFileSrcCached(srcPath) : null;
-        if (!path) {
-          return "";
-        }
+        if (!path) return "";
+
         return `<img src="${path}" alt="${path}" style="${assetWidthString} "/>`;
       }
 
@@ -679,17 +688,11 @@ async function parseAdditionalAssets(
       let match = assetPaths?.[name];
 
       if (!match) {
-        if (settingsStore.state.legacyMediaFindings) {
-          return "";
-        }
+        if (settingsStore.state.legacyMediaFindings) return "";
 
-        if (assetPaths) {
-          match = getClosestMatch(char, name, assetPaths);
-        }
+        if (assetPaths) match = getClosestMatch(char, name, assetPaths);
 
-        if (!match) {
-          return "";
-        }
+        if (!match) return "";
       }
 
       let pSrc = match.srcPaths[0];
@@ -722,11 +725,13 @@ async function parseAdditionalAssets(
           if (mode === "back") {
             return `<div style="width:100%;height:100%;background: linear-gradient(rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.8)),url(${p}); background-size: cover;"></div>`;
           }
+
           break;
         case "asset": {
           if (match.ext && videoExtensions.includes(match.ext)) {
             return `<video autoplay muted loop><source src="${p}" type="${getMimeType(pSrc)}"></video>\n`;
           }
+
           return `<img src="${p}" alt="${p}" style="${assetWidthString} "/>\n`;
         }
         case "bgm":
@@ -778,9 +783,7 @@ function getClosestMatch(
     }
   }
 
-  if (closestDist > settingsStore.state.assetMaxDifference) {
-    return null;
-  }
+  if (closestDist > settingsStore.state.assetMaxDifference) return null;
 
   assetPaths[closest] = {
     srcPaths: [targetPath],
@@ -794,13 +797,11 @@ function getClosestMatch(
 export function getDistance(a: string, b: string) {
   const h = a.length + 1;
   const w = b.length + 1;
-  let d = new Int16Array(h * w);
-  for (let i = 0; i < h; i++) {
-    d[i * w] = i;
-  }
-  for (let i = 0; i < w; i++) {
-    d[i] = i;
-  }
+  const d = new Int16Array(h * w);
+  for (let i = 0; i < h; i++) d[i * w] = i;
+
+  for (let i = 0; i < w; i++) d[i] = i;
+
   for (let i = 1; i < h; i++) {
     for (let j = 1; j < w; j++) {
       d[i * w + j] = Math.min(
@@ -810,6 +811,7 @@ export function getDistance(a: string, b: string) {
       );
     }
   }
+
   return d[h * w - 1];
 }
 
@@ -846,9 +848,9 @@ async function parseInlayAssets(data: string) {
     for (const inlay of inlayMatch) {
       const inlayType = inlay.startsWith("{{inlayed") ? "inlayed" : "inlay";
       const id = inlay.substring(inlay.indexOf("::") + 2, inlay.length - 2);
-      let prefix =
+      const prefix =
         inlayType !== "inlay" ? `<div class="risu-inlay-image">` : "";
-      let postfix = inlayType !== "inlay" ? `</div>\n\n` : "";
+      const postfix = inlayType !== "inlay" ? `</div>\n\n` : "";
 
       const asset = await getInlayAssetBlob(id);
       if (asset?.type === "signature") {
@@ -906,6 +908,7 @@ async function parseInlayAssets(data: string) {
       }
     }
   }
+
   return data;
 }
 
@@ -957,7 +960,8 @@ export async function ParseMarkdown(
 ) {
   let firstParsed = "";
   const additionalAssetMode = mode === "back" ? "back" : "normal";
-  let char = typeof charArg === "string" ? findCharacterbyId(charArg) : charArg;
+  const char =
+    typeof charArg === "string" ? findCharacterbyId(charArg) : charArg;
 
   if (char && char.type !== "group") {
     data = await parseAdditionalAssets(data, char, additionalAssetMode, {
@@ -993,9 +997,7 @@ export async function ParseMarkdown(
   if (mode === "normal" || mode === "notrim") {
     data = await renderHighlightableMarkdown(data);
 
-    if (mode === "notrim") {
-      return data;
-    }
+    if (mode === "notrim") return data;
   }
   return trimMarkdown(data);
 }
@@ -1074,9 +1076,7 @@ export function trimMarkdown(
     ...purifyConfig,
     RETURN_DOM: true,
   }) as HTMLElement | null;
-  if (!root) {
-    return "";
-  }
+  if (!root) return "";
 
   for (const el of Array.from(root.querySelectorAll("risu-style"))) {
     const decoded = decodeStyleContent(el.textContent ?? "");
@@ -1112,13 +1112,11 @@ function encodeMetadata(modelShortName: string) {
     "}";
 
   const cached = encodedMetadataCache.get(metadata);
-  if (cached !== undefined) {
-    return cached;
-  }
+  if (cached !== undefined) return cached;
 
   let encodedMetaCode = "";
   for (let i = 0; i < metadata.length; i++) {
-    let byte = (metadata.charCodeAt(i) - 97).toString(6).padStart(2, "0");
+    const byte = (metadata.charCodeAt(i) - 97).toString(6).padStart(2, "0");
     for (let j = 0; j < byte.length; j++) {
       switch (byte.charAt(j)) {
         case "0": {
@@ -1153,13 +1151,12 @@ function encodeMetadata(modelShortName: string) {
   if (encodedMetadataCache.size > 64) {
     encodedMetadataCache.delete(encodedMetadataCache.keys().next().value!);
   }
+
   return encodedMetaCode;
 }
 
 export function addMetadataToElement(data: string, modelShortName: string) {
-  if (!aiWatermarkingLawApplies()) {
-    return data;
-  }
+  if (!aiWatermarkingLawApplies()) return data;
 
   const encodedMetaCode = encodeMetadata(modelShortName);
   console.log("Encoded metadata:", encodedMetaCode.length, "characters");
@@ -1169,7 +1166,7 @@ export function addMetadataToElement(data: string, modelShortName: string) {
     "<p> tags to store",
   );
 
-  let d = data.replace(/\<p\>/g, (v) => {
+  const d = data.replace(/\<p\>/g, (v) => {
     return "<p>" + encodedMetaCode;
   });
 
@@ -1177,13 +1174,11 @@ export function addMetadataToElement(data: string, modelShortName: string) {
 }
 
 export async function postTranslationParse(data: string) {
-  let lines = data.split("\n");
+  const lines = data.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
     const trimed = lines[i].trim();
-    if (trimed.startsWith("<")) {
-      lines[i] = trimed;
-    }
+    if (trimed.startsWith("<")) lines[i] = trimed;
   }
 
   data = await renderHighlightableMarkdown(lines.join("\n"));
@@ -1233,6 +1228,7 @@ function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(
         }
       }
     }
+
     if (rule.declarations && settingsStore.state?.autoColorAdapt) {
       const isDark = get(ColorSchemeTypeStore) === "dark";
       const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
@@ -1271,11 +1267,11 @@ function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(
       rule.rules[i] = decodeStyleRule(rule.rules[i]);
     }
   }
+
   if (rule.type === "import") {
-    if (rule.import.startsWith("data:")) {
-      rule.import = "data:,";
-    }
+    if (rule.import.startsWith("data:")) rule.import = "data:,";
   }
+
   return rule;
 }
 
@@ -1301,6 +1297,7 @@ function decodeStyleContent(hexText: string): {
       for (let i = 0; i < rules.length; i++) {
         rules[i] = decodeStyleRule(rules[i]);
       }
+
       ast.stylesheet.rules = rules;
     }
     return {
@@ -1313,6 +1310,7 @@ function decodeStyleContent(hexText: string): {
     if (settingsStore.state.returnCSSError) {
       return { fallback: `CSS ERROR: ${error}` };
     }
+
     return { fallback: "" };
   }
 }
@@ -1340,13 +1338,10 @@ function initMatcher() {
       internalOnly?: boolean;
     }): void | Promise<void> {
       const callback = arg.callback;
-      if (callback === "doc_only") {
-        return;
-      }
+      if (callback === "doc_only") return;
+
       const names = [arg.name, ...arg.alias];
-      for (const name of names) {
-        matcherMap.set(name, callback);
-      }
+      for (const name of names) matcherMap.set(name, callback);
     },
     getSettings: () => settingsStore.state,
     getPresetSettings: () => presetStore.state,
@@ -1403,15 +1398,12 @@ function matcher(
     let splited: string[];
     if (colonIndex !== -1 && p1[colonIndex + 1] === ":") {
       splited = p1.split("::");
-    } else {
-      splited = p1.split(":");
-    }
+    } else splited = p1.split(":");
+
     const name = splited[0].toLocaleLowerCase().replace(/[\s_-]/g, "");
     const args = splited.slice(1);
     const callback = matcherMap.get(name);
-    if (callback) {
-      return callback(p1, matcherArg, args, vars);
-    }
+    if (callback) return callback(p1, matcherArg, args, vars);
   } catch (error) {}
 
   return null;
@@ -1419,15 +1411,12 @@ function matcher(
 
 const dateTimeFormat = (main: string, time = 0) => {
   const date = time === 0 ? new Date() : new Date(time);
-  if (!main) {
-    return "";
-  }
-  if (main.startsWith(":")) {
-    main = main.substring(1);
-  }
-  if (main.length > 300) {
-    return "";
-  }
+  if (!main) return "";
+
+  if (main.startsWith(":")) main = main.substring(1);
+
+  if (main.length > 300) return "";
+
   return main
     .replace(/YYYY/g, date.getFullYear().toString())
     .replace(/YY/g, date.getFullYear().toString().substring(2))
@@ -1462,9 +1451,7 @@ const dateTimeFormat = (main: string, time = 0) => {
 const legacyBlockMatcher = (p1: string, matcherArg: matcherArg) => {
   const bn = p1.indexOf("\n");
 
-  if (bn === -1) {
-    return null;
-  }
+  if (bn === -1) return null;
 
   const logic = p1.substring(0, bn);
   const content = p1.substring(bn + 1);
@@ -1472,9 +1459,7 @@ const legacyBlockMatcher = (p1: string, matcherArg: matcherArg) => {
 
   switch (statement[0]) {
     case "if": {
-      if (["", "0", "-1"].includes(statement[1])) {
-        return "";
-      }
+      if (["", "0", "-1"].includes(statement[1])) return "";
 
       return content.trim();
     }
@@ -1500,9 +1485,8 @@ type blockMatch =
 function parseArray(p1: string): unknown[] {
   try {
     const arr = JSON.parse(p1);
-    if (Array.isArray(arr)) {
-      return arr;
-    }
+    if (Array.isArray(arr)) return arr;
+
     return p1.split("§");
   } catch (error) {
     return p1.split("§");
@@ -1520,9 +1504,8 @@ function parseDict(p1: string): { [key: string]: unknown } {
 function makeArray(p1: unknown[]): string {
   return JSON.stringify(
     p1.map((f) => {
-      if (typeof f === "string") {
-        return f.replace(/::/g, "\\u003A\\u003A");
-      }
+      if (typeof f === "string") return f.replace(/::/g, "\\u003A\\u003A");
+
       return f;
     }),
   );
@@ -1540,6 +1523,7 @@ function blockStartMatcher(
         type: p1.startsWith("#if_pure") ? "ifpure" : "parse",
       };
     }
+
     return { type: "ignore" };
   }
 
@@ -1568,11 +1552,9 @@ function blockStartMatcher(
         const operator = statement.pop();
         switch (operator) {
           case "not": {
-            if (isTruthy(condition)) {
-              statement.push("0");
-            } else {
-              statement.push("1");
-            }
+            if (isTruthy(condition)) statement.push("0");
+            else statement.push("1");
+
             break;
           }
           case "keep": {
@@ -1589,45 +1571,37 @@ function blockStartMatcher(
             const condition2 = statement.pop();
             if (isTruthy(condition) && isTruthy(condition2)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           case "or": {
             const condition2 = statement.pop();
             if (isTruthy(condition) || isTruthy(condition2)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           case "is": {
             const condition2 = statement.pop();
-            if (condition === condition2) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (condition === condition2) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "isnot": {
             const condition2 = statement.pop();
-            if (condition !== condition2) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (condition !== condition2) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "var": {
             const variable = getChatVar(condition, matcherArg.chatTarget);
-            if (isTruthy(variable)) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (isTruthy(variable)) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "toggle": {
@@ -1635,31 +1609,25 @@ function blockStartMatcher(
               "toggle_" + condition,
               matcherArg.chatTarget,
             );
-            if (isTruthy(variable)) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (isTruthy(variable)) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "vis": {
             //vis = variable is
             const variable = getChatVar(statement.pop(), matcherArg.chatTarget);
-            if (variable === condition) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (variable === condition) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "visnot": {
             //visnot = variable is not
             const variable = getChatVar(statement.pop(), matcherArg.chatTarget);
-            if (variable !== condition) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (variable !== condition) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "tis": {
@@ -1668,11 +1636,9 @@ function blockStartMatcher(
               "toggle_" + statement.pop(),
               matcherArg.chatTarget,
             );
-            if (variable === condition) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (variable === condition) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case "tisnot": {
@@ -1681,55 +1647,47 @@ function blockStartMatcher(
               "toggle_" + statement.pop(),
               matcherArg.chatTarget,
             );
-            if (variable !== condition) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (variable !== condition) statement.push("1");
+            else statement.push("0");
+
             break;
           }
           case ">": {
             const condition2 = statement.pop();
             if (parseFloat(condition2) > parseFloat(condition)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           case "<": {
             const condition2 = statement.pop();
             if (parseFloat(condition2) < parseFloat(condition)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           case ">=": {
             const condition2 = statement.pop();
             if (parseFloat(condition2) >= parseFloat(condition)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           case "<=": {
             const condition2 = statement.pop();
             if (parseFloat(condition2) <= parseFloat(condition)) {
               statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            } else statement.push("0");
+
             break;
           }
           default: {
-            if (isTruthy(condition)) {
-              statement.push("1");
-            } else {
-              statement.push("0");
-            }
+            if (isTruthy(condition)) statement.push("1");
+            else statement.push("0");
+
             break;
           }
         }
@@ -1761,19 +1719,17 @@ function blockStartMatcher(
           }
         }
       }
-    } else {
-      return { type: "newif-falsy" };
-    }
+    } else return { type: "newif-falsy" };
   }
-  if (p1 === "#pure") {
-    return { type: "pure" };
-  }
+
+  if (p1 === "#pure") return { type: "pure" };
+
   if (p1 === "#pure_display" || p1 === "#puredisplay") {
     return { type: "pure-display" };
   }
-  if (p1 === "#code") {
-    return { type: "normalize" };
-  }
+
+  if (p1 === "#code") return { type: "normalize" };
+
   if (p1.startsWith("#escape")) {
     const t2 = p1.substring(7).trim();
     const mode = t2 === "::keep" ? "keep" : undefined;
@@ -1786,9 +1742,8 @@ function blockStartMatcher(
       mode = "keep";
       t2 = t2.substring(7).trim();
     }
-    if (t2.startsWith("as ")) {
-      t2 = t2.substring(3).trim();
-    }
+    if (t2.startsWith("as ")) t2 = t2.substring(3).trim();
+
     return { type: "each", type2: t2, mode };
   }
   if (p1.startsWith("#func")) {
@@ -1827,9 +1782,8 @@ function blockEndMatcher(
       return trimLines(p1Trimmed);
     }
     case "each": {
-      if (type.mode === "keep") {
-        return p1;
-      }
+      if (type.mode === "keep") return p1;
+
       return trimLines(p1Trimmed);
     }
     case "ifpure": {
@@ -1842,19 +1796,13 @@ function blockEndMatcher(
       if (lines.length === 1) {
         const elseIndex = p1.indexOf("{{:else}}");
         if (elseIndex !== -1) {
-          if (type.type === "newif") {
-            return p1.substring(0, elseIndex);
-          }
-          if (type.type === "newif-falsy") {
-            return p1.substring(elseIndex + 9);
-          }
+          if (type.type === "newif") return p1.substring(0, elseIndex);
+
+          if (type.type === "newif-falsy") return p1.substring(elseIndex + 9);
         } else {
-          if (type.type === "newif") {
-            return p1;
-          }
-          if (type.type === "newif-falsy") {
-            return "";
-          }
+          if (type.type === "newif") return p1;
+
+          if (type.type === "newif-falsy") return "";
         }
       }
 
@@ -1862,20 +1810,17 @@ function blockEndMatcher(
         return v.trim() === "{{:else}}";
       });
 
-      if (elseLine !== -1 && type.type === "newif") {
-        lines.splice(elseLine); //else line and everything after it is removed
-      }
+      if (elseLine !== -1 && type.type === "newif") lines.splice(elseLine); //else line and everything after it is removed
+
       if (elseLine !== -1 && type.type === "newif-falsy") {
-        lines.splice(0, elseLine + 1); //everything before else line is removed
-      }
-      if (elseLine === -1 && type.type === "newif-falsy") {
-        return "";
-      }
+        lines.splice(0, elseLine + 1);
+      } //everything before else line is removed
+
+      if (elseLine === -1 && type.type === "newif-falsy") return "";
 
       if (type.type2 !== "keep") {
-        while (lines.length > 0 && lines[0].trim() === "") {
-          lines.shift();
-        }
+        while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+
         while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
           lines.pop();
         }
@@ -1955,30 +1900,23 @@ export function risuChatParser(
         const gc = findCharacterbyId(
           aChara.chats[aChara.chatPage].message.at(-1).saying ?? "",
         );
-        if (gc.name !== "Unknown Character") {
-          chara = gc;
-        }
-      } else {
-        chara = "bot";
-      }
-    } else {
-      chara = aChara;
-    }
+        if (gc.name !== "Unknown Character") chara = gc;
+      } else chara = "bot";
+    } else chara = aChara;
   }
+
   if (arg.tokenizeAccurate) {
     const db = arg.db ?? settingsStore.state;
     const selchar = chara ?? characterStore.characters[get(selectedCharID)];
-    if (!selchar) {
-      chara = "bot";
-    }
+    if (!selchar) chara = "bot";
   }
 
   let pointer = 0;
   let nested: string[] = [""];
   let stackType = new Uint8Array(512);
-  let pureModeNest: Map<number, boolean> = new Map();
-  let pureModeNestType: Map<number, string> = new Map();
-  let blockNestType: Map<
+  const pureModeNest: Map<number, boolean> = new Map();
+  const pureModeNestType: Map<number, string> = new Map();
+  const blockNestType: Map<
     number,
     {
       type: blockMatch;
@@ -1988,11 +1926,11 @@ export function risuChatParser(
     }
   > = new Map();
   let commentMode = false;
-  let commentLatest: string[] = [""];
-  let commentV = new Uint8Array(512);
-  let thinkingMode = false;
+  const commentLatest: string[] = [""];
+  const commentV = new Uint8Array(512);
+  const thinkingMode = false;
   let tempVar: { [key: string]: string } = {};
-  let functions: Map<
+  const functions: Map<
     string,
     {
       data: string;
@@ -2002,9 +1940,7 @@ export function risuChatParser(
 
   arg.callStack = (arg.callStack ?? 0) + 1;
 
-  if (arg.callStack > 20) {
-    return "ERROR: Call stack limit reached";
-  }
+  if (arg.callStack > 20) return "ERROR: Call stack limit reached";
 
   const matcherObj = {
     authorNoteContent:
@@ -2131,9 +2067,8 @@ export function risuChatParser(
               if (asIndex === -1) {
                 //compability mode
                 const subind = blockType.type2.lastIndexOf(" ");
-                if (subind === -1) {
-                  break;
-                }
+                if (subind === -1) break;
+
                 sub = blockType.type2.substring(subind + 1);
                 array = parseArray(blockType.type2.substring(0, subind));
               }
@@ -2146,6 +2081,7 @@ export function risuChatParser(
                     : JSON.stringify(array[i]),
                 );
               }
+
               da =
                 da.substring(0, pointer + 1) +
                 (blockType.mode === "keep" ? added : added.trim()) +
@@ -2166,9 +2102,8 @@ export function risuChatParser(
                 .replaceAll("}}", "\\}\\}");
               break;
             }
-            if (matchResult === "") {
-              break;
-            }
+            if (matchResult === "") break;
+
             nested[0] += matchResult;
             break;
           }
@@ -2192,17 +2127,16 @@ export function risuChatParser(
             for (let i = 0; i < argData.length; i++) {
               data = data.replaceAll(`{{arg::${i}}}`, argData[i]);
             }
+
             arg.functions = functions;
             nested[0] += risuChatParser(data, arg);
             break;
           }
         }
         const mc = isPureMode() ? null : matcher(dat, matcherObj, tempVar);
-        if (!mc && mc !== "") {
-          nested[0] += `{{${dat}}}`;
-        } else if (typeof mc === "string") {
-          nested[0] += mc;
-        } else {
+        if (!mc && mc !== "") nested[0] += `{{${dat}}}`;
+        else if (typeof mc === "string") nested[0] += mc;
+        else {
           nested[0] += mc.text;
           tempVar = mc.var;
           if (tempVar["__force_return__"]) {
@@ -2221,14 +2155,12 @@ export function risuChatParser(
   if (commentMode) {
     nested = commentLatest;
     stackType = commentV;
-    if (thinkingMode) {
-      nested[0] += `<div>Thinking...</div>`;
-    }
+    if (thinkingMode) nested[0] += `<div>Thinking...</div>`;
+
     commentMode = false;
   }
-  if (nested.length === 1) {
-    return nested[0];
-  }
+  if (nested.length === 1) return nested[0];
+
   let result = "";
   while (nested.length > 1) {
     let dat = stackType[nested.length] === 1 ? "{{" : "<";
@@ -2242,7 +2174,7 @@ export function applyMarkdownToNode(node: Node) {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent;
     if (text) {
-      let markdown = renderMarkdown(md, text);
+      const markdown = renderMarkdown(md, text);
       if (markdown !== text) {
         const span = document.createElement("span");
         span.innerHTML = DOMPurify.sanitize(markdown);
@@ -2257,13 +2189,10 @@ export function applyMarkdownToNode(node: Node) {
             );
           }
         }
+
         (node as Element)?.replaceWith(span);
         return;
       }
     }
-  } else {
-    for (const child of node.childNodes) {
-      applyMarkdownToNode(child);
-    }
-  }
+  } else for (const child of node.childNodes) applyMarkdownToNode(child);
 }

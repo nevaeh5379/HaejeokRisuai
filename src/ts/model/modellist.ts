@@ -811,7 +811,7 @@ for (const element of LLMModels) {
   if (
     element.provider === LLMProvider.OpenAI &&
     element.format === LLMFormat.OpenAICompatible
-  )
+  ) {
     LLMModels.push({
       ...element,
       format: LLMFormat.OpenAIResponseAPI,
@@ -821,8 +821,9 @@ for (const element of LLMModels) {
       fullName: `${element.fullName ?? element.name} (Response API)`,
       recommended: false,
     });
+  }
 
-  if (element.provider === LLMProvider.GoogleCloud)
+  if (element.provider === LLMProvider.GoogleCloud) {
     LLMModels.push({
       ...element,
       id: `${element.id}-vertex`,
@@ -833,6 +834,7 @@ for (const element of LLMModels) {
       provider: LLMProvider.VertexAI,
       format: LLMFormat.VertexAIGemini,
     });
+  }
 }
 
 const LLMModelsMap = new Map<string, LLMModel>();
@@ -864,8 +866,9 @@ export async function registerModelDynamic() {
       const json = await res.json();
       const models = json?.models || [];
       for (const model of models) {
-        if (!model.supportedGenerationMethods?.includes("generateContent"))
+        if (!model.supportedGenerationMethods?.includes("generateContent")) {
           continue;
+        }
 
         const id = model.name.startsWith("models/")
           ? model.name.replace("models/", "")
@@ -1028,7 +1031,7 @@ globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
   const db = settingsStore.state;
-  if (!id)
+  if (!id) {
     return {
       id: "",
       name: "Unknown",
@@ -1041,6 +1044,7 @@ export function getModelInfo(id?: string | null): LLMModel {
       parameters: OpenAIParameters,
       tokenizer: LLMTokenizer.Unknown,
     };
+  }
 
   let found = LLMModelsMap.get(id);
   if (!found) {
@@ -1049,11 +1053,12 @@ export function getModelInfo(id?: string | null): LLMModel {
   }
 
   if (found) {
-    if (presetStore.state.enableCustomFlags)
+    if (presetStore.state.enableCustomFlags) {
       return {
         ...found,
         flags: presetStore.state.customFlags,
       };
+    }
 
     return { ...found };
   }
@@ -1091,7 +1096,7 @@ export function getModelInfo(id?: string | null): LLMModel {
   if (id.startsWith("xcustom:::")) {
     const customModels = db?.customModels || [];
     const found = customModels.find((model) => model.id === id);
-    if (found)
+    if (found) {
       return {
         id: found.id,
         name: found.name,
@@ -1114,6 +1119,7 @@ export function getModelInfo(id?: string | null): LLMModel {
         ],
         tokenizer: found.tokenizer,
       };
+    }
   }
 
   if (id.startsWith("pluginmodel:::")) {

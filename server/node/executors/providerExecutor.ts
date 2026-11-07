@@ -35,10 +35,12 @@ function normalizeEchoPayload(payload?: any): any {
   if (typeof payload.message !== "string") {
     throw new TypeError("echo message must be a string");
   }
+
   const delayMs: any = payload.delayMs ?? 0;
   if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 3_600_000) {
     throw new RangeError("echo delayMs must be an integer from 0 to 3600000");
   }
+
   return { message: payload.message, delayMs };
 }
 
@@ -50,21 +52,25 @@ function normalizeMistralPayload(payload?: any): any {
   ) {
     throw new TypeError("mistral body must be an object");
   }
+
   if (typeof payload.apiKey !== "string" || payload.apiKey.length > 16_384) {
     throw new TypeError(
       "mistral apiKey must be a string up to 16384 characters",
     );
   }
+
   const httpErrorPrefix: any = payload.httpErrorPrefix ?? "";
   if (typeof httpErrorPrefix !== "string" || httpErrorPrefix.length > 4096) {
     throw new TypeError(
       "mistral httpErrorPrefix must be a string up to 4096 characters",
     );
   }
+
   const body: any = JSON.stringify(payload.body);
   if (Buffer.byteLength(body) > 16 * 1024 * 1024) {
     throw new RangeError("mistral body exceeds 16 MiB");
   }
+
   return { body, apiKey: payload.apiKey, httpErrorPrefix };
 }
 
@@ -76,6 +82,7 @@ function normalizeJsonTransportPayload(payload?: any, providerName?: any): any {
   ) {
     throw new TypeError(`${providerName} body must be an object`);
   }
+
   if (
     !payload.headers ||
     typeof payload.headers !== "object" ||
@@ -83,6 +90,7 @@ function normalizeJsonTransportPayload(payload?: any, providerName?: any): any {
   ) {
     throw new TypeError(`${providerName} headers must be an object`);
   }
+
   const headers: any = {};
   const forbiddenHeaders: any = new Set([
     "host",
@@ -95,6 +103,7 @@ function normalizeJsonTransportPayload(payload?: any, providerName?: any): any {
     if (typeof value !== "string") {
       throw new TypeError(`${providerName} headers must contain string values`);
     }
+
     if (forbiddenHeaders.has(key.toLowerCase())) continue;
     headers[key] = value;
   }
@@ -102,6 +111,7 @@ function normalizeJsonTransportPayload(payload?: any, providerName?: any): any {
   if (Buffer.byteLength(body) > 16 * 1024 * 1024) {
     throw new RangeError(`${providerName} body exceeds 16 MiB`);
   }
+
   return { body, headers };
 }
 
@@ -117,11 +127,13 @@ function normalizeGoogleTransportPayload(payload?: any): any {
       "google modelId must be a safe model identifier up to 256 characters",
     );
   }
+
   if (typeof payload.apiKey !== "string" || payload.apiKey.length > 16_384) {
     throw new TypeError(
       "google apiKey must be a string up to 16384 characters",
     );
   }
+
   return { ...normalized, modelId: payload.modelId, apiKey: payload.apiKey };
 }
 
@@ -130,6 +142,7 @@ function normalizeNovelAITransportPayload(payload?: any): any {
   if (payload.variant !== "kayra" && payload.variant !== "clio") {
     throw new TypeError("novelai variant must be kayra or clio");
   }
+
   return { ...normalized, variant: payload.variant };
 }
 
@@ -138,9 +151,11 @@ function normalizeNanoGPTTransportPayload(payload?: any): any {
   if (payload.api !== "chat" && payload.api !== "responses") {
     throw new TypeError("nanogpt api must be chat or responses");
   }
+
   if (typeof payload.subscription !== "boolean") {
     throw new TypeError("nanogpt subscription must be a boolean");
   }
+
   return {
     ...normalized,
     api: payload.api,
@@ -160,6 +175,7 @@ function normalizeOllamaTransportPayload(payload?: any): any {
       "ollama cloud api must be native, openai-chat, responses, or anthropic",
     );
   }
+
   return { ...normalized, api: payload.api };
 }
 
@@ -167,21 +183,27 @@ function getTransportTarget(format?: any): any {
   if (format === LLM_FORMATS.OpenAICompatible) {
     return { name: "openai", url: DEFAULT_OPENAI_CHAT_COMPLETIONS_URL };
   }
+
   if (format === LLM_FORMATS.OpenAIResponseAPI) {
     return { name: "openai responses", url: DEFAULT_OPENAI_RESPONSES_URL };
   }
+
   if (format === LLM_FORMATS.OpenAILegacyInstruct) {
     return { name: "openai completions", url: DEFAULT_OPENAI_COMPLETIONS_URL };
   }
+
   if (format === LLM_FORMATS.Anthropic) {
     return { name: "anthropic", url: DEFAULT_ANTHROPIC_MESSAGES_URL };
   }
+
   if (format === LLM_FORMATS.Cohere) {
     return { name: "cohere", url: DEFAULT_COHERE_CHAT_URL };
   }
+
   if (format === LLM_FORMATS.NovelList) {
     return { name: "novellist", url: DEFAULT_NOVELLIST_API_URL };
   }
+
   return null;
 }
 
@@ -226,6 +248,7 @@ function createNodeProviderExecutor({
       if (submission.status !== 202) {
         return { type: "fail", result: submissionText };
       }
+
       let job: any;
       try {
         job = JSON.parse(submissionText);
@@ -243,6 +266,7 @@ function createNodeProviderExecutor({
           noRetry: true,
         };
       }
+
       const warning: any = job?.message ? `with ${job.message}` : "";
       const cancel: any = async () => {
         try {
@@ -268,9 +292,8 @@ function createNodeProviderExecutor({
               result: statusText || "Invalid Horde status response",
             };
           }
-          if (!statusResponse.ok) {
-            return { type: "fail", result: statusText };
-          }
+          if (!statusResponse.ok) return { type: "fail", result: statusText };
+
           if (!data.is_possible) {
             await cancel();
             return {
@@ -287,6 +310,7 @@ function createNodeProviderExecutor({
                 noRetry: true,
               };
             }
+
             return { type: "success", result: data.generations[0]?.text ?? "" };
           }
         }

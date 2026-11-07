@@ -2,12 +2,10 @@ import type { PromptItem } from "@risuai/protocol/domain/promptTypes.ts";
 import { safeStructuredClone } from "../../polyfill";
 
 function normalizePromptRole(role: unknown): "user" | "bot" | "system" | null {
-  if (role === "user" || role === "bot" || role === "system") {
-    return role;
-  }
-  if (role === "assistant" || role === "char") {
-    return "bot";
-  }
+  if (role === "user" || role === "bot" || role === "system") return role;
+
+  if (role === "assistant" || role === "char") return "bot";
+
   return null;
 }
 
@@ -22,23 +20,21 @@ function normalizeCacheRole(
   ) {
     return role;
   }
-  if (role === "bot" || role === "char") {
-    return "assistant";
-  }
+
+  if (role === "bot" || role === "char") return "assistant";
+
   return "all";
 }
 
 export function normalizePromptTemplate(
   template: PromptItem[] | null | undefined,
 ): PromptItem[] | null {
-  if (!Array.isArray(template)) {
-    return null;
-  }
+  if (!Array.isArray(template)) return null;
+
   const normalized = safeStructuredClone(template) as any[];
   for (const item of normalized) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
+    if (!item || typeof item !== "object") continue;
+
     switch (item.type) {
       case "plain":
       case "jailbreak":
@@ -53,6 +49,7 @@ export function normalizePromptTemplate(
         if (item.role2 !== undefined && item.role2 !== null) {
           item.role2 = normalizePromptRole(item.role2) ?? "system";
         }
+
         break;
       }
       case "cache": {

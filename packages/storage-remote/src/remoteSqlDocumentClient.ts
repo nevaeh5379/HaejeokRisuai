@@ -43,6 +43,7 @@ export class RemoteSqlDocumentClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, fallback);
     }
+
     return { status: "ok", body: (await response.json()) as T };
   }
 
@@ -103,6 +104,7 @@ export class RemoteSqlDocumentClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Plugin toggle failed");
     }
+
     return await response.json();
   }
 

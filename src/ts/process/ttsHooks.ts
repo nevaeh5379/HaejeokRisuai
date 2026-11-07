@@ -82,7 +82,7 @@ export async function runHookPipeline<
   timeoutMs?: number,
 ): Promise<{ ctx: Ctx; skip: boolean }> {
   const TIMEOUT = Symbol("TIMEOUT");
-  let current: Ctx = { ...ctx };
+  const current: Ctx = { ...ctx };
 
   for (const hook of hooks) {
     let result: Res | void | typeof TIMEOUT;
@@ -93,9 +93,7 @@ export async function runHookPipeline<
           hookPromise,
           sleep(timeoutMs).then(() => TIMEOUT),
         ]);
-      } else {
-        result = await hookPromise;
-      }
+      } else result = await hookPromise;
     } catch (err) {
       console.error("[TTS hook] threw, continuing with next hook:", err);
       continue;
@@ -108,9 +106,7 @@ export async function runHookPipeline<
 
     if (!result) continue;
 
-    if (result.skip) {
-      return { ctx: current, skip: true };
-    }
+    if (result.skip) return { ctx: current, skip: true };
 
     for (const key of Object.keys(result) as (keyof Res)[]) {
       if (key === "skip") continue;

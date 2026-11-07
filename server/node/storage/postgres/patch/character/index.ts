@@ -15,8 +15,9 @@ export function getColumn(patch: CharacterUpdate): Updateable<CharactersTable> {
     const column =
       CHARACTER_FIELD_COLUMNS[key as keyof typeof CHARACTER_FIELD_COLUMNS];
     let value: CharacterUpdate[keyof CharacterUpdate] | null = patch[key];
-    if (containsNul(value) || value === undefined)
+    if (containsNul(value) || value === undefined) {
       value = column === "name" || column === "first_message" ? "" : null;
+    }
 
     // The field map pairs domain values with their corresponding SQL columns.
     Object.assign(columns, { [column]: value });

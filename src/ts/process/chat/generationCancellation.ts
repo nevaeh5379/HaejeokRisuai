@@ -77,6 +77,7 @@ export class LocalGenerationController {
     ) {
       return undefined;
     }
+
     return generation;
   }
 
@@ -100,6 +101,7 @@ export class LocalGenerationController {
         lifecycleId,
       });
     }
+
     return generation;
   }
 

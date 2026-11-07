@@ -36,8 +36,9 @@ export class DatabaseSnapshotTransfer {
       batch.push(operation);
       if (operation[0] === "set") {
         textUnits += typeof operation[2] === "string" ? operation[2].length : 0;
-        if (operation[3][0] === 0 && typeof operation[3][1] === "string")
+        if (operation[3][0] === 0 && typeof operation[3][1] === "string") {
           textUnits += operation[3][1].length;
+        }
       } else if (
         operation[0] === "root" &&
         operation[2][0] === 0 &&
@@ -45,11 +46,13 @@ export class DatabaseSnapshotTransfer {
       ) {
         textUnits += operation[2][1].length;
       }
+
       if (
         batch.length >= DATABASE_BATCH_OPERATIONS ||
         textUnits >= DATABASE_BATCH_TEXT_UNITS
-      )
+      ) {
         flush();
+      }
     };
 
     // Traverse each key synchronously. Await only the existing lazy plugin load,
@@ -83,8 +86,9 @@ export class DatabaseSnapshotTransfer {
               cloned.set(value, id);
               if (original !== null) cloned.set(original, id);
               emit(["object", id]);
-              for (const property of Object.keys(value))
+              for (const property of Object.keys(value)) {
                 emit(["set", id, property, encode(value[property])]);
+              }
               return [1, id];
             }
             // Match Svelte's snapshot conversion for class instances, including
@@ -129,7 +133,7 @@ export function prepareDatabaseSnapshot(
     (key) => includeOnly === "all" || includeOnly.includes(key),
   );
   return new DatabaseSnapshotTransfer(function* () {
-    for (const key of keys)
+    for (const key of keys) {
       yield {
         key,
         read:
@@ -142,5 +146,6 @@ export function prepareDatabaseSnapshot(
           key === "plugins" ||
           (key === "characters" && Boolean(loadCharacters)),
       };
+    }
   });
 }

@@ -56,6 +56,7 @@ function branchRows(records: StorageSyncBranchRecord[]) {
     if (!["root", "manual", "reroll"].includes(reason)) {
       throw new VendorApplyPayloadError("Invalid chat branch reason");
     }
+
     return {
       chat_id: record.chatId,
       id: record.data.id,
@@ -83,6 +84,7 @@ function messageLinkRows(records: StorageSyncMessageRecord[]) {
     if (record.parentMessageId !== undefined) {
       assertId(record.parentMessageId, "message.parentMessageId");
     }
+
     return {
       chat_id: record.chatId,
       message_id: record.id,
@@ -521,6 +523,7 @@ async function applyBatch(
     for (const record of records) {
       await applyVendorColdStorageRecord(vendor, sqlStorage, client, record);
     }
+
     return;
   }
   if (type === "branch") {
@@ -552,6 +555,7 @@ async function applyStorageSyncSqlRecords(options) {
   if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
     throw new StorageSyncSqlApplyError("Invalid storage sync apply batch size");
   }
+
   if (
     !Number.isSafeInteger(batchBytes) ||
     batchBytes < 1024 ||
@@ -559,12 +563,14 @@ async function applyStorageSyncSqlRecords(options) {
   ) {
     throw new StorageSyncSqlApplyError("Invalid storage sync apply byte limit");
   }
+
   if (transactionContext.currentRevision !== session.serverRevision) {
     throw new StorageSyncSqlApplyError(
       "Finalize transaction revision does not match the staged session",
       "target_changed",
     );
   }
+
   const external = externalTransaction(client, transactionContext);
   await sqlStorage.sync(
     {
@@ -577,6 +583,7 @@ async function applyStorageSyncSqlRecords(options) {
   if (replaceColdStorage) {
     await clearVendorColdStorage(vendor, sqlStorage, client);
   }
+
   let pendingType = null;
   let pending = [];
   let pendingBytes = 0;
@@ -627,6 +634,7 @@ async function applyStorageSyncSqlRecords(options) {
     ) {
       await flush();
     }
+
     pendingType = record.type;
     pending.push(record);
     if (countSourceRecord) pendingSourceRecords++;
@@ -641,6 +649,7 @@ async function applyStorageSyncSqlRecords(options) {
         if (!Array.isArray(record.value)) {
           throw new StorageSyncSqlApplyError("Backup plugins must be an array");
         }
+
         // Both legacy and portable backups carry the compatibility array.
         // Split scripts from metadata and reuse bounded batching instead of
         // submitting the reserved root key or duplicating all plugin scripts.
@@ -655,6 +664,7 @@ async function applyStorageSyncSqlRecords(options) {
               `Invalid backup plugin at position ${position}`,
             );
           }
+
           const { script, ...data } = plugin;
           await enqueue(
             {

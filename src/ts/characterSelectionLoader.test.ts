@@ -7,7 +7,7 @@ import {
 describe("loadCharacterSelectionData", () => {
   it("loads known shallow character and chat data in parallel", async () => {
     const events: string[] = [];
-    let character: SelectionCharacter = {
+    const character: SelectionCharacter = {
       chaId: "character-1",
       detailsLoaded: false,
       chatPage: 0,

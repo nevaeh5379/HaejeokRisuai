@@ -26,6 +26,7 @@ export function buildChatJsonExportPayload(
         "Persistent branch graph is required for native chat export",
       );
     }
+
     return {
       type: "haejeokChat" as const,
       ver: 1 as const,

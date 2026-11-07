@@ -72,10 +72,9 @@ export class PortableDatabaseStreamValidator {
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
     }
+
     this.fragments.add(parsed.index);
-    for (const record of parsed.records) {
-      this.acceptRecord(record);
-    }
+    for (const record of parsed.records) this.acceptRecord(record);
   }
 
   private acceptRecord(record: PortableDatabaseStreamPersistedRecord): void {
@@ -86,12 +85,14 @@ export class PortableDatabaseStreamValidator {
     ) {
       throw new Error("Invalid streaming database record");
     }
+
     this.totalRecords++;
     increment(this.counts, record.type);
     if (record.type !== "meta") return;
     if (this.sourceRevision !== null) {
       throw new Error("Duplicate streaming database metadata");
     }
+
     if (
       record.formatVersion !== 1 ||
       !Number.isSafeInteger(record.revision) ||
@@ -99,6 +100,7 @@ export class PortableDatabaseStreamValidator {
     ) {
       throw new Error("Invalid streaming database metadata");
     }
+
     this.sourceRevision = record.revision;
   }
 
@@ -113,14 +115,17 @@ export class PortableDatabaseStreamValidator {
         `Streaming database is incomplete (${this.fragments.size}/${manifest.totalFragments} fragments, ${this.totalRecords}/${manifest.totalRecords} records)`,
       );
     }
+
     for (let index = 1; index <= manifest.totalFragments; index++) {
       if (!this.fragments.has(index)) {
         throw new Error(`Streaming database fragment ${index} is missing`);
       }
     }
+
     if (this.sourceRevision !== manifest.revision) {
       throw new Error("Streaming database revision does not match");
     }
+
     for (const type of RECORD_TYPES) {
       if ((manifest.counts[type] ?? 0) !== (this.counts[type] ?? 0)) {
         throw new Error(`Streaming database ${type} count does not match`);

@@ -185,9 +185,7 @@ async function hypaMemoryV3MainExp(
       };
 
   // Clean orphaned summaries
-  if (!settings.preserveOrphanedMemory) {
-    cleanOrphanedSummary(chats, data);
-  }
+  if (!settings.preserveOrphanedMemory) cleanOrphanedSummary(chats, data);
 
   // Chat history is immutable throughout HypaV3 processing. Tokenize it once so
   // all summary-window calculations reuse the same batched per-message costs.
@@ -235,14 +233,11 @@ async function hypaMemoryV3MainExp(
   const toSummarizeArray: OpenAIChat[][] = [];
 
   while (summarizationMode) {
-    if (currentTokens <= targetTokens) {
-      break;
-    }
+    if (currentTokens <= targetTokens) break;
 
     if (chats.length - startIdx <= settings.queryChatCount) {
-      if (currentTokens <= maxContextTokens) {
-        break;
-      } else {
+      if (currentTokens <= maxContextTokens) break;
+      else {
         return {
           currentTokens,
           chats,
@@ -320,9 +315,7 @@ async function hypaMemoryV3MainExp(
         shouldSummarize = false;
       }
 
-      if (shouldSummarize) {
-        toSummarize.push(chat);
-      }
+      if (shouldSummarize) toSummarize.push(chat);
 
       currentIndex++;
     }
@@ -493,9 +486,7 @@ async function hypaMemoryV3MainExp(
       if (summary.isImportant) {
         const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
-        if (summaryTokens > availableMemoryTokens) {
-          break;
-        }
+        if (summaryTokens > availableMemoryTokens) break;
 
         selectedImportantSummaries.push(summary);
 
@@ -819,8 +810,9 @@ async function hypaMemoryV3MainExp(
       if (
         summaryTokens + consumedRandomMemoryTokens >
         reservedRandomMemoryTokens
-      ) {
-        // Trying to select more random memory
+      )
+      // Trying to select more random memory
+      {
         continue;
       }
 
@@ -860,9 +852,7 @@ async function hypaMemoryV3MainExp(
   });
 
   // Release reserved memory tokens
-  if (shouldReserveMemoryTokens) {
-    currentTokens -= memoryTokens;
-  }
+  if (shouldReserveMemoryTokens) currentTokens -= memoryTokens;
 
   currentTokens += realMemoryTokens;
 
@@ -960,9 +950,7 @@ async function hypaMemoryV3Main(
       };
 
   // Clean orphaned summaries
-  if (!settings.preserveOrphanedMemory) {
-    cleanOrphanedSummary(chats, data);
-  }
+  if (!settings.preserveOrphanedMemory) cleanOrphanedSummary(chats, data);
 
   // Chat history is immutable throughout HypaV3 processing. Tokenize it once so
   // all summary-window calculations reuse the same batched per-message costs.
@@ -1013,14 +1001,11 @@ async function hypaMemoryV3Main(
     maxContextTokens * (1 - settings.extraSummarizationRatio);
 
   while (summarizationMode) {
-    if (currentTokens <= targetTokens) {
-      break;
-    }
+    if (currentTokens <= targetTokens) break;
 
     if (chats.length - startIdx <= settings.queryChatCount) {
-      if (currentTokens <= maxContextTokens) {
-        break;
-      } else {
+      if (currentTokens <= maxContextTokens) break;
+      else {
         return {
           currentTokens,
           chats,
@@ -1215,9 +1200,7 @@ async function hypaMemoryV3Main(
       if (summary.isImportant) {
         const summaryTokens = summaryTokenMap.get(summary) ?? 0;
 
-        if (summaryTokens > availableMemoryTokens) {
-          break;
-        }
+        if (summaryTokens > availableMemoryTokens) break;
 
         selectedImportantSummaries.push(summary);
 
@@ -1488,8 +1471,9 @@ async function hypaMemoryV3Main(
       if (
         summaryTokens + consumedRandomMemoryTokens >
         reservedRandomMemoryTokens
-      ) {
-        // Trying to select more random memory
+      )
+      // Trying to select more random memory
+      {
         continue;
       }
 
@@ -1529,11 +1513,8 @@ async function hypaMemoryV3Main(
   });
 
   // Release reserved memory tokens
-  if (shouldReserveEmptyMemoryTokens) {
-    currentTokens -= emptyMemoryTokens;
-  } else {
-    currentTokens -= memoryTokens;
-  }
+  if (shouldReserveEmptyMemoryTokens) currentTokens -= emptyMemoryTokens;
+  else currentTokens -= memoryTokens;
 
   currentTokens += realMemoryTokens;
 
@@ -1632,9 +1613,8 @@ function lastSummarizedChatIndex(
 ): number {
   let lastMemo: string | undefined;
   // Read the last-inserted memo directly; copying the Set here is pure waste.
-  for (const memo of lastSummary?.chatMemos ?? []) {
-    lastMemo = memo;
-  }
+  for (const memo of lastSummary?.chatMemos ?? []) lastMemo = memo;
+
   if (lastMemo === undefined) return -1;
   return chats.findIndex((chat) => chat.memo === lastMemo);
 }
@@ -1642,9 +1622,8 @@ function lastSummarizedChatIndex(
 /** Sum of per-chat token costs up to and including `uptoInclusive`. */
 function sumTokenCounts(counts: number[], uptoInclusive: number): number {
   let total = 0;
-  for (let i = 0; i <= uptoInclusive; i++) {
-    total += counts[i] ?? 0;
-  }
+  for (let i = 0; i <= uptoInclusive; i++) total += counts[i] ?? 0;
+
   return total;
 }
 
@@ -1666,11 +1645,7 @@ function cleanOrphanedSummary(chats: OpenAIChat[], data: HypaV3Data): void {
 }
 
 function isSubset(subset: Set<string>, superset: Set<string>): boolean {
-  for (const elem of subset) {
-    if (!superset.has(elem)) {
-      return false;
-    }
-  }
+  for (const elem of subset) if (!superset.has(elem)) return false;
 
   return true;
 }
@@ -1737,9 +1712,7 @@ export async function summarize(
     throw new Error("Unexpected response type");
   }
 
-  if (response.type === "fail") {
-    throw new Error(response.result);
-  }
+  if (response.type === "fail") throw new Error(response.result);
 
   if (!response.result || response.result.trim().length === 0) {
     throw new Error("Empty summary returned");
@@ -1830,9 +1803,7 @@ function childToParentRRF<C, P>(
 }
 
 export function normalizeScores<T>(scoredList: [T, number][]): [T, number][] {
-  if (scoredList.length === 0) {
-    return [];
-  }
+  if (scoredList.length === 0) return [];
 
   let minScore = scoredList[0][1];
   let maxScore = minScore;
@@ -1883,6 +1854,7 @@ class HypaProcesserEx extends HypaProcesser {
           `Failed to create vector for summary chunk:\n${chunk.text}`,
         );
       }
+
       newSummaryChunkVectors.push({ chunk, vector });
     }
 
@@ -1926,20 +1898,15 @@ class HypaProcesserEx extends HypaProcesser {
         const cached: memoryVector = await this.forage.getItem(
           cacheKeyFor(chunk.text, groupTexts, chunkIndex),
         );
-        if (cached) {
-          groupCache.set(chunk, cached);
-        } else {
-          allCached = false;
-        }
+        if (cached) groupCache.set(chunk, cached);
+        else allCached = false;
       }
 
       if (allCached) {
         for (const [chunk, vector] of groupCache) {
           cachedVectors.set(chunk, vector);
         }
-      } else {
-        groupsToEmbed.push(group);
-      }
+      } else groupsToEmbed.push(group);
     }
 
     if (groupsToEmbed.length > 0) {

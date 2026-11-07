@@ -45,8 +45,9 @@ function messageSignature(message?: any): any {
 function materializeLegacyTimeline(chat: any, branch: any): any[];
 function materializeLegacyTimeline(chat?: any, branch?: any): any {
   const state: any = chat.branchState;
-  if (!state || branch.id === state.activeBranchId)
+  if (!state || branch.id === state.activeBranchId) {
     return cloneValue(chat.message || []);
+  }
   const base: any = Number.isInteger(state.baseMessageIndex)
     ? state.baseMessageIndex
     : -1;
@@ -70,8 +71,9 @@ function orderLegacyBranches(branches?: any): any {
     if (!branch || visited.has(branch.id)) return;
     if (visiting.has(branch.id)) return;
     visiting.add(branch.id);
-    if (branch.parentBranchId && byId.has(branch.parentBranchId))
+    if (branch.parentBranchId && byId.has(branch.parentBranchId)) {
       visit(byId.get(branch.parentBranchId));
+    }
     visiting.delete(branch.id);
     visited.add(branch.id);
     ordered.push(branch);
@@ -90,8 +92,9 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
     ? state.branches.filter((branch?: any) => branch?.id)
     : [];
   if (!chat?.id || sourceBranches.length <= 1) return null;
-  if (typeof idFactory !== "function")
+  if (typeof idFactory !== "function") {
     throw new TypeError("idFactory is required");
+  }
 
   const ordered: any = orderLegacyBranches(sourceBranches);
   const branchIds: any = new Set(ordered.map((branch?: any) => branch.id));
@@ -124,10 +127,10 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
     if (!resolvedId) {
       if (rawId && !usedIds.has(rawId)) resolvedId = rawId;
       else {
-        do {
-          resolvedId = idFactory();
-        } while (!resolvedId || usedIds.has(resolvedId));
+        do resolvedId = idFactory();
+        while (!resolvedId || usedIds.has(resolvedId));
       }
+
       usedIds.add(resolvedId);
       nodeVariants.set(variantKey, resolvedId);
       const stored: any = cloneValue(message || {});
@@ -175,8 +178,9 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
       common < path.length &&
       common < parentPath.length &&
       path[common] === parentPath[common]
-    )
+    ) {
       common++;
+    }
     const forkMessageId: any = common > 0 ? path[common - 1] : undefined;
     return {
       id: branch.id,

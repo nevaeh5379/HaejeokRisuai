@@ -11,9 +11,7 @@ let pong = false;
 
 window.addEventListener("message", (event) => {
   if (event.origin === "https://realm.risuai.net") {
-    if (event.data === "pong") {
-      pong = true;
-    }
+    if (event.data === "pong") pong = true;
   }
 });
 

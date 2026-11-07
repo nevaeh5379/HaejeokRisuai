@@ -259,6 +259,7 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
     if (!this.assetPlan || this.assetPlan.remainingBytes !== 0) {
       throw new Error("SQL planned before assets were ready");
     }
+
     this.log.push("plan-sql");
     if (!this.sqlPlan) {
       const offset = Math.min(this.resumeSqlOffset, plan.size);

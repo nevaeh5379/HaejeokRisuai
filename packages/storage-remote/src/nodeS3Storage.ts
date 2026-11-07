@@ -63,6 +63,7 @@ export class NodeS3Storage {
         "S3 storage configuration load failed",
       );
     }
+
     return await response.json();
   }
 
@@ -83,6 +84,7 @@ export class NodeS3Storage {
         "S3 storage configuration update failed",
       );
     }
+
     const data = await response.json();
     return data.config;
   }
@@ -121,6 +123,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to fetch storage stats");
     }
+
     return await response.json();
   }
 
@@ -136,9 +139,7 @@ export class NodeS3Storage {
     }
 
     const reader = response.body?.getReader();
-    if (!reader) {
-      return await response.json();
-    }
+    if (!reader) return await response.json();
 
     let finalResult: NodeS3MigrationResult = {
       total: 0,
@@ -151,22 +152,17 @@ export class NodeS3Storage {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === "progress") {
-          onProgress?.(parsed);
-        } else if (parsed.type === "done") {
+        if (parsed.type === "progress") onProgress?.(parsed);
+        else if (parsed.type === "done") {
           finalResult = {
             total: parsed.total,
             migrated: parsed.migrated,
             skipped: parsed.skipped,
             errors: parsed.errors || [],
           };
-        } else if (parsed.type === "error") {
-          throw new Error(parsed.error);
-        }
+        } else if (parsed.type === "error") throw new Error(parsed.error);
       } catch (err: any) {
-        if (err?.message && !err.message.includes("JSON")) {
-          throw err;
-        }
+        if (err?.message && !err.message.includes("JSON")) throw err;
       }
     }
 
@@ -185,9 +181,7 @@ export class NodeS3Storage {
     }
 
     const reader = response.body?.getReader();
-    if (!reader) {
-      return await response.json();
-    }
+    if (!reader) return await response.json();
 
     let finalResult: NodeS3RollbackResult = {
       total: 0,
@@ -199,21 +193,16 @@ export class NodeS3Storage {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === "progress") {
-          onProgress?.(parsed);
-        } else if (parsed.type === "done") {
+        if (parsed.type === "progress") onProgress?.(parsed);
+        else if (parsed.type === "done") {
           finalResult = {
             total: parsed.total,
             downloaded: parsed.downloaded,
             errors: parsed.errors || [],
           };
-        } else if (parsed.type === "error") {
-          throw new Error(parsed.error);
-        }
+        } else if (parsed.type === "error") throw new Error(parsed.error);
       } catch (err: any) {
-        if (err?.message && !err.message.includes("JSON")) {
-          throw err;
-        }
+        if (err?.message && !err.message.includes("JSON")) throw err;
       }
     }
 
@@ -235,9 +224,7 @@ export class NodeS3Storage {
     }
 
     const reader = response.body?.getReader();
-    if (!reader) {
-      return await response.json();
-    }
+    if (!reader) return await response.json();
 
     let finalResult: NodeS3ThumbnailsResult = {
       total: 0,
@@ -250,22 +237,17 @@ export class NodeS3Storage {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === "progress") {
-          onProgress?.(parsed);
-        } else if (parsed.type === "done") {
+        if (parsed.type === "progress") onProgress?.(parsed);
+        else if (parsed.type === "done") {
           finalResult = {
             total: parsed.total,
             created: parsed.created,
             skipped: parsed.skipped,
             errors: parsed.errors || [],
           };
-        } else if (parsed.type === "error") {
-          throw new Error(parsed.error);
-        }
+        } else if (parsed.type === "error") throw new Error(parsed.error);
       } catch (err: any) {
-        if (err?.message && !err.message.includes("JSON")) {
-          throw err;
-        }
+        if (err?.message && !err.message.includes("JSON")) throw err;
       }
     }
 
@@ -281,6 +263,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to fetch storage summary");
     }
+
     return await response.json();
   }
 
@@ -299,6 +282,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to fetch asset details");
     }
+
     return await response.json();
   }
 
@@ -320,6 +304,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to delete assets");
     }
+
     return await response.json();
   }
 
@@ -331,6 +316,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to clean local storage");
     }
+
     return await response.json();
   }
 
@@ -346,6 +332,7 @@ export class NodeS3Storage {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Failed to resync asset catalog");
     }
+
     return await response.json();
   }
 }

@@ -25,10 +25,12 @@ export function matchesModuleRequestRule(
   sourceModuleId?: string,
 ): boolean {
   // Module imports are untrusted: malformed/empty conditions must never match all.
-  if (!rule || rule.enabled !== true || !Array.isArray(rule.phrases))
+  if (!rule || rule.enabled !== true || !Array.isArray(rule.phrases)) {
     return false;
-  if (rule.sourceModuleId && rule.sourceModuleId !== sourceModuleId)
+  }
+  if (rule.sourceModuleId && rule.sourceModuleId !== sourceModuleId) {
     return false;
+  }
   if (rule.phrases.some((p) => typeof p !== "string")) return false;
   const phrases = rule.phrases
     .map((phrase) => phrase.trim())
@@ -37,8 +39,9 @@ export function matchesModuleRequestRule(
   if (
     rule.lastMessages !== undefined &&
     (!Number.isSafeInteger(rule.lastMessages) || rule.lastMessages < 1)
-  )
+  ) {
     return false;
+  }
   const start =
     rule.lastMessages === undefined
       ? 0
@@ -64,8 +67,9 @@ export function matchesModuleRequestRule(
       if (
         typeof message.content === "string" &&
         phrases.every((phrase) => message.content.includes(phrase))
-      )
+      ) {
         return true;
+      }
     }
     return false;
   }
@@ -77,8 +81,9 @@ export function matchesModuleRequestRule(
     if (
       typeof message.content === "string" &&
       phrases.some((phrase) => message.content.includes(phrase))
-    )
+    ) {
       return true;
+    }
   }
   return false;
 }
@@ -102,7 +107,10 @@ export function getRuleMatchScore(
   for (const message of candidateMessages) {
     if (typeof message.content !== "string") continue;
     for (const phrase of phrases) {
-      if (message.content.includes(phrase) && phrase.length > maxMatchedLength) {
+      if (
+        message.content.includes(phrase) &&
+        phrase.length > maxMatchedLength
+      ) {
         maxMatchedLength = phrase.length;
       }
     }
@@ -117,10 +125,7 @@ export function resolveModuleRequestRules(
 ): ModuleRuleDecision {
   const matched = new Map<string, { module: RuleModule; score: number }>();
   for (const module of modules) {
-    if (
-      module.subModel &&
-      Array.isArray(module.subModelRequestRules)
-    ) {
+    if (module.subModel && Array.isArray(module.subModelRequestRules)) {
       let maxScore = -1;
       for (const rule of module.subModelRequestRules) {
         // If user mistakenly configured the module itself as source, treat as any caller
@@ -130,28 +135,24 @@ export function resolveModuleRequestRules(
             : rule;
         if (matchesModuleRequestRule(effectiveRule, messages, sourceModuleId)) {
           const score = getRuleMatchScore(effectiveRule, messages);
-          if (score > maxScore) {
-            maxScore = score;
-          }
+          if (score > maxScore) maxScore = score;
         }
       }
-      if (maxScore >= 0) {
-        matched.set(module.id, { module, score: maxScore });
-      }
+      if (maxScore >= 0) matched.set(module.id, { module, score: maxScore });
     }
   }
 
   const allMatches: { module: RuleModule; score: number }[] = [];
-  for (const match of matched.values()) {
-    allMatches.push(match);
-  }
-  if (allMatches.length === 0) {
-    return { status: "unmatched", modules: [] };
-  }
+  for (const match of matched.values()) allMatches.push(match);
+
+  if (allMatches.length === 0) return { status: "unmatched", modules: [] };
+
   if (allMatches.length === 1) {
     return {
       status: "matched",
-      modules: [{ id: allMatches[0].module.id, name: allMatches[0].module.name }],
+      modules: [
+        { id: allMatches[0].module.id, name: allMatches[0].module.name },
+      ],
       model: allMatches[0].module.subModel,
     };
   }
@@ -163,14 +164,19 @@ export function resolveModuleRequestRules(
   if (bestMatches.length === 1) {
     return {
       status: "matched",
-      modules: [{ id: bestMatches[0].module.id, name: bestMatches[0].module.name }],
+      modules: [
+        { id: bestMatches[0].module.id, name: bestMatches[0].module.name },
+      ],
       model: bestMatches[0].module.subModel,
     };
   }
 
   return {
     status: "conflict",
-    modules: allMatches.map(({ module }) => ({ id: module.id, name: module.name })),
+    modules: allMatches.map(({ module }) => ({
+      id: module.id,
+      name: module.name,
+    })),
     model: undefined,
   };
 }

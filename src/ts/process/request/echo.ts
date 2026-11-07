@@ -22,7 +22,7 @@ export async function requestEcho(
   const db = settingsStore.state;
   const delay = db.echoDelay ?? 0;
   const message = db.echoMessage ?? "Echo Message";
-  if (arg.previewBody)
+  if (arg.previewBody) {
     return {
       type: "success",
       result: JSON.stringify({
@@ -31,6 +31,7 @@ export async function requestEcho(
         body: { message, delayMs: Math.max(0, Math.round(delay * 1000)) },
       }),
     };
+  }
   const remote = await tryExecuteNodeProvider(
     arg.modelInfo?.format ?? LLMFormat.Echo,
     {
@@ -40,9 +41,7 @@ export async function requestEcho(
   );
   if (remote) return remote;
 
-  if (delay > 0) {
-    await sleep(delay * 1000);
-  }
+  if (delay > 0) await sleep(delay * 1000);
 
   return {
     type: "success",

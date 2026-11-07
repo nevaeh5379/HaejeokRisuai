@@ -96,7 +96,7 @@ async function summary(
       };
     }
   } else {
-    let parsedPrompt = parseChatML(
+    const parsedPrompt = parseChatML(
       supaPrompt.replaceAll("{{slot}}", stringlizedChat),
     );
 
@@ -141,6 +141,7 @@ async function summary(
         data: "SupaMemory: HTTP: " + da.result,
       };
     }
+
     result = da.result;
   }
   return { success: true, data: result };
@@ -149,11 +150,8 @@ async function summary(
 // Helper function start
 
 function isSubset<T>(subset: Set<T>, superset: Set<T>): boolean {
-  for (const item of subset) {
-    if (!superset.has(item)) {
-      return false;
-    }
-  }
+  for (const item of subset) if (!superset.has(item)) return false;
+
   return true;
 }
 function isOldHypaV2Data(obj: any): obj is OldHypaV2Data {
@@ -194,20 +192,15 @@ function convertOldToNewHypaV2Data(
 
   const mainChunkTargetIds = new Set<string>();
   for (const mc of oldMainChunks) {
-    if (mc.targetId) {
-      mainChunkTargetIds.add(mc.targetId);
-    }
+    if (mc.targetId) mainChunkTargetIds.add(mc.targetId);
   }
 
   // map chat memo to index, efficiency issues
   const chatMemoToIndex = new Map<string, number>();
   for (const tid of mainChunkTargetIds) {
     const idx = chats.findIndex((c) => c.memo === tid);
-    if (idx !== -1) {
-      chatMemoToIndex.set(tid, idx);
-    } else {
-      chatMemoToIndex.set(tid, -1);
-    }
+    if (idx !== -1) chatMemoToIndex.set(tid, idx);
+    else chatMemoToIndex.set(tid, -1);
   }
 
   for (let i = 0; i < oldMainChunks.length; i++) {
@@ -220,7 +213,7 @@ function convertOldToNewHypaV2Data(
       ? previousMainChunk.targetId
       : null;
 
-    let chatMemos = new Set<string>();
+    const chatMemos = new Set<string>();
 
     if (previousMainChunkTarget && targetId) {
       const startIndex = chatMemoToIndex.get(previousMainChunkTarget) ?? -1;
@@ -233,24 +226,22 @@ function convertOldToNewHypaV2Data(
         for (let j = lowerIndex; j <= upperIndex; j++) {
           chatMemos.add(chats[j].memo);
         }
-      } else {
-        // Can't identify the chats correctly, so discard this main chunk at all
-        continue; // Technically, if this is the case Previous HypaV2Data is bugged. Discussion opened for changing it to break;
-      }
-    } else {
+      } else
+      // Can't identify the chats correctly, so discard this main chunk at all
+      {
+        continue;
+      } // Technically, if this is the case Previous HypaV2Data is bugged. Discussion opened for changing it to break;
+    } else
       // No previous chunk, so we gather all chats from index 0 up to the targetId's index
       if (targetId) {
         const targetIndex = chatMemoToIndex.get(targetId) ?? -1;
-        if (targetIndex !== -1) {
-          // Include all memos from 0 up to targetIndex
-          for (let j = 0; j <= targetIndex; j++) {
-            chatMemos.add(chats[j].memo);
-          }
-        } else {
-          continue; // Invalid MainChunk.
-        }
+        if (targetIndex !== -1)
+        // Include all memos from 0 up to targetIndex
+        {
+          for (let j = 0; j <= targetIndex; j++) chatMemos.add(chats[j].memo);
+        } else continue; // Invalid MainChunk.
       }
-    }
+
     const newMainChunk = {
       id: newData.lastMainChunkID,
       text: mainChunkText,
@@ -292,9 +283,7 @@ function cleanInvalidChunks(chats: OpenAIChat[], data: HypaV2Data): void {
   // Update lastMainChunkID
   if (data.mainChunks.length > 0) {
     data.lastMainChunkID = data.mainChunks[data.mainChunks.length - 1].id;
-  } else {
-    data.lastMainChunkID = 0;
-  }
+  } else data.lastMainChunkID = 0;
 }
 
 export function regenerateSummary(
@@ -318,9 +307,7 @@ function toSerializableHypaV2Data(data: HypaV2Data): SerializableHypaV2Data {
 function toHypaV2Data(data: SerializableHypaV2Data): HypaV2Data {
   // Handle corrupted data due to invalid json serialization
   data.mainChunks.forEach((mainChunk) => {
-    if (!Array.isArray(mainChunk.chatMemos)) {
-      mainChunk.chatMemos = [];
-    }
+    if (!Array.isArray(mainChunk.chatMemos)) mainChunk.chatMemos = [];
   });
 
   return {
@@ -396,9 +383,7 @@ export async function hypaMemoryV2(
     if (isOldHypaV2Data(room.hypaV2Data)) {
       console.log("Old HypaV2 data detected. Converting to new format...");
       data = convertOldToNewHypaV2Data(room.hypaV2Data, chats);
-    } else {
-      data = toHypaV2Data(room.hypaV2Data);
-    }
+    } else data = toHypaV2Data(room.hypaV2Data);
   }
 
   // Clean invalid HypaV2 data
@@ -408,8 +393,8 @@ export async function hypaMemoryV2(
   // snapshot and reuse it across summarized-prefix and chunk-selection loops.
   const chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
 
-  let allocatedTokens = db.hypaAllocatedTokens;
-  let chunkSize = db.hypaChunkSize;
+  const allocatedTokens = db.hypaAllocatedTokens;
+  const chunkSize = db.hypaChunkSize;
   currentTokens += allocatedTokens; // WARNING: VIRTUAL VALUE. This token is NOT real. This is a placeholder appended to calculate the maximum amount of HypaV2 memory retrieved data.
   let mainPrompt = "";
   const lastTwoChats = chats.slice(-2);
@@ -492,9 +477,10 @@ export async function hypaMemoryV2(
       }
 
       // Check if adding this chat would exceed our chunkSize limit
-      if (halfDataTokens + chatTokens > chunkSize) {
-        // Can't add this chat without going over chunkSize
-        // Break out, and summarize what we have so far.
+      if (halfDataTokens + chatTokens > chunkSize)
+      // Can't add this chat without going over chunkSize
+      // Break out, and summarize what we have so far.
+      {
         break;
       }
 
@@ -655,7 +641,7 @@ export async function hypaMemoryV2(
     await processor.addText(retrievalTexts);
   }
 
-  let scoredResults: { [key: string]: number } = {};
+  const scoredResults: { [key: string]: number } = {};
   for (let i = 0; i < 3; i++) {
     // Should parameterize this, fixed length 3 is a magic number without explanation
     const pop = chats[chats.length - i - 1];
@@ -682,8 +668,9 @@ export async function hypaMemoryV2(
       role: "system",
       content: content,
     });
-    if (tokenized > allocatedTokens - mainPromptTokens - chunkResultTokens)
+    if (tokenized > allocatedTokens - mainPromptTokens - chunkResultTokens) {
       break;
+    }
     chunkResultPrompts += content + "\n\n";
     chunkResultTokens += tokenized;
   }

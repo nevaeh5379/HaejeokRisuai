@@ -549,9 +549,11 @@ function rebuildSettingRows(
   valueRows: readonly SettingValueRow[],
 ) {
   const rebuilt: Record<string, unknown> = rebuildSettings(settings, valueRows);
-  for (const row of settings)
-    if (!Object.prototype.hasOwnProperty.call(rebuilt, row.key))
+  for (const row of settings) {
+    if (!Object.prototype.hasOwnProperty.call(rebuilt, row.key)) {
       rebuilt[row.key] = mapColumnsToSettingValue(row);
+    }
+  }
 
   return rebuilt;
 }
@@ -612,19 +614,22 @@ function dbExplorerSelectExpression(
 }
 
 function assertSqlIdentifier(value: unknown): string {
-  if (typeof value !== "string")
+  if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
+  }
 
   const parts = value.split(".");
-  if (parts.length === 1 && /^[a-z][a-z0-9_]*$/i.test(parts[0]))
+  if (parts.length === 1 && /^[a-z][a-z0-9_]*$/i.test(parts[0])) {
     return `"${parts[0]}"`;
+  }
 
   if (
     parts.length === 2 &&
     /^[a-z][a-z0-9_]*$/i.test(parts[0]) &&
     /^[a-z][a-z0-9_]*$/i.test(parts[1])
-  )
+  ) {
     return `"${parts[0]}"."${parts[1]}"`;
+  }
 
   throw new Error(`Unsafe SQL identifier: ${value}`);
 }
@@ -706,8 +711,9 @@ function buildUpsertClause(
   valueColumns: readonly string[],
   updateTimestamp = false,
 ): string {
-  if (valueColumns.length === 0)
+  if (valueColumns.length === 0) {
     return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(", ")}) DO NOTHING`;
+  }
 
   const quotedTable = assertSqlIdentifier(table);
   const sets = valueColumns.map((c) => `"${c}" = EXCLUDED."${c}"`);
@@ -769,16 +775,18 @@ async function pruneKeyedChildren(
   const ownerCol = `"${ownerColumn}"`;
   const keyCol = `"${keyColumn}"`;
 
-  for (const { ownerId, keys } of keysByOwner)
-    if (!keys || keys.length === 0)
+  for (const { ownerId, keys } of keysByOwner) {
+    if (!keys || keys.length === 0) {
       await client.query(`DELETE FROM ${quotedTable} WHERE ${ownerCol} = $1`, [
         ownerId,
       ]);
-    else
+    } else {
       await client.query(
         `DELETE FROM ${quotedTable} WHERE ${ownerCol} = $1 AND NOT (${keyCol} = ANY($2::text[]))`,
         [ownerId, keys],
       );
+    }
+  }
 }
 
 export type PostgresStorageContract = PostgresStorage;
@@ -982,8 +990,9 @@ export class NPostgresStorage implements Pick<
         .where("id", "=", id)
         .compile();
 
-      if ((await this.db.executeQuery(query)).rows[0]?.kind !== "character")
+      if ((await this.db.executeQuery(query)).rows[0]?.kind !== "character") {
         throw new Error(`Character not found: ${id}`);
+      }
       return this.character.ref(id);
     },
     create: async (name: string): Promise<Character> => {
@@ -1006,8 +1015,9 @@ export class NPostgresStorage implements Pick<
       const unique = validateCharacterKeys(keys) as K[];
       const result = await this.db.executeQuery(this.readStatement(unique, id));
       const row = result.rows[0];
-      if (row?.kind !== "character")
+      if (row?.kind !== "character") {
         throw new Error(`Character not found: ${id}`);
+      }
       const values = decodeCharacterReadRow(row, unique);
       return structuredClone(values);
     },
@@ -1046,8 +1056,9 @@ export class NPostgresStorage implements Pick<
       if (Object.keys(patch).length === 0) return;
       const encoded = characterPatch(id, patch);
       await this.db.transaction().execute(async (trx) => {
-        if (!(await this.character.exists(id, trx)))
+        if (!(await this.character.exists(id, trx))) {
           throw new Error(`Character not found: ${id}`);
+        }
 
         await sql`select system.character_begin_revision('character:update')`.execute(
           trx,
@@ -1067,12 +1078,13 @@ export class NPostgresStorage implements Pick<
           let deletion = trx
             .deleteFrom(relation.table)
             .where(sql.ref("character_id"), "=", id);
-          if ("discriminator" in relation)
+          if ("discriminator" in relation) {
             deletion = deletion.where(
               sql.ref(relation.discriminator[0]),
               "=",
               relation.discriminator[1],
             );
+          }
           await deletion.execute();
         }
         for (const key of Object.keys(
@@ -1090,26 +1102,30 @@ export class NPostgresStorage implements Pick<
               .executeTakeFirstOrThrow();
             offset = (remaining.position ?? -1) + 1;
           }
-          if (relation.table === "character.assets" && offset)
+          if (relation.table === "character.assets" && offset) {
             for (const row of rows) row.position += offset;
+          }
           const batchSize = Math.min(BULK_INSERT_BATCH_ROWS, 1000);
-          for (let start = 0; start < rows.length; start += batchSize)
+          for (let start = 0; start < rows.length; start += batchSize) {
             await trx
               .insertInto(relation.table)
               .values(rows.slice(start, start + batchSize))
               .execute();
+          }
         }
-        if (encoded.attributeKeys.length)
+        if (encoded.attributeKeys.length) {
           await trx
             .deleteFrom("character.attributes")
             .where("character_id", "=", id)
             .where("key", "in", encoded.attributeKeys)
             .execute();
-        if (encoded.attributes.length)
+        }
+        if (encoded.attributes.length) {
           await trx
             .insertInto("character.attributes")
             .values(encoded.attributes)
             .execute();
+        }
       });
     },
     position: {
@@ -1183,11 +1199,12 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async loadPostgresSchemaSql(): Promise<string> {
-    if (!this.postgresSchemaSql)
+    if (!this.postgresSchemaSql) {
       this.postgresSchemaSql = await fs.readFile(
         path.join(__dirname, "schema.sql"),
         "utf8",
       );
+    }
 
     return this.postgresSchemaSql;
   }
@@ -1201,12 +1218,13 @@ class PostgresStorage extends SqlStorageBase {
     if (
       schemaVersion !== POSTGRES_SCHEMA_VERSION ||
       schemaLayout !== RELATIONAL_SCHEMA_LAYOUT
-    )
+    ) {
       throw new Error(
         `Unsupported PostgreSQL schema ${schemaVersion}/${schemaLayout}; ` +
           `expected ${POSTGRES_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}. ` +
           "Reset the configured development database explicitly before retrying.",
       );
+    }
   }
 
   async recoverMissingPostgresSchema(query: PgQuery): Promise<void> {
@@ -1230,8 +1248,9 @@ class PostgresStorage extends SqlStorageBase {
     try {
       return await recovery;
     } finally {
-      if (this.schemaRecoveryPromise === recovery)
+      if (this.schemaRecoveryPromise === recovery) {
         this.schemaRecoveryPromise = null;
+      }
     }
   }
 
@@ -1255,7 +1274,7 @@ class PostgresStorage extends SqlStorageBase {
                 AND NOT tgisinternal`,
       [triggerName],
     );
-    if (existing.rows.length === 0)
+    if (existing.rows.length === 0) {
       await query(`
                 UPDATE chat.chats AS ch
                    SET last_message_time = (
@@ -1266,6 +1285,7 @@ class PostgresStorage extends SqlStorageBase {
                         LIMIT 1
                    ), updated_at = NOW()
             `);
+    }
 
     const triggerSql = await fs.readFile(
       path.join(__dirname, "last-message-time.sql"),
@@ -1331,15 +1351,16 @@ class PostgresStorage extends SqlStorageBase {
         () =>
           pool.query("SELECT to_regclass('system.storage_meta') AS table_name"),
       );
-      if (existingMeta.rows[0]?.table_name)
+      if (existingMeta.rows[0]?.table_name) {
         await this.runStartupStep(
           "3/6 validate existing storage schema version",
           () => this.verifyPostgresSchema(pool.query.bind(pool)),
         );
-      else
+      } else {
         console.log(
           "[PostgreSQL startup] 3/6 no existing storage schema found; a new schema will be created.",
         );
+      }
 
       const schemaSql = await this.runStartupStep(
         "4/6 load bundled storage schema",
@@ -1399,8 +1420,9 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   assertEnabled(): asserts this is PostgresStorage & { pool: PgPool } {
-    if (!this.enabled || !this.pool)
+    if (!this.enabled || !this.pool) {
       throw new Error("PostgreSQL storage is not enabled");
+    }
   }
 
   async getState(): Promise<{ revision: number; initialized: boolean }> {
@@ -1523,12 +1545,12 @@ class PostgresStorage extends SqlStorageBase {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      if (prefix)
+      if (prefix) {
         await client.query(
           "DELETE FROM system.asset_catalog WHERE LEFT(asset_key, $1) = $2",
           [prefix.length, prefix],
         );
-      else await client.query("DELETE FROM system.asset_catalog");
+      } else await client.query("DELETE FROM system.asset_catalog");
 
       if (entries.length > 0) {
         const keys = entries.map((entry) => entry.key);
@@ -1578,8 +1600,9 @@ class PostgresStorage extends SqlStorageBase {
   async getRevisionDetails(rawRevisionId: unknown) {
     this.assertEnabled();
     const revisionId = Number(rawRevisionId);
-    if (!Number.isSafeInteger(revisionId) || revisionId <= 0)
+    if (!Number.isSafeInteger(revisionId) || revisionId <= 0) {
       throw new PostgresPayloadError("revisionId must be a positive integer");
+    }
 
     const revResult = await this.pool.query<RevisionRow>(
       `SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at
@@ -1611,10 +1634,11 @@ class PostgresStorage extends SqlStorageBase {
       !Number.isSafeInteger(targetId) ||
       baseId <= 0 ||
       targetId <= 0
-    )
+    ) {
       throw new PostgresPayloadError(
         "baseRevisionId and targetRevisionId must be positive integers",
       );
+    }
 
     const minId = Math.min(baseId, targetId);
     const maxId = Math.max(baseId, targetId);
@@ -1638,15 +1662,17 @@ class PostgresStorage extends SqlStorageBase {
   async previewRestore(rawRevisionId: unknown) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
-    if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0)
+    if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
       throw new PostgresPayloadError("revisionId must be a positive integer");
+    }
 
     const target = await this.pool.query(
       "SELECT id, scope, action, created_at FROM system.revisions WHERE id = $1",
       [targetRevisionId],
     );
-    if (target.rowCount === 0)
+    if (target.rowCount === 0) {
       throw new PostgresPayloadError("The requested revision does not exist");
+    }
 
     const latest = await this.pool.query(
       "SELECT id FROM system.revisions ORDER BY id DESC LIMIT 1",
@@ -1716,8 +1742,9 @@ class PostgresStorage extends SqlStorageBase {
   async restoreRevision(rawRevisionId: unknown) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
-    if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0)
+    if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
       throw new PostgresPayloadError("revisionId must be a positive integer");
+    }
 
     const client = await this.pool.connect();
     try {
@@ -1727,8 +1754,9 @@ class PostgresStorage extends SqlStorageBase {
         "SELECT id FROM system.revisions WHERE id = $1 FOR SHARE",
         [targetRevisionId],
       );
-      if (target.rowCount === 0)
+      if (target.rowCount === 0) {
         throw new PostgresPayloadError("The requested revision does not exist");
+      }
       const metaResult = await client.query<{ revision: number | string }>(
         "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
@@ -1761,10 +1789,11 @@ class PostgresStorage extends SqlStorageBase {
       const metadata = await this.getRestoreMetadata(client);
       for (const event of auditResult.rows) {
         const table = metadata.get(event.table_name);
-        if (!table || table.primary.length === 0)
+        if (!table || table.primary.length === 0) {
           throw new Error(
             `Cannot restore unknown or keyless audit table: ${event.table_name}`,
           );
+        }
 
         const quotedTable = assertSqlIdentifier(event.table_name);
         if (event.operation === "INSERT") {
@@ -1919,8 +1948,9 @@ class PostgresStorage extends SqlStorageBase {
         ): TValue => {
           if (fields.size === 0) return value;
           if (!isSqlRow(value)) return value;
-          for (const field of Object.keys(value))
+          for (const field of Object.keys(value)) {
             if (!fields.has(field)) delete value[field];
+          }
           return value;
         };
         const chatAttributes = groupRows(
@@ -2054,9 +2084,11 @@ class PostgresStorage extends SqlStorageBase {
           const characterRow: SqlStorageRow = {
             id: archive.owner_character_id || normalizedKey,
           };
-          for (const [key, value] of Object.entries(archive))
-            if (key.startsWith("character_"))
+          for (const [key, value] of Object.entries(archive)) {
+            if (key.startsWith("character_")) {
               characterRow[key.slice("character_".length)] = value;
+            }
+          }
 
           characterRow.kind = archive.character_kind || "character";
           data = {
@@ -2190,10 +2222,13 @@ class PostgresStorage extends SqlStorageBase {
       kind: splitValue.kind,
       owner_character_id: character?.core.id || null,
     };
-    if (character)
-      for (const [column, value] of Object.entries(character.core))
-        if (!["id", "position"].includes(column))
+    if (character) {
+      for (const [column, value] of Object.entries(character.core)) {
+        if (!["id", "position"].includes(column)) {
           archive[`character_${column}`] = value;
+        }
+      }
+    }
 
     await bulkInsert(
       client,
@@ -2237,14 +2272,15 @@ class PostgresStorage extends SqlStorageBase {
       "cold.character_lore_entries",
       "cold.chats",
     ];
-    for (const table of childTables)
+    for (const table of childTables) {
       await client.query(
         `DELETE FROM ${assertSqlIdentifier(table)} WHERE archive_id = $1::uuid`,
         [key],
       );
+    }
 
     let archiveAttributes: (AttributeRow & { archive_id: string })[] = [];
-    if (splitValue.kind === "legacy")
+    if (splitValue.kind === "legacy") {
       archiveAttributes = [
         {
           archive_id: key,
@@ -2252,11 +2288,12 @@ class PostgresStorage extends SqlStorageBase {
           value: encodeJsonValue(splitValue.data),
         },
       ];
-    else if (character)
+    } else if (character) {
       archiveAttributes = character.attributes.map((item) => ({
         ...item,
         archive_id: key,
       }));
+    }
 
     await bulkInsert(
       client,
@@ -2902,12 +2939,13 @@ class PostgresStorage extends SqlStorageBase {
             "SELECT 1 FROM cold.archives WHERE id = $1::uuid",
             [candidate.key],
           );
-          if (existing.rowCount === 0)
+          if (existing.rowCount === 0) {
             await this.upsertColdStorageWithClient(
               client,
               candidate.key,
               splitValue,
             );
+          }
 
           await client.query(
             `INSERT INTO cold.legacy_imports (id)
@@ -2945,10 +2983,11 @@ class PostgresStorage extends SqlStorageBase {
     let exported = 0;
     for (const item of items) {
       const loaded = await this.loadColdStorage(item.key);
-      if (!loaded)
+      if (!loaded) {
         throw new Error(
           `Cold storage item disappeared during export: ${item.key}`,
         );
+      }
 
       const logicalPath = `coldstorage/${item.key}`;
       const filename = Buffer.from(logicalPath, "utf8").toString("hex");
@@ -3230,16 +3269,19 @@ class PostgresStorage extends SqlStorageBase {
 
       const assets: Record<string, unknown> = {};
       const core = charRes.rows[0];
-      if (core.image !== null && core.image !== undefined)
+      if (core.image !== null && core.image !== undefined) {
         assets.image = core.image;
-      for (const row of attributesRes.rows)
+      }
+      for (const row of attributesRes.rows) {
         assets[row.key] = decodeJsonValue(row.value);
+      }
 
-      if (emotionsRes.rows.length)
+      if (emotionsRes.rows.length) {
         assets.emotionImages = emotionsRes.rows.map((item) => [
           item.emotion,
           item.asset,
         ]);
+      }
 
       const additionalAssets = assetsRes.rows
         .filter((item) => item.asset_source === "additional")
@@ -3452,26 +3494,28 @@ class PostgresStorage extends SqlStorageBase {
       const position =
         positionByKey.get(`${row.chat_id}\0${row.message_id}`) ?? 0;
       const previous = heads.get(key);
-      if (!previous || position >= previous.position)
+      if (!previous || position >= previous.position) {
         heads.set(key, {
           chatId: String(row.chat_id),
           branchId: String(row.origin_branch_id),
           messageId: String(row.message_id),
           position,
         });
+      }
     }
-    for (const head of heads.values())
+    for (const head of heads.values()) {
       await client.query(
         "UPDATE chat.branches SET head_message_id = $3 WHERE chat_id = $1 AND id = $2",
         [head.chatId, head.branchId, head.messageId],
       );
+    }
   }
 
   async detachMessagesFromBranchGraph(
     client: PgClient,
     deletions: readonly MessageDeletion[],
   ): Promise<void> {
-    for (const deletion of deletions || [])
+    for (const deletion of deletions || []) {
       for (const messageId of deletion.ids || []) {
         await client.query(
           `UPDATE chat.message_branch_links child
@@ -3502,6 +3546,7 @@ class PostgresStorage extends SqlStorageBase {
           [deletion.chatId, messageId],
         );
       }
+    }
   }
 
   async _loadBranchPageWithClient(
@@ -3535,8 +3580,9 @@ class PostgresStorage extends SqlStorageBase {
         : Math.max(1, Math.floor(Number(options.limit) || 1));
     const offset = Math.max(0, end - requestedLimit);
     const pageSize = Math.max(0, end - offset);
-    if (pageSize === 0)
+    if (pageSize === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
 
     const messagesRes = await client.query(
       `WITH RECURSIVE branch_path(message_id, depth) AS (
@@ -3557,22 +3603,23 @@ class PostgresStorage extends SqlStorageBase {
       [chatId, branchId, offset, pageSize],
     );
     const ids = messagesRes.rows.map((row) => row.id);
-    if (ids.length === 0)
+    if (ids.length === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
 
     let attributes: MessageAttributeRow[] = [];
     let generations: MessageGenerationRow[] = [];
     let promptInfos: MessagePromptInfoRow[] = [];
     let promptToggles: MessagePromptToggleRow[] = [];
     let promptItems: MessagePromptItemRow[] = [];
-    if (options.mode === "graph")
+    if (options.mode === "graph") {
       generations = (
         await client.query<MessageGenerationRow>(
           "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
           [chatId, ids],
         )
       ).rows;
-    else {
+    } else {
       attributes = (
         await client.query<MessageAttributeRow>(
           "SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key",
@@ -3998,8 +4045,9 @@ class PostgresStorage extends SqlStorageBase {
     const parentBranchIdInput = input.parentBranchId ?? null;
     const forkMessageId = input.forkMessageId ?? null;
     const reason = input?.reason;
-    if (!reason || !["root", "manual", "reroll"].includes(reason))
+    if (!reason || !["root", "manual", "reroll"].includes(reason)) {
       throw new PostgresPayloadError("Invalid chat branch reason");
+    }
     const createdAt = Number.isFinite(Number(input?.createdAt))
       ? Math.trunc(Number(input.createdAt))
       : Date.now();
@@ -4013,14 +4061,16 @@ class PostgresStorage extends SqlStorageBase {
       );
       const parentBranchId =
         parentBranchIdInput ?? activeRes.rows[0]?.branch_id;
-      if (!parentBranchId)
+      if (!parentBranchId) {
         throw new PostgresPayloadError("Chat branch root does not exist");
+      }
       const parentRes = await client.query(
         "SELECT 1 FROM chat.branches WHERE chat_id = $1 AND id = $2",
         [chatId, parentBranchId],
       );
-      if (parentRes.rows.length === 0)
+      if (parentRes.rows.length === 0) {
         throw new PostgresPayloadError("Parent chat branch does not exist");
+      }
       await client.query(
         `INSERT INTO chat.branches
                     (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
@@ -4060,8 +4110,9 @@ class PostgresStorage extends SqlStorageBase {
         "SELECT 1 FROM chat.branches WHERE chat_id = $1 AND id = $2",
         [chatId, branchId],
       );
-      if (exists.rows.length === 0)
+      if (exists.rows.length === 0) {
         throw new PostgresPayloadError("Chat branch does not exist");
+      }
       await client.query(
         "UPDATE chat.active_branches SET branch_id = $2 WHERE chat_id = $1",
         [chatId, branchId],
@@ -4188,13 +4239,14 @@ class PostgresStorage extends SqlStorageBase {
       );
       await client.query("COMMIT");
 
-      if (result.rows.length === 0)
+      if (result.rows.length === 0) {
         return {
           key: storageKey,
           exists: false,
           value: null,
           hash: "null",
         };
+      }
 
       const value = result.rows[0].value;
       const serialized = JSON.stringify(value);
@@ -4376,15 +4428,17 @@ class PostgresStorage extends SqlStorageBase {
     if (
       !Number.isSafeInteger(expectedRevisionNumber) ||
       expectedRevisionNumber < 0
-    )
+    ) {
       throw new PostgresPayloadError(
         "Storage sync finalize revision must be a non-negative integer",
       );
+    }
 
-    if (typeof callback !== "function")
+    if (typeof callback !== "function") {
       throw new PostgresPayloadError(
         "Storage sync finalize callback is required",
       );
+    }
 
     const client = await this.pool.connect();
     try {
@@ -4396,8 +4450,9 @@ class PostgresStorage extends SqlStorageBase {
         "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const currentRevision = Number(metaResult.rows[0].revision);
-      if (currentRevision !== expectedRevisionNumber)
+      if (currentRevision !== expectedRevisionNumber) {
         throw new PostgresRevisionConflictError(currentRevision);
+      }
 
       const previousRevisionResult = await client.query<{
         id: number | string;
@@ -4463,7 +4518,7 @@ class PostgresStorage extends SqlStorageBase {
         );
         await replaceSettingValueRows(client, [{ key, value }]);
         const projected = projectSettings([{ key, value }]);
-        for (const definition of SETTING_RELATION_DEFINITIONS)
+        for (const definition of SETTING_RELATION_DEFINITIONS) {
           if (definition.settingKeys.includes(key)) {
             await client.query(
               `DELETE FROM ${assertSqlIdentifier(definition.table)} WHERE setting_key = $1`,
@@ -4477,6 +4532,7 @@ class PostgresStorage extends SqlStorageBase {
               projected[definition.table],
             );
           }
+        }
 
         this.invalidateBootstrapCache([key]);
         return { key };
@@ -4584,13 +4640,14 @@ class PostgresStorage extends SqlStorageBase {
             }));
           }
         }
-        for (const entry of entries)
+        for (const entry of entries) {
           await client.query(
             `INSERT INTO system.module_records (module_id, position, updated_at)
                      VALUES ($1, $2, NOW()) ON CONFLICT (module_id) DO UPDATE SET
                      position=EXCLUDED.position, updated_at=NOW()`,
             [entry.id, entry.position],
           );
+        }
 
         await replaceModuleValueRows(client, entries);
         await client.query("DELETE FROM system.settings WHERE key = 'modules'");
@@ -4631,11 +4688,12 @@ class PostgresStorage extends SqlStorageBase {
                 position,
                 data,
               }));
-            for (const entry of entries)
+            for (const entry of entries) {
               await client.query(
                 "INSERT INTO system.module_records (module_id, position) VALUES ($1, $2)",
                 [entry.id, entry.position],
               );
+            }
 
             await replaceModuleValueRows(client, entries);
           }
@@ -4701,7 +4759,7 @@ class PostgresStorage extends SqlStorageBase {
             true,
           ),
         );
-        if (split.attributes.length > 0)
+        if (split.attributes.length > 0) {
           await bulkInsert(
             client,
             "chat.message_attributes",
@@ -4718,6 +4776,7 @@ class PostgresStorage extends SqlStorageBase {
               ["value"],
             ),
           );
+        }
 
         await pruneKeyedChildren(
           client,
@@ -4732,7 +4791,7 @@ class PostgresStorage extends SqlStorageBase {
           ],
         );
 
-        if (split.generation)
+        if (split.generation) {
           await bulkInsert(
             client,
             "chat.message_generation",
@@ -4779,13 +4838,14 @@ class PostgresStorage extends SqlStorageBase {
               ],
             ),
           );
-        else
+        } else {
           await client.query(
             "DELETE FROM chat.message_generation WHERE chat_id = $1 AND message_id = $2",
             [chatId, split.core.id],
           );
+        }
 
-        if (split.prompt?.info)
+        if (split.prompt?.info) {
           await bulkInsert(
             client,
             "chat.message_prompt_info",
@@ -4798,13 +4858,14 @@ class PostgresStorage extends SqlStorageBase {
               ["prompt_name"],
             ),
           );
-        else
+        } else {
           await client.query(
             "DELETE FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = $2",
             [chatId, split.core.id],
           );
+        }
 
-        if (split.prompt && split.prompt.toggles.length > 0)
+        if (split.prompt && split.prompt.toggles.length > 0) {
           await bulkInsert(
             client,
             "chat.message_prompt_toggles",
@@ -4817,13 +4878,14 @@ class PostgresStorage extends SqlStorageBase {
               ["toggle_key", "toggle_value"],
             ),
           );
+        }
 
         await client.query(
           "DELETE FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = $2 AND position >= $3",
           [chatId, split.core.id, (split.prompt?.toggles || []).length],
         );
 
-        if (split.prompt && split.prompt.items.length > 0)
+        if (split.prompt && split.prompt.items.length > 0) {
           await bulkInsert(
             client,
             "chat.message_prompt_items",
@@ -4836,6 +4898,7 @@ class PostgresStorage extends SqlStorageBase {
               ["payload"],
             ),
           );
+        }
 
         await client.query(
           "DELETE FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = $2 AND position >= $3",
@@ -4892,8 +4955,9 @@ class PostgresStorage extends SqlStorageBase {
       const data = record.data;
       assertId(data?.id, "branch.id");
       const reason = data.reason;
-      if (!["root", "manual", "reroll"].includes(reason))
+      if (!["root", "manual", "reroll"].includes(reason)) {
         throw new PostgresPayloadError("Invalid chat branch reason");
+      }
 
       return {
         chat_id: record.chatId,
@@ -5000,8 +5064,9 @@ class PostgresStorage extends SqlStorageBase {
           await client.query("COMMIT");
           return receipt;
         }
-        if (payload.baseRevision !== currentRevision)
+        if (payload.baseRevision !== currentRevision) {
           throw new PostgresRevisionConflictError(currentRevision);
+        }
 
         nextRevision = currentRevision + 1;
         await beginAuditRevision(client, {
@@ -5019,10 +5084,11 @@ class PostgresStorage extends SqlStorageBase {
           !Number.isSafeInteger(nextRevision) ||
           nextRevision !== currentRevision + 1 ||
           payload.baseRevision !== currentRevision
-        )
+        ) {
           throw new PostgresPayloadError(
             "Invalid external sync transaction context",
           );
+        }
       }
 
       const noteDb = authorNoteDatabase("postgres", client);
@@ -5041,7 +5107,7 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("DELETE FROM character.characters");
       }
 
-      if (payload.modules)
+      if (payload.modules) {
         await syncModuleRecords(
           new PostgresDialect(client),
           payload.modules,
@@ -5051,6 +5117,7 @@ class PostgresStorage extends SqlStorageBase {
           },
           payload,
         );
+      }
 
       if (payload.plugins) {
         const existing = (
@@ -5062,16 +5129,18 @@ class PostgresStorage extends SqlStorageBase {
           existing.map((row) => [row.plugin_id, Number(row.position)]),
         );
 
-        if (payload.plugins.deletes.length)
+        if (payload.plugins.deletes.length) {
           await client.query(
             "DELETE FROM system.plugin_records WHERE plugin_id = ANY($1::text[])",
             [payload.plugins.deletes],
           );
+        }
 
-        if (payload.plugins.order)
+        if (payload.plugins.order) {
           await client.query(
             "UPDATE system.plugin_records SET position = position + 1000000000",
           );
+        }
 
         let nextPosition =
           existing.reduce(
@@ -5080,10 +5149,11 @@ class PostgresStorage extends SqlStorageBase {
           ) + 1;
         for (const entry of payload.plugins.upserts) {
           const data = isSqlRow(entry.data) ? entry.data : {};
-          if (typeof data.name !== "string" || data.name.length === 0)
+          if (typeof data.name !== "string" || data.name.length === 0) {
             throw new PostgresPayloadError(
               `Plugin ${entry.id} must have a non-empty name`,
             );
+          }
 
           const position =
             entry.position ?? positions.get(entry.id) ?? nextPosition++;
@@ -5112,7 +5182,7 @@ class PostgresStorage extends SqlStorageBase {
         }
         await replacePluginValueRows(client, payload.plugins.upserts);
 
-        for (const script of payload.plugins.scripts || [])
+        for (const script of payload.plugins.scripts || []) {
           await client.query(
             `INSERT INTO system.plugin_scripts (plugin_id, script, updated_at)
              VALUES ($1,$2,NOW())
@@ -5120,19 +5190,23 @@ class PostgresStorage extends SqlStorageBase {
               script=EXCLUDED.script, updated_at=NOW()`,
             [script.id, encodeScript(script.script)],
           );
+        }
 
-        for (const update of payload.plugins.enabled || [])
+        for (const update of payload.plugins.enabled || []) {
           await client.query(
             "UPDATE system.plugin_records SET enabled = $1, updated_at = NOW() WHERE plugin_id = $2",
             [update.enabled, update.id],
           );
+        }
 
-        if (payload.plugins.order)
-          for (const [position, id] of payload.plugins.order.entries())
+        if (payload.plugins.order) {
+          for (const [position, id] of payload.plugins.order.entries()) {
             await client.query(
               "UPDATE system.plugin_records SET position = $1 WHERE plugin_id = $2",
               [position, id],
             );
+          }
+        }
       }
 
       if (payload.presets) {
@@ -5154,29 +5228,33 @@ class PostgresStorage extends SqlStorageBase {
         );
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
-        if (ids.size === 0)
+        if (ids.size === 0) {
           throw new PostgresPayloadError("At least one bot preset must remain");
+        }
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
             new Set<string>(payload.presets.order).size !== ids.size ||
             payload.presets.order.some((id) => !ids.has(id)))
-        )
+        ) {
           throw new PostgresPayloadError(
             "Preset order must contain every preset ID exactly once",
           );
+        }
 
         if (
           payload.presets.activeId !== undefined &&
           !ids.has(payload.presets.activeId)
-        )
+        ) {
           throw new PostgresPayloadError("Active bot preset does not exist");
+        }
 
-        if (payload.presets.deletes.length)
+        if (payload.presets.deletes.length) {
           await client.query(
             "DELETE FROM system.bot_presets WHERE preset_id = ANY($1::text[])",
             [payload.presets.deletes],
           );
+        }
 
         let nextPosition =
           existingResult.rows.reduce(
@@ -5222,14 +5300,15 @@ class PostgresStorage extends SqlStorageBase {
           await client.query(
             "UPDATE system.bot_presets SET position = position + 1000000000",
           );
-          for (const [position, id] of payload.presets.order.entries())
+          for (const [position, id] of payload.presets.order.entries()) {
             await client.query(
               "UPDATE system.bot_presets SET position = $1 WHERE preset_id = $2",
               [position, id],
             );
+          }
         }
         let activeId: string | undefined = payload.presets.activeId;
-        if (activeId === undefined && !external?.storageSyncImport)
+        if (activeId === undefined && !external?.storageSyncImport) {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = currentActiveId
               ? originalIds.indexOf(currentActiveId)
@@ -5242,12 +5321,14 @@ class PostgresStorage extends SqlStorageBase {
                 .find((id) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
+        }
 
-        if (activeId !== undefined)
+        if (activeId !== undefined) {
           payload.rootUpserts.push({
             key: "activeBotPresetId",
             value: activeId,
           });
+        }
       }
 
       onProgress?.({
@@ -5295,7 +5376,7 @@ class PostgresStorage extends SqlStorageBase {
           );
         }
       }
-      for (const definition of SETTING_RELATION_DEFINITIONS)
+      for (const definition of SETTING_RELATION_DEFINITIONS) {
         await bulkInsert(
           client,
           definition.table,
@@ -5303,36 +5384,42 @@ class PostgresStorage extends SqlStorageBase {
           definition.types,
           projectedSettings[definition.table],
         );
+      }
 
-      if (payload.rootDeletes.length > 0)
+      if (payload.rootDeletes.length > 0) {
         await client.query(
           "DELETE FROM system.settings WHERE key = ANY($1::text[])",
           [payload.rootDeletes],
         );
+      }
 
-      if (payload.pluginStorageClear)
+      if (payload.pluginStorageClear) {
         await client.query("DELETE FROM system.plugin_custom_storage");
+      }
 
       if (
         payload.pluginStorageDeletes &&
         payload.pluginStorageDeletes.length > 0
-      )
+      ) {
         await client.query(
           "DELETE FROM system.plugin_custom_storage WHERE key = ANY($1::text[])",
           [payload.pluginStorageDeletes],
         );
+      }
 
       if (
         payload.pluginStorageUpserts &&
         payload.pluginStorageUpserts.length > 0
-      )
-        for (const upsert of payload.pluginStorageUpserts)
+      ) {
+        for (const upsert of payload.pluginStorageUpserts) {
           await client.query(
             `INSERT INTO system.plugin_custom_storage (key, value, updated_at)
                          VALUES ($1, $2::jsonb, NOW())
                          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
             [upsert.key, JSON.stringify(upsert.value)],
           );
+        }
+      }
 
       if (
         payload.pluginStorageClear ||
@@ -5833,14 +5920,16 @@ class PostgresStorage extends SqlStorageBase {
         })),
       );
 
-      if (payload.characterTouches.length > 0)
-        for (const touch of payload.characterTouches)
+      if (payload.characterTouches.length > 0) {
+        for (const touch of payload.characterTouches) {
           await client.query(
             `UPDATE character.characters
                          SET last_interaction_time = $2, updated_at = NOW()
                          WHERE id = $1`,
             [touch.id, touch.lastInteraction],
           );
+        }
+      }
 
       onProgress?.({
         stage: "chats",
@@ -6162,8 +6251,9 @@ class PostgresStorage extends SqlStorageBase {
           true,
         ),
       );
-      if (!external?.storageSyncImport)
+      if (!external?.storageSyncImport) {
         await this.linkIncomingMessagesToActiveBranches(client, splitMessages);
+      }
 
       // 1. message_attributes
       const msgAttrRows: MessageAttributeRow[] = splitMessages.flatMap((item) =>
@@ -6187,16 +6277,17 @@ class PostgresStorage extends SqlStorageBase {
       );
       for (const item of splitMessages) {
         const keys = (item.attributes || []).map((attribute) => attribute.key);
-        if (keys.length === 0)
+        if (keys.length === 0) {
           await client.query(
             "DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2",
             [item.core.chat_id, item.core.id],
           );
-        else
+        } else {
           await client.query(
             "DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2 AND NOT (key = ANY($3::text[]))",
             [item.core.chat_id, item.core.id, keys],
           );
+        }
       }
 
       // 2. message_generation
@@ -6250,7 +6341,7 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
       const msgsWithoutGen = splitMessages.filter((m) => !m.generation);
-      if (msgsWithoutGen.length > 0)
+      if (msgsWithoutGen.length > 0) {
         await client.query(
           `DELETE FROM chat.message_generation AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
@@ -6260,6 +6351,7 @@ class PostgresStorage extends SqlStorageBase {
             msgsWithoutGen.map((m) => m.core.id),
           ],
         );
+      }
 
       // 3. message_prompt_info
       const promptInfoRows = splitMessages.flatMap((item) =>
@@ -6278,7 +6370,7 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
       const msgsWithoutPrompt = splitMessages.filter((m) => !m.prompt?.info);
-      if (msgsWithoutPrompt.length > 0)
+      if (msgsWithoutPrompt.length > 0) {
         await client.query(
           `DELETE FROM chat.message_prompt_info AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
@@ -6288,6 +6380,7 @@ class PostgresStorage extends SqlStorageBase {
             msgsWithoutPrompt.map((m) => m.core.id),
           ],
         );
+      }
 
       // 4. message_prompt_toggles
       const toggleRows = splitMessages.flatMap(
@@ -6305,7 +6398,7 @@ class PostgresStorage extends SqlStorageBase {
           ["toggle_key", "toggle_value"],
         ),
       );
-      if (splitMessages.length > 0)
+      if (splitMessages.length > 0) {
         await client.query(
           `DELETE FROM chat.message_prompt_toggles AS target
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
@@ -6316,6 +6409,7 @@ class PostgresStorage extends SqlStorageBase {
             splitMessages.map((m) => (m.prompt?.toggles || []).length),
           ],
         );
+      }
 
       // 5. message_prompt_items
       const promptItemRows = splitMessages.flatMap(
@@ -6333,7 +6427,7 @@ class PostgresStorage extends SqlStorageBase {
           ["payload"],
         ),
       );
-      if (splitMessages.length > 0)
+      if (splitMessages.length > 0) {
         await client.query(
           `DELETE FROM chat.message_prompt_items AS target
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
@@ -6344,33 +6438,38 @@ class PostgresStorage extends SqlStorageBase {
             splitMessages.map((m) => (m.prompt?.items || []).length),
           ],
         );
+      }
 
-      if (payload.characterDeletes?.length)
+      if (payload.characterDeletes?.length) {
         await client.query(
           "DELETE FROM character.characters WHERE id = ANY($1::text[])",
           [payload.characterDeletes],
         );
+      }
 
-      if (payload.chatDeletes?.length)
+      if (payload.chatDeletes?.length) {
         await client.query(
           "DELETE FROM chat.chats WHERE id = ANY($1::text[])",
           [payload.chatDeletes],
         );
+      }
 
       if (payload.messageDeletes) {
         await this.detachMessagesFromBranchGraph(
           client,
           payload.messageDeletes,
         );
-        for (const del of payload.messageDeletes)
-          if (del.ids.length > 0)
+        for (const del of payload.messageDeletes) {
+          if (del.ids.length > 0) {
             await client.query(
               `DELETE FROM chat.messages
                              WHERE chat_id = $1 AND id = ANY($2::text[])`,
               [del.chatId, del.ids],
             );
+          }
+        }
       }
-      if (affectedMessageChatIds.size > 0)
+      if (affectedMessageChatIds.size > 0) {
         await client.query(
           `UPDATE chat.chats AS ch
                         SET last_message_time = (
@@ -6383,6 +6482,7 @@ class PostgresStorage extends SqlStorageBase {
                       WHERE ch.id = ANY($1::text[])`,
           [Array.from(affectedMessageChatIds)],
         );
+      }
 
       if (ownsTransaction) {
         onProgress?.({
@@ -6455,13 +6555,15 @@ class PostgresStorage extends SqlStorageBase {
   async searchMessages(rawQuery: unknown, rawScope = "all", rawLimit = 50) {
     this.assertEnabled();
     const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
-    if (!query)
+    if (!query) {
       throw new PostgresPayloadError("search query must be a non-empty string");
+    }
 
-    if (query.length > 1024)
+    if (query.length > 1024) {
       throw new PostgresPayloadError(
         "search query must be at most 1024 characters",
       );
+    }
 
     const scope =
       rawScope === "active" || rawScope === "cold" ? rawScope : "all";
@@ -6587,8 +6689,9 @@ class PostgresStorage extends SqlStorageBase {
     const tag = typeof rawTag === "string" ? rawTag.trim() : "";
     if (!tag) throw new PostgresPayloadError("tag must be a non-empty string");
 
-    if (tag.length > 256)
+    if (tag.length > 256) {
       throw new PostgresPayloadError("tag must be at most 256 characters");
+    }
 
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
@@ -6614,11 +6717,13 @@ class PostgresStorage extends SqlStorageBase {
   async searchCharactersByName(rawName: unknown, rawLimit = 100) {
     this.assertEnabled();
     const name = typeof rawName === "string" ? rawName.trim() : "";
-    if (!name)
+    if (!name) {
       throw new PostgresPayloadError("name must be a non-empty string");
+    }
 
-    if (name.length > 256)
+    if (name.length > 256) {
       throw new PostgresPayloadError("name must be at most 256 characters");
+    }
 
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
@@ -6664,8 +6769,9 @@ class PostgresStorage extends SqlStorageBase {
         table_name: string;
         row_count: string | number;
       }>(union);
-      for (const row of countResult.rows)
+      for (const row of countResult.rows) {
         counts.set(row.table_name, row.row_count);
+      }
     }
     return tables.map((name) => ({
       name,
@@ -6686,8 +6792,9 @@ class PostgresStorage extends SqlStorageBase {
              WHERE table_schema = $1 AND table_type = 'BASE TABLE' AND table_name = $2`,
       [schemaName, tableName],
     );
-    if (exists.rows.length === 0)
+    if (exists.rows.length === 0) {
       throw new PostgresPayloadError("table was not found");
+    }
 
     const columns = await this.pool.query<ExplorerColumnRow>(
       `SELECT column_name, data_type, is_nullable
@@ -6730,23 +6837,27 @@ class PostgresStorage extends SqlStorageBase {
     const validated = assertDbExplorerIdentifier(table, "table name");
     const quotedTable = assertSqlIdentifier(validated);
     const columns = await this.getDbExplorerTableColumns(table);
-    if (columns.length === 0)
+    if (columns.length === 0) {
       throw new PostgresPayloadError("table has no columns");
+    }
 
     let visibleColumns = columns;
     if (rawColumns !== null && rawColumns !== undefined) {
-      if (!Array.isArray(rawColumns) || rawColumns.length === 0)
+      if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
         throw new PostgresPayloadError("column list must not be empty");
+      }
 
       const visibleNames: string[] = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
         const match = columns.find((column) => column.name === validatedCol);
-        if (!match)
+        if (!match) {
           throw new PostgresPayloadError("column was not found in the table");
+        }
 
-        if (!visibleNames.includes(validatedCol))
+        if (!visibleNames.includes(validatedCol)) {
           visibleNames.push(validatedCol);
+        }
       }
       visibleColumns = columns.filter((column) =>
         visibleNames.includes(column.name),
@@ -6768,10 +6879,11 @@ class PostgresStorage extends SqlStorageBase {
     let sortColumn = columns[0].name;
     if (typeof rawSortColumn === "string" && rawSortColumn.length > 0) {
       const match = columns.find((column) => column.name === rawSortColumn);
-      if (!match)
+      if (!match) {
         throw new PostgresPayloadError(
           "sort column was not found in the table",
         );
+      }
 
       sortColumn = match.name;
     }

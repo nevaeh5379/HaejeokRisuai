@@ -75,6 +75,7 @@ function parseRevisionListLimit(rawLimit: unknown): number | null {
   ) {
     return null;
   }
+
   const parsedLimit = Number.parseInt(String(rawLimit), 10);
   return Number.isSafeInteger(parsedLimit) && parsedLimit > 0
     ? parsedLimit
@@ -340,6 +341,7 @@ function buildChatBranchGraph(
     if (row.graph_generation_model != null) {
       message.generationInfo = { model: row.graph_generation_model };
     }
+
     return message;
   });
   const links = graphRows.map((row) => ({

@@ -20,9 +20,8 @@ export async function initSqlStorageOrGate(): Promise<ISqlStorage | null> {
   const storage = await getSqlStorage();
   setSqlRuntime(storage);
   const ok = await storage.init();
-  if (ok) {
-    return storage;
-  }
+  if (ok) return storage;
+
   // SQL backend could not be initialised.
   if (isNodeServer && isNodeSqlStorageAdmin(storage)) {
     // Node server: show SQL configuration UI
@@ -47,6 +46,7 @@ export async function initSqlStorageOrGate(): Promise<ISqlStorage | null> {
       "This browser does not support SQLite WASM (OPFS required). Please use a modern browser.",
     );
   }
+
   return null;
 }
 

@@ -138,6 +138,7 @@ function parsePresetRows(rows: Array<{ preset_id: string; data: string }>): {
       // Ignore malformed legacy preset payloads, matching the old adapters.
     }
   }
+
   return { ids, presets };
 }
 
@@ -180,6 +181,7 @@ export async function exportDatabase(options: Options): Promise<Result> {
       await loadSnapshotCharacter(selectRows, row, loadChatMessages),
     );
   }
+
   database.characters = characters;
   Object.assign(
     database,
@@ -202,6 +204,7 @@ export async function exportDatabase(options: Options): Promise<Result> {
     if (script === undefined) {
       throw new Error(`Plugin script is missing: ${id}`);
     }
+
     return { ...metadata, script };
   });
 

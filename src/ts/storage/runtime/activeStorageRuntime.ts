@@ -19,9 +19,11 @@ export class ActiveStorageRuntime {
     if (options.profile.mode === "remote" && !client) {
       throw new TypeError("Remote storage requires a Node API client.");
     }
+
     if (options.profile.mode === "local" && client) {
       throw new TypeError("Local storage cannot own a Node API client.");
     }
+
     this.profile = options.profile;
     this.sql = options.sql;
     this.assets = options.assets;
@@ -35,12 +37,15 @@ export class ActiveStorageRuntime {
 
 let activeRuntime: ActiveStorageRuntime | null = null;
 
-export function installActiveStorageRuntime(runtime: ActiveStorageRuntime): void {
+export function installActiveStorageRuntime(
+  runtime: ActiveStorageRuntime,
+): void {
   if (activeRuntime && activeRuntime !== runtime) {
     throw new Error(
       "The active storage runtime is already installed. Reload before switching storage profiles.",
     );
   }
+
   activeRuntime = runtime;
 }
 
@@ -48,6 +53,7 @@ export function getActiveStorageRuntime(): ActiveStorageRuntime {
   if (!activeRuntime) {
     throw new Error("The active storage runtime has not been initialized.");
   }
+
   return activeRuntime;
 }
 

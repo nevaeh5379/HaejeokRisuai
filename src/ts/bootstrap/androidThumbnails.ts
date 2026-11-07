@@ -33,16 +33,18 @@ export async function prepareAndroidCharacterThumbnails() {
     ),
   );
   for (const item of settingsStore.state.characterOrder ?? []) {
-    if (typeof item === "string") {
-      addImage(imageByCharacterId.get(item));
-    } else if (item && typeof item === "object") {
+    if (typeof item === "string") addImage(imageByCharacterId.get(item));
+    else if (item && typeof item === "object") {
       addImage((item as any).imgFile);
-      for (const id of (item as any).data ?? [])
+      for (const id of (item as any).data ?? []) {
         addImage(imageByCharacterId.get(id));
+      }
     }
   }
-  for (const character of characterStore.characters ?? [])
+
+  for (const character of characterStore.characters ?? []) {
     addImage(character?.image);
+  }
 
   const images = [...keys];
   if (images.length === 0) return;

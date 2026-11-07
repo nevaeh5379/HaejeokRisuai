@@ -113,6 +113,7 @@ export class RemoteComputeClient {
         "Server provider capabilities returned an invalid response",
       );
     }
+
     this.nodeProviderCapabilities = {
       formats: data.formats,
       routes: data.routes,
@@ -148,6 +149,7 @@ export class RemoteComputeClient {
     if (!data || typeof data.handled !== "boolean") {
       throw new Error("Server provider execution returned an invalid response");
     }
+
     if (
       data.handled &&
       (!data.response || !["success", "fail"].includes(data.response.type))
@@ -156,6 +158,7 @@ export class RemoteComputeClient {
         "Server provider execution returned an invalid provider response",
       );
     }
+
     return data;
   }
 
@@ -186,6 +189,7 @@ export class RemoteComputeClient {
     if (!data || typeof data.handled !== "boolean") {
       throw new Error("Server provider transport returned an invalid response");
     }
+
     if (
       data.handled &&
       (!data.response ||
@@ -196,6 +200,7 @@ export class RemoteComputeClient {
         "Server provider transport returned an invalid transport response",
       );
     }
+
     return data;
   }
 
@@ -228,6 +233,7 @@ export class RemoteComputeClient {
         "Server chat continuation planning returned an invalid response",
       );
     }
+
     return data.decision;
   }
 
@@ -253,6 +259,7 @@ export class RemoteComputeClient {
     if (!data.plan || typeof data.plan.ok !== "boolean") {
       throw new Error("Server chat planning returned an invalid response");
     }
+
     return data.plan;
   }
 
@@ -287,6 +294,7 @@ export class RemoteComputeClient {
       if (!Array.isArray(data.counts)) {
         throw new Error("Server tokenization returned an invalid response");
       }
+
       for (let i = 0; i < data.counts.length; i++) {
         counts[currentIdx++] = data.counts[i];
       }
@@ -311,10 +319,12 @@ export class RemoteComputeClient {
         `Server lore matching failed (${response.status}): ${await response.text()}`,
       );
     }
+
     const data = (await response.json()) as Partial<LoreMatchBatchResponse>;
     if (!Array.isArray(data.results)) {
       throw new Error("Server lore matching returned an invalid response");
     }
+
     return data.results as LoreMatchBatchResponse["results"];
   }
 
@@ -332,12 +342,14 @@ export class RemoteComputeClient {
         `Server recursive lore resolution failed (${response.status}): ${await response.text()}`,
       );
     }
+
     const data = (await response.json()) as Partial<LoreResolveResponse>;
     if (!Array.isArray(data.activatedIndexes) || !Array.isArray(data.logs)) {
       throw new Error(
         "Server recursive lore resolution returned an invalid response",
       );
     }
+
     return data as LoreResolveResponse;
   }
 
@@ -363,6 +375,7 @@ export class RemoteComputeClient {
         `Vector index status failed (${response.status}): ${await response.text()}`,
       );
     }
+
     const data = (await response.json()) as Partial<VectorIndexStatusResponse>;
     if (
       typeof data.ready !== "boolean" ||
@@ -371,6 +384,7 @@ export class RemoteComputeClient {
     ) {
       throw new Error("Vector index status returned an invalid response");
     }
+
     return data as VectorIndexStatusResponse;
   }
 
@@ -391,10 +405,11 @@ export class RemoteComputeClient {
           } satisfies VectorIndexUpsertRequest),
         },
       );
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           `Vector index upsert failed (${response.status}): ${await response.text()}`,
         );
+      }
     }
   }
 
@@ -417,13 +432,15 @@ export class RemoteComputeClient {
         topK,
       } satisfies VectorIndexSearchRequest),
     });
-    if (!response.ok)
+    if (!response.ok) {
       throw new Error(
         `Vector index search failed (${response.status}): ${await response.text()}`,
       );
+    }
     const data = (await response.json()) as Partial<VectorIndexSearchResponse>;
-    if (!Array.isArray(data.results))
+    if (!Array.isArray(data.results)) {
       throw new Error("Vector index search returned an invalid response");
+    }
     return data.results as VectorIndexSearchResult;
   }
 
@@ -436,6 +453,7 @@ export class RemoteComputeClient {
         `Vector cache stats failed (${response.status}): ${await response.text()}`,
       );
     }
+
     const data = (await response.json()) as Partial<NodeVectorCacheStats>;
     if (
       typeof data.vector?.memory?.indexes !== "number" ||
@@ -444,6 +462,7 @@ export class RemoteComputeClient {
     ) {
       throw new Error("Vector cache stats returned an invalid response");
     }
+
     return data as NodeVectorCacheStats;
   }
 
@@ -457,6 +476,7 @@ export class RemoteComputeClient {
         `Vector cache clear failed (${response.status}): ${await response.text()}`,
       );
     }
+
     const data = (await response.json()) as Partial<NodeVectorCacheClearResult>;
     if (
       typeof data.vector?.memoryIndexes !== "number" ||
@@ -465,6 +485,7 @@ export class RemoteComputeClient {
     ) {
       throw new Error("Vector cache clear returned an invalid response");
     }
+
     return data as NodeVectorCacheClearResult;
   }
 

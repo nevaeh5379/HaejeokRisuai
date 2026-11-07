@@ -112,9 +112,7 @@ export function applyReplacements(
   }
   for (const node of textNodes) {
     const replaced = applyRulesToString(node.textContent ?? "", rules);
-    if (replaced !== node.textContent) {
-      node.textContent = replaced;
-    }
+    if (replaced !== node.textContent) node.textContent = replaced;
   }
 }
 
@@ -162,8 +160,9 @@ function isCustomCaption(alt: string | null | undefined): boolean {
   if (!trimmed) return false;
   const lower = trimmed.toLowerCase();
   if (PLACEHOLDER_CAPTIONS.has(lower)) return false;
-  if (lower.startsWith("/sw/") || lower.includes("/") || lower.includes("\\"))
+  if (lower.startsWith("/sw/") || lower.includes("/") || lower.includes("\\")) {
     return false;
+  }
   if (lower.startsWith("http://") || lower.startsWith("https://")) return false;
   if (lower.startsWith("data:") || lower.startsWith("blob:")) return false;
   if (FILE_EXTENSION_REGEX.test(lower)) return false;

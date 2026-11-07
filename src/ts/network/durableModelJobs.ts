@@ -80,6 +80,7 @@ function inferProtocol(interceptor?: string): string {
   if (value.includes("response_api") || value.includes("responses")) {
     return "openai-responses";
   }
+
   return "openai";
 }
 
@@ -186,6 +187,7 @@ export async function fetchViaDurableModelJob(
     if (!parsed.jobId) {
       throw new Error("Model job creation returned no job id.");
     }
+
     jobId = parsed.jobId;
     ownedJobIds.add(jobId);
   } finally {
@@ -248,6 +250,7 @@ export async function fetchViaDurableModelJob(
       }
     }
   }
+
   if (!streamResponse) {
     detachAbort();
     releaseOwnership(!attachAborted);
@@ -277,11 +280,9 @@ export async function fetchViaDurableModelJob(
   let noProgressReattaches = 0;
 
   const reattach = async (): Promise<boolean> => {
-    if (progressedSinceAttach) {
-      noProgressReattaches = 0;
-    } else if (++noProgressReattaches >= MAX_NO_PROGRESS_REATTACHES) {
-      return false;
-    }
+    if (progressedSinceAttach) noProgressReattaches = 0;
+    else if (++noProgressReattaches >= MAX_NO_PROGRESS_REATTACHES) return false;
+
     for (let attempt = 0; attempt < MAX_REATTACH_ATTEMPTS; attempt++) {
       try {
         await sleepAbortable(500 * 2 ** attempt);
@@ -299,6 +300,7 @@ export async function fetchViaDurableModelJob(
         if (arg.signal?.aborted) return false;
       }
     }
+
     return false;
   };
 

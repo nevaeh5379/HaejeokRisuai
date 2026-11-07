@@ -37,6 +37,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL setting key list failed");
     }
+
     const body: { keys?: string[] } = await response.json();
     return Array.isArray(body.keys) ? body.keys : [];
   }
@@ -53,6 +54,7 @@ export class RemoteSqlReadClient {
         `PostgreSQL load setting key '${key}' failed`,
       );
     }
+
     const body: { value: T } = await response.json();
     return body.value;
   }
@@ -67,6 +69,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL startup data load failed");
     }
+
     return (await response.json()) as T;
   }
 
@@ -79,6 +82,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL database snapshot export failed");
     }
+
     return (await response.json()) as T;
   }
 
@@ -91,6 +95,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL character load failed");
     }
+
     const body: { character?: T } = await response.json();
     return body.character ?? null;
   }
@@ -107,6 +112,7 @@ export class RemoteSqlReadClient {
         "PostgreSQL character asset fields load failed",
       );
     }
+
     const body: { assets?: T } = await response.json();
     return body.assets ?? null;
   }
@@ -127,6 +133,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL chat load failed");
     }
+
     const body: { chat?: T } = await response.json();
     return body.chat ?? null;
   }
@@ -144,6 +151,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL chat messages load failed");
     }
+
     const body: { messages?: T[] } = await response.json();
     return body.messages ?? [];
   }
@@ -165,6 +173,7 @@ export class RemoteSqlReadClient {
         "PostgreSQL chat message page load failed",
       );
     }
+
     return (await response.json()) as T;
   }
 
@@ -176,6 +185,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL chat branch list failed");
     }
+
     const body: { branches?: T[] } = await response.json();
     return body.branches ?? [];
   }
@@ -188,6 +198,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL chat branch graph load failed");
     }
+
     const body: { graph?: T } = await response.json();
     return body.graph ?? null;
   }
@@ -211,6 +222,7 @@ export class RemoteSqlReadClient {
         "SQL chat branch graph page load failed",
       );
     }
+
     const body: { page?: T } = await response.json();
     return body.page ?? null;
   }
@@ -227,9 +239,11 @@ export class RemoteSqlReadClient {
     if (options.messageLimit !== undefined) {
       params.set("limit", String(options.messageLimit));
     }
+
     if (options.mode === "generation" || options.mode === "graph") {
       params.set("mode", options.mode);
     }
+
     const search = params.size > 0 ? `?${params}` : "";
     const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/messages${search}`,
@@ -238,6 +252,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL chat branch messages load failed");
     }
+
     const body: { messages?: T[] } = await response.json();
     return body.messages ?? [];
   }
@@ -264,6 +279,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "SQL chat branch creation failed");
     }
+
     const body: { branch: T } = await response.json();
     return body.branch;
   }
@@ -286,6 +302,7 @@ export class RemoteSqlReadClient {
     if (limit !== undefined && limit !== null && limit > 0) {
       params.set("limit", String(limit));
     }
+
     if (activeChatId) params.set("activeChatId", activeChatId);
     const search = params.size > 0 ? `?${params.toString()}` : "";
     const response = await this.apiClient.request(
@@ -296,6 +313,7 @@ export class RemoteSqlReadClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL recent chats load failed");
     }
+
     const body: { chats?: T[] } = await response.json();
     return body.chats ?? [];
   }

@@ -31,12 +31,9 @@ export async function getHordeModels(): Promise<HordeModel[]> {
     }
   } else if (modelList === "loading") {
     while (true) {
-      if (modelList !== "loading") {
-        return getHordeModels();
-      }
+      if (modelList !== "loading") return getHordeModels();
+
       await sleep(10);
     }
-  } else {
-    return modelList;
-  }
+  } else return modelList;
 }

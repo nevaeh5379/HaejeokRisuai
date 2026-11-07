@@ -102,8 +102,7 @@ test.describe("domain store boundaries", () => {
     const result = await page.evaluate(async () => {
       const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
-      const settingsStoreUrl =
-        "/src/ts/stores/domain/settingsStore.svelte.ts";
+      const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
       const { getV2PluginAPIs } = (await import(
         /* @vite-ignore */ pluginsUrl
       )) as {
@@ -147,8 +146,9 @@ test.describe("domain store boundaries", () => {
       }
 
       const pluginApi = getV2PluginAPIs();
-      (globalThis as typeof globalThis & { __pluginApis__: unknown })
-        .__pluginApis__ = pluginApi;
+      (
+        globalThis as typeof globalThis & { __pluginApis__: unknown }
+      ).__pluginApis__ = pluginApi;
       const databaseBefore = pluginApi.getSafeGlobalThis().DBState.db;
       const snapshotModules = (value: unknown) =>
         Array.from(
@@ -210,7 +210,9 @@ test.describe("domain store boundaries", () => {
         console.log(
           "[plugin-rpc]",
           JSON.stringify(
-            await Promise.all(message.args().map((argument) => argument.jsonValue())),
+            await Promise.all(
+              message.args().map((argument) => argument.jsonValue()),
+            ),
           ),
         );
       }

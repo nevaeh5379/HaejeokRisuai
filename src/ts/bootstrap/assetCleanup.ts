@@ -41,9 +41,8 @@ function createTauriStartupFs(): StartupFs {
     async list(dir) {
       // "remotes" is created on first run so the sweep below sees it.
       // The same guard keeps a missing "assets" dir from throwing.
-      if (!(await exists(dir, base))) {
-        await mkdir(dir, base);
-      }
+      if (!(await exists(dir, base))) await mkdir(dir, base);
+
       const entries = await readDir(dir, base);
       return entries.map((entry) => `${dir}/${entry.name}`);
     },
@@ -101,9 +100,7 @@ async function sweepUncleanableAssets(
   for (const key of keys) {
     try {
       const basename = getBasename(key);
-      if (!uncleanable.has(basename)) {
-        await fs.remove(key);
-      }
+      if (!uncleanable.has(basename)) await fs.remove(key);
     } catch (error) {
       console.log("error", key);
     }
@@ -126,9 +123,8 @@ async function cleanupRemoteSaves(
     try {
       const fileName = getBasename(key);
       const payloadName = getRemoteSavePayloadName(fileName);
-      if (!payloadName || activeCharacterIds.has(payloadName)) {
-        continue;
-      }
+      if (!payloadName || activeCharacterIds.has(payloadName)) continue;
+
       const metaPath = `${key}.meta`;
       let hasMeta = false;
       let metaLastUsed: unknown;
@@ -171,12 +167,9 @@ export async function cleanChunks(): Promise<void> {
   // asset sweep cannot prove that images referenced by unhydrated fields
   // (emotionImages/additionalAssets/VITS/etc.) are unused, so never delete
   // local assets from a partial SQL snapshot.
-  if (isNodeServer || getSqlRuntime().isSql) {
-    return;
-  }
-  if (db.coldstorage) {
-    return;
-  }
+  if (isNodeServer || getSqlRuntime().isSql) return;
+
+  if (db.coldstorage) return;
 
   const uncleanable = new Set(
     await getUncleanables(db, "basename", {

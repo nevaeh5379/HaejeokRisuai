@@ -263,6 +263,7 @@ function readStringArray(value: unknown): readonly string[] | undefined {
       return undefined;
     }
   }
+
   return entries as string[];
 }
 
@@ -350,6 +351,7 @@ function parseDatabaseChangeEvent(
   if (value.characterIds !== undefined && characterIds === undefined) {
     return null;
   }
+
   if (characterIds !== undefined) event.characterIds = characterIds;
   const rootUpsertKeys: readonly string[] | undefined = readStringArray(
     value.rootUpsertKeys,
@@ -357,6 +359,7 @@ function parseDatabaseChangeEvent(
   if (value.rootUpsertKeys !== undefined && rootUpsertKeys === undefined) {
     return null;
   }
+
   if (rootUpsertKeys !== undefined) event.rootUpsertKeys = rootUpsertKeys;
   const rootDeleteKeys: readonly string[] | undefined = readStringArray(
     value.rootDeleteKeys,
@@ -364,6 +367,7 @@ function parseDatabaseChangeEvent(
   if (value.rootDeleteKeys !== undefined && rootDeleteKeys === undefined) {
     return null;
   }
+
   if (rootDeleteKeys !== undefined) event.rootDeleteKeys = rootDeleteKeys;
   const pluginStorageUpsertKeys: readonly string[] | undefined =
     readStringArray(value.pluginStorageUpsertKeys);
@@ -373,9 +377,11 @@ function parseDatabaseChangeEvent(
   ) {
     return null;
   }
+
   if (pluginStorageUpsertKeys !== undefined) {
     event.pluginStorageUpsertKeys = pluginStorageUpsertKeys;
   }
+
   const pluginStorageDeleteKeys: readonly string[] | undefined =
     readStringArray(value.pluginStorageDeleteKeys);
   if (
@@ -384,9 +390,11 @@ function parseDatabaseChangeEvent(
   ) {
     return null;
   }
+
   if (pluginStorageDeleteKeys !== undefined) {
     event.pluginStorageDeleteKeys = pluginStorageDeleteKeys;
   }
+
   for (const field of [
     "charactersChanged",
     "rootChanged",
@@ -510,6 +518,7 @@ function parseLocalBackupImportProgress(
   ) {
     return null;
   }
+
   const event: Writable<RealtimeLocalBackupImportProgressEvent> = {
     jobId,
     status: value.status as RealtimeLocalBackupImportStatus,
@@ -523,14 +532,17 @@ function parseLocalBackupImportProgress(
     ) {
       return null;
     }
+
     const current = readNonNegativeInteger(value.progress.current);
     const total = readNonNegativeInteger(value.progress.total);
     const detail = readString(value.progress.detail, 1024);
-    if (value.progress.current !== undefined && current === undefined)
+    if (value.progress.current !== undefined && current === undefined) {
       return null;
+    }
     if (value.progress.total !== undefined && total === undefined) return null;
-    if (value.progress.detail !== undefined && detail === undefined)
+    if (value.progress.detail !== undefined && detail === undefined) {
       return null;
+    }
     event.progress = {
       stage: value.progress.stage as RealtimeLocalBackupImportStage,
       ...(current === undefined ? {} : { current }),
@@ -573,6 +585,7 @@ function parseReadyEvent(value: unknown): RealtimeReadyEvent | null {
       if (generation !== null) event.activeGenerations.push(generation);
     }
   }
+
   return event;
 }
 
@@ -624,8 +637,9 @@ export function parseRealtimeEvent(
       ![characterId, chatId, messageId, illustrationId].every(
         (id) => id && !/[\x00-\x1f]/.test(id),
       )
-    )
+    ) {
       return null;
+    }
     return {
       event: "illustration-progress",
       data: {

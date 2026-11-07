@@ -448,5 +448,6 @@ export function resolveEffectiveColor(
   if (themeKey === "basic" || themeKey === "custom") {
     return COLORS[colorKey] || COLORS.dark;
   }
+
   return themeInfo.color || COLORS.dark;
 }

@@ -27,6 +27,7 @@ function readBoundedInteger(
   if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
     return fallback;
   }
+
   return parsed;
 }
 
@@ -103,6 +104,7 @@ function redactUrlCredentials(value?: any): any {
     while (schemeStart > 0 && isUrlSchemeChar(value[schemeStart - 1])) {
       schemeStart -= 1;
     }
+
     if (schemeStart === schemeEnd || !isAsciiLetter(value[schemeStart])) {
       searchFrom = schemeEnd + 3;
       continue;
@@ -116,6 +118,7 @@ function redactUrlCredentials(value?: any): any {
     ) {
       authorityEnd += 1;
     }
+
     const atIndex: any = value.lastIndexOf("@", authorityEnd - 1);
     if (atIndex >= authorityStart) {
       result += value.slice(cursor, authorityStart) + "<redacted>@";
@@ -163,14 +166,17 @@ function describeOracleTarget(tnsAlias?: any, walletPath: any = ""): any {
 
 function describeStorageTarget(vendor?: any, storage?: any): any {
   if (!storage?.enabled) return `legacy file storage (${vendor} disabled)`;
-  if (vendor === "postgres")
+  if (vendor === "postgres") {
     return describePostgresTarget(storage.connectionString);
+  }
   if (vendor === "oracle") {
     return describeOracleTarget(storage.tnsAlias, storage.walletPath);
   }
+
   if (vendor === "azure") {
     return `${storage.server || "(missing server)"}:${storage.port || 1433}/${storage.database || "(missing database)"}`;
   }
+
   return `${vendor || "unknown"} storage`;
 }
 
@@ -185,6 +191,7 @@ function errorDiagnostic(error?: any): any {
       fields.push(`${key}=${sanitizeSensitiveText(error[key])}`);
     }
   }
+
   return fields.join(", ");
 }
 
@@ -194,12 +201,15 @@ function startupErrorHint(error?: any): any {
   if (code === "RISUAI_STARTUP_TIMEOUT") {
     return "The active operation is shown in the last progress line. Check database reachability, locks, and server load, or raise RISU_STORAGE_STARTUP_TIMEOUT_MS.";
   }
+
   if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) {
     return "Database hostname lookup failed. Check the hostname and Docker network/service name.";
   }
+
   if (["ECONNREFUSED", "ECONNRESET"].includes(code)) {
     return "The database endpoint rejected or reset the connection. Check that it is running, healthy, and listening on the configured port.";
   }
+
   if (
     ["ETIMEDOUT", "ESOCKET"].includes(code) ||
     message.includes("connection timeout") ||
@@ -207,12 +217,15 @@ function startupErrorHint(error?: any): any {
   ) {
     return "The database connection timed out. Check routing, firewall rules, TLS settings, and database load.";
   }
+
   if (["28P01", "28000", "ORA-01017", "ELOGIN"].includes(code)) {
     return "Database authentication failed. Check the configured user and password.";
   }
+
   if (code === "3D000") {
     return "The configured PostgreSQL database does not exist.";
   }
+
   return "";
 }
 

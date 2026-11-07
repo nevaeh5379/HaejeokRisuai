@@ -41,11 +41,10 @@ async function initializeMCPsUnlocked(
   const mcpUrls = [...getModuleMcps(character)];
   if (additionalMCPs && additionalMCPs.length > 0) {
     for (const mcp of additionalMCPs) {
-      if (!mcpUrls.includes(mcp)) {
-        mcpUrls.push(mcp);
-      }
+      if (!mcpUrls.includes(mcp)) mcpUrls.push(mcp);
     }
   }
+
   const visibleMCPUrls = [...mcpUrls];
   const callOnlyMCPUrlsThatIsNotInDefault: string[] = [];
   for (const mcp of callOnlyMCPUrls) {
@@ -54,6 +53,7 @@ async function initializeMCPsUnlocked(
       callOnlyMCPUrlsThatIsNotInDefault.push(mcp);
     }
   }
+
   for (const mcp of mcpUrls) {
     if (!MCPs[mcp]) {
       let mcpUrl = mcp;
@@ -108,9 +108,8 @@ async function initializeMCPsUnlocked(
         const MCPJSON = mcp.slice("stdio:".length);
         try {
           const MCPData = JSON.parse(MCPJSON);
-          if (MCPData.url) {
-            mcpUrl = MCPData.url;
-          } else if (MCPData.command && MCPData.args) {
+          if (MCPData.url) mcpUrl = MCPData.url;
+          else if (MCPData.command && MCPData.args) {
             const command = MCPData.command as string;
             const args: string[] = Array.isArray(MCPData.args)
               ? MCPData.args
@@ -129,7 +128,7 @@ async function initializeMCPsUnlocked(
               env: env,
             });
             let gotPong = false;
-            let pingIds: string[] = [];
+            const pingIds: string[] = [];
             cmd.stdout.on("data", (line) => {
               console.log("MCP JSON:", line);
               try {
@@ -138,9 +137,7 @@ async function initializeMCPsUnlocked(
                   gotPong = true;
                   return;
                 }
-                for (const listener of listeners) {
-                  listener(data);
-                }
+                for (const listener of listeners) listener(data);
               } catch (error) {
                 console.error("Failed to parse MCP JSON:", error);
               }
@@ -181,21 +178,15 @@ async function initializeMCPsUnlocked(
                 }),
               );
               await sleep(1000);
-              if (gotPong) {
-                break;
-              }
+              if (gotPong) break;
             }
 
-            if (!gotPong) {
-              throw new Error("MCP did not respond");
-            }
+            if (!gotPong) throw new Error("MCP did not respond");
 
             await client.checkHandshake();
             MCPs[mcp] = client;
             continue;
-          } else {
-            throw new Error("MCP JSON does not contain a valid URL");
-          }
+          } else throw new Error("MCP JSON does not contain a valid URL");
         } catch (error) {
           throw new Error(`Failed to parse MCP JSON: ${error}`);
         }
@@ -235,10 +226,9 @@ async function initializeMCPsUnlocked(
   }
 
   for (const mcp of callOnlyMCPUrlsThatIsNotInDefault) {
-    if (MCPs[mcp]) {
-      callOnlyMCPs[mcp] = MCPs[mcp];
-    }
+    if (MCPs[mcp]) callOnlyMCPs[mcp] = MCPs[mcp];
   }
+
   return visibleMCPUrls;
 }
 
@@ -274,9 +264,8 @@ export async function getMCPTools(
 export async function getMCPMeta(additionalMCPs?: string[]) {
   const mcpUrls = await initializeMCPs(additionalMCPs);
   const meta: Record<string, typeof MCPClient.prototype.serverInfo> = {};
-  for (const key of mcpUrls) {
-    if (MCPs[key]) meta[key] = MCPs[key].serverInfo;
-  }
+  for (const key of mcpUrls) if (MCPs[key]) meta[key] = MCPs[key].serverInfo;
+
   return meta;
 }
 
@@ -300,9 +289,7 @@ export async function callMCPTool(
     if (!client) continue;
     const tools = await client.getToolList();
     const tool = tools.find((t) => t.name === methodName);
-    if (tool) {
-      return await client.callTool(methodName, args, context);
-    }
+    if (tool) return await client.callTool(methodName, args, context);
   }
   return [
     {
@@ -428,16 +415,16 @@ export async function decodeToolCall(
   if (text.startsWith("<tool_call>")) {
     text = text.slice("<tool_call>".length).trim();
   }
+
   if (text.endsWith("</tool_call>")) {
     text = text.slice(0, -"</tool_call>".length).trim();
   }
+
   const [callId, callName] = text.split("\uf100");
-  if (!callId) {
-    return undefined;
-  }
+  if (!callId) return undefined;
+
   const call = await inst.getItem<toolCallData>(callId);
-  if (!call) {
-    return undefined;
-  }
+  if (!call) return undefined;
+
   return call;
 }

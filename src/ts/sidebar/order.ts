@@ -47,8 +47,9 @@ export class Order {
     if (typeof item !== "string" && target.folder) return false;
 
     let insertionIndex = to.index + (target.after ? 1 : 0);
-    if (from.items === to.items && from.index < insertionIndex)
+    if (from.items === to.items && from.index < insertionIndex) {
       insertionIndex--;
+    }
     if (from.items === to.items && from.index === insertionIndex) return false;
 
     from.items.splice(from.index, 1);
@@ -72,9 +73,8 @@ export class Order {
         color: "",
         id: v4(),
       };
-    } else {
-      destination.data.push(item);
-    }
+    } else destination.data.push(item);
+
     from.items.splice(from.index, 1);
     return true;
   }

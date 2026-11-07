@@ -175,14 +175,14 @@ export function buildChatGraphPackedLanes(
     const insertAt = intervals.findIndex(
       (interval) => interval.start > chain.start,
     );
-    if (insertAt === -1) {
-      intervals.push({ start: chain.start, end: chain.end });
-    } else {
+    if (insertAt === -1) intervals.push({ start: chain.start, end: chain.end });
+    else {
       intervals.splice(insertAt, 0, {
         start: chain.start,
         end: chain.end,
       });
     }
+
     laneIntervals[lane] = intervals;
     laneOfChain.set(index, lane);
   }
@@ -283,13 +283,15 @@ export function buildChatGraphGitRows(
         if (
           left < candidates.length &&
           candidateLess(candidates[left], candidates[smallest])
-        )
+        ) {
           smallest = left;
+        }
         if (
           right < candidates.length &&
           candidateLess(candidates[right], candidates[smallest])
-        )
+        ) {
           smallest = right;
+        }
         if (smallest === index) break;
         [candidates[smallest], candidates[index]] = [
           candidates[index],
@@ -304,6 +306,7 @@ export function buildChatGraphGitRows(
   for (const node of nodes) {
     if ((indegree.get(node.id) ?? 0) === 0) pushCandidate(node.id);
   }
+
   let rows = 0;
   while (candidates.length > 0) {
     const { id } = popCandidate();
@@ -394,8 +397,9 @@ export function buildChatMessageGraph(
       return;
     }
     const parent = mutableNodes.get(parentId);
-    if (parent && !parent.children.includes(childId))
+    if (parent && !parent.children.includes(childId)) {
       parent.children.push(childId);
+    }
   };
 
   for (const timeline of timelines) {
@@ -476,9 +480,8 @@ export function buildChatMessageGraph(
   }
 
   let messageCount = 0;
-  for (const node of mutableNodes.values()) {
-    if (!node.synthetic) messageCount++;
-  }
+  for (const node of mutableNodes.values()) if (!node.synthetic) messageCount++;
+
   const density = options.density ?? "smart";
   const keepIds = new Set<string>();
   if (
@@ -497,13 +500,15 @@ export function buildChatMessageGraph(
         anchors.push(node.id);
       }
     }
+
     const nearestAnchor = new Map<string, number>();
     const queue = anchors.map((id) => ({ id, distance: 0 }));
     for (let index = 0; index < queue.length; index++) {
       const { id, distance } = queue[index];
       const previousDistance = nearestAnchor.get(id);
-      if (previousDistance !== undefined && previousDistance <= distance)
+      if (previousDistance !== undefined && previousDistance <= distance) {
         continue;
+      }
       nearestAnchor.set(id, distance);
       keepIds.add(id);
       const contextRadius = density === "branches" ? 0 : CONTEXT_RADIUS;
@@ -573,6 +578,7 @@ export function buildChatMessageGraph(
     for (let index = 1; index < ids.length; index++) {
       if (!originalEdgeActive(ids[index - 1], ids[index])) return false;
     }
+
     return ids.length > 1;
   };
 
@@ -718,6 +724,7 @@ export function buildChatMessageGraph(
     if (visitingSubtree.has(nodeId)) {
       return { childOffsets: new Map(), leftContour: [0], rightContour: [0] };
     }
+
     visitingSubtree.add(nodeId);
 
     const children = displayNodes.get(nodeId)?.children ?? [];
@@ -818,6 +825,7 @@ export function buildChatMessageGraph(
     for (let index = order.length - 1; index >= 0; index--) {
       layoutSubtree(order[index]);
     }
+
     return layoutInfo.get(nodeId)!;
   };
 
@@ -832,9 +840,8 @@ export function buildChatMessageGraph(
   for (const rootId of displayRootIds) {
     const layout = layoutInfo.get(rootId);
     if (!layout) continue;
-    if (rootPositions.size === 0) {
-      rootPositions.set(rootId, 0);
-    } else {
+    if (rootPositions.size === 0) rootPositions.set(rootId, 0);
+    else {
       let shift = 1;
       const overlap = Math.min(
         globalRightContour.length,
@@ -890,20 +897,15 @@ export function buildChatMessageGraph(
     assignPositions(rootId, rootX, 0);
   }
   for (const nodeId of displayNodes.keys()) {
-    if (!positions.has(nodeId)) {
-      assignPositions(nodeId, 0, 0);
-    }
+    if (!positions.has(nodeId)) assignPositions(nodeId, 0, 0);
   }
 
   // Normalize so leftmost node is at x = 0
   let minX = Number.POSITIVE_INFINITY;
-  for (const pos of positions.values()) {
-    if (pos.x < minX) minX = pos.x;
-  }
+  for (const pos of positions.values()) if (pos.x < minX) minX = pos.x;
+
   if (Number.isFinite(minX) && minX !== 0) {
-    for (const pos of positions.values()) {
-      pos.x -= minX;
-    }
+    for (const pos of positions.values()) pos.x -= minX;
   }
 
   const nodes = [];
@@ -913,6 +915,7 @@ export function buildChatMessageGraph(
       ...(positions.get(node.id) ?? { x: 0, y: 0 }),
     });
   }
+
   nodes.sort((a, b) => a.y - b.y || a.x - b.x);
 
   const columns = Math.max(

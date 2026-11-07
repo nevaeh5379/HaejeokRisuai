@@ -67,6 +67,7 @@ export class RemoteAuthController {
     if (this.cachedAuthToken && this.cachedAuthTokenExpiresAt - now >= 60) {
       return this.cachedAuthToken;
     }
+
     if (!this.authTokenPromise) {
       this.authTokenPromise = this.options
         .createAuth()
@@ -80,6 +81,7 @@ export class RemoteAuthController {
           this.authTokenPromise = null;
         });
     }
+
     return await this.authTokenPromise;
   }
 
@@ -113,6 +115,7 @@ export class RemoteAuthController {
     if (!response.ok) {
       throw new Error(`Authentication check failed (${response.status}).`);
     }
+
     const data = await response.json();
     if (data?.status === "success") {
       this.authChecked = true;
@@ -122,6 +125,7 @@ export class RemoteAuthController {
     if (data?.status !== "unset" && data?.status !== "incorrect") {
       throw new Error("The storage server returned an invalid auth status.");
     }
+
     const digest = await digestRemotePassword(password, this.apiClient);
     if (data.status === "unset") {
       const setResponse = await this.apiClient.request("/api/set_password", {

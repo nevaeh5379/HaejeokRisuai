@@ -115,8 +115,9 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     this.metadataCache = null;
   }
   assertCurrent(storage: ISqlStorage, generation: number) {
-    if (storage !== this.storage || generation !== this.generation)
+    if (storage !== this.storage || generation !== this.generation) {
       throw new AuthorNoteError("disposed");
+    }
   }
   private requireStorage() {
     if (!this.storage) throw new AuthorNoteError("disposed");
@@ -151,9 +152,10 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     const generation = this.generation;
     while (true) {
       const revision = storage.getRevision();
-      if (this.metadataCache?.revision !== revision) {
-        // Local commits and server change events both advance the revision.
-        // Replace the cache so old in-flight reads cannot refill the new one.
+      if (this.metadataCache?.revision !== revision)
+      // Local commits and server change events both advance the revision.
+      // Replace the cache so old in-flight reads cannot refill the new one.
+      {
         this.metadataCache = {
           revision,
           entries: new LRUCache<string, AuthorNoteMetadata>({
@@ -169,6 +171,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
           }),
         };
       }
+
       const metadata = await this.metadataCache.entries.fetch(id);
       this.assertCurrent(storage, generation);
       if (revision !== storage.getRevision()) continue;
@@ -224,8 +227,9 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
   }
   /** Script writes keep the caller's read hash and recheck permission inside SQL's transaction. */
   setScriptContent(note: GlobalAuthorNote, content: string): Promise<void> {
-    if (!(note instanceof NoteObject))
+    if (!(note instanceof NoteObject)) {
       throw new Error("Invalid author note object");
+    }
     return note.save(content, { script: true });
   }
   async waitForPendingWrites(): Promise<void> {

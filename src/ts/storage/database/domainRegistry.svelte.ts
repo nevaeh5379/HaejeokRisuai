@@ -49,25 +49,22 @@ export const CharacterDomainHandler: DomainHandler<(character | groupChat)[]> =
         if (scope === "essential") continue;
 
         for (const emotion of char.emotionImages ?? []) {
-          if (emotion?.[1]) {
-            addAsset(emotion[1], charName, emotion[0]);
-          }
+          if (emotion?.[1]) addAsset(emotion[1], charName, emotion[0]);
         }
+
         if (char.type === "group") continue;
         for (const asset of char.additionalAssets ?? []) {
-          if (asset?.[1]) {
-            addAsset(asset[1], charName, asset[0]);
-          }
+          if (asset?.[1]) addAsset(asset[1], charName, asset[0]);
         }
+
         for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
           if (typeof key === "string" && key.length > 0) {
             addAsset(key, charName, name);
           }
         }
+
         for (const asset of char.ccAssets ?? []) {
-          if (asset?.uri) {
-            addAsset(asset.uri, charName, asset.name);
-          }
+          if (asset?.uri) addAsset(asset.uri, charName, asset.name);
         }
       }
     },
@@ -75,9 +72,7 @@ export const CharacterDomainHandler: DomainHandler<(character | groupChat)[]> =
       if (!Array.isArray(db.characters) || db.characters.length === 0) {
         if (characterStore.characters.length > 0) {
           db.characters = $state.snapshot(characterStore.characters);
-        } else {
-          db.characters ??= [];
-        }
+        } else db.characters ??= [];
       }
     },
   };
@@ -132,9 +127,7 @@ export const ModuleDomainHandler: DomainHandler<RisuModule[]> = {
     if (!Array.isArray(db.modules) || db.modules.length === 0) {
       if (moduleStore.modules.length > 0) {
         db.modules = $state.snapshot(moduleStore.modules);
-      } else {
-        db.modules ??= [];
-      }
+      } else db.modules ??= [];
     }
   },
 };
@@ -220,6 +213,7 @@ export function ensureAllDomains(db: DatabaseDraft): DatabaseDraft {
   for (const handler of Object.values(DOMAIN_REGISTRY)) {
     handler.ensureDomain(db);
   }
+
   return db;
 }
 

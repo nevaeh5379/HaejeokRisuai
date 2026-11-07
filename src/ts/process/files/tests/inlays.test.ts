@@ -58,9 +58,7 @@ vi.mock("localforage", () => ({
         store.delete(key);
       }),
       iterate: vi.fn(async (cb: (value: unknown, key: string) => void) => {
-        for (const [key, value] of store) {
-          cb(value, key);
-        }
+        for (const [key, value] of store) cb(value, key);
       }),
     }),
   },
@@ -860,7 +858,12 @@ describe("remote inlay storage", () => {
   test("rejects a durable illustration write before caching when server storage fails", async () => {
     await enableNodeServerMode();
     remoteFailureCount.value = 1;
-    await expect(writeInlayImage(makeImage(120, 80), { id: "durable-failure", durable: true })).rejects.toThrow("server unavailable");
+    await expect(
+      writeInlayImage(makeImage(120, 80), {
+        id: "durable-failure",
+        durable: true,
+      }),
+    ).rejects.toThrow("server unavailable");
     expect(remoteStore.has(getInlayServerKey("durable-failure"))).toBe(false);
     expect(store.has("durable-failure")).toBe(false);
   });

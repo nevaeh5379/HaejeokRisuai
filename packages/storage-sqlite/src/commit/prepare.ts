@@ -33,9 +33,8 @@ export async function validatePresets<TPreset extends object>(
   for (const id of commit.presets.deletes) ids.delete(id);
   for (const entry of commit.presets.upserts) ids.add(entry.id);
 
-  if (ids.size === 0) {
-    throw new Error("At least one bot preset must remain");
-  }
+  if (ids.size === 0) throw new Error("At least one bot preset must remain");
+
   if (
     commit.presets.order &&
     (commit.presets.order.length !== ids.size ||
@@ -44,12 +43,14 @@ export async function validatePresets<TPreset extends object>(
   ) {
     throw new Error("Preset order must contain every preset ID exactly once");
   }
+
   if (
     commit.presets.activeId !== undefined &&
     !ids.has(commit.presets.activeId)
   ) {
     throw new Error("Active bot preset does not exist");
   }
+
   if (commit.presets.activeId !== undefined) return;
 
   const current = (await sqliteNodes.loadSettingValue(

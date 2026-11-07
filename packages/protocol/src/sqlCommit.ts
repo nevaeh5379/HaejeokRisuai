@@ -257,9 +257,8 @@ export function readSqlCommitImpactSink(
   options: unknown,
 ): SqlCommitImpactSink | null {
   if (options === null) return null;
-  if (typeof options !== "object" && typeof options !== "function") {
-    return null;
-  }
+  if (typeof options !== "object" && typeof options !== "function") return null;
+
   const candidate: unknown = (options as Record<PropertyKey, unknown>)[
     SQL_COMMIT_IMPACT_CHANNEL
   ];
@@ -292,24 +291,27 @@ export function deriveSqlCommitImpact(
   for (const manifest of commit.messageManifests) {
     chatIdSet.add(manifest.chatId);
   }
+
   for (const deletion of commit.messageDeletes ?? []) {
     chatIdSet.add(deletion.chatId);
   }
+
   for (const chat of commit.chats) chatIdSet.add(chat.id);
   for (const chatId of commit.chatDeletes ?? []) chatIdSet.add(chatId);
   const chatIds: string[] = [...chatIdSet];
 
   const characterIdSet: Set<string> = new Set<string>();
   for (const chat of commit.chats) characterIdSet.add(chat.characterId);
-  for (const character of commit.characters) {
-    characterIdSet.add(character.id);
-  }
+  for (const character of commit.characters) characterIdSet.add(character.id);
+
   for (const characterId of commit.characterDeletes ?? []) {
     characterIdSet.add(characterId);
   }
+
   for (const manifest of commit.chatManifests) {
     characterIdSet.add(manifest.characterId);
   }
+
   const characterIds: string[] = [...characterIdSet];
 
   const rootUpsertKeySet: Set<string> = new Set<string>();
@@ -321,6 +323,7 @@ export function deriveSqlCommitImpact(
   for (const upsert of commit.pluginStorageUpserts) {
     pluginStorageUpsertKeySet.add(upsert.key);
   }
+
   const pluginStorageUpsertKeys: string[] = [...pluginStorageUpsertKeySet];
   const pluginStorageDeleteKeys: string[] = [
     ...new Set<string>(commit.pluginStorageDeletes),
@@ -414,6 +417,7 @@ class SqlCommitParser {
     if (!Array.isArray(value)) {
       throw new this.PayloadError(`${field} must be an array`);
     }
+
     return value;
   }
 
@@ -461,6 +465,7 @@ class SqlCommitParser {
       if (!isRecord(row)) {
         throw new this.PayloadError(`${field}[${index}] must be an object`);
       }
+
       return parseRow(row, index);
     });
   }
@@ -533,6 +538,7 @@ class SqlCommitParser {
           data: row.data,
         };
       }
+
       return {
         id: row.id,
         chatId: ownerId,
@@ -574,8 +580,9 @@ class SqlCommitParser {
   // Rejects non-object request bodies and narrows the top-level payload to a
   // record for the section parsers below.
   private parsePayload(rawPayload: unknown): UnknownRecord {
-    if (!isRecord(rawPayload))
+    if (!isRecord(rawPayload)) {
       throw new this.PayloadError("Sync payload must be an object");
+    }
 
     return rawPayload;
   }
@@ -636,22 +643,25 @@ class SqlCommitParser {
     if (!isRecord(value)) {
       throw new this.PayloadError("presets must be an object");
     }
+
     const upserts = this.parseRows(
       value.upserts,
       "presets.upserts",
       (item, index) => {
         this.assertId(item.id, `presets.upserts[${index}].id`);
 
-        if (item.position !== undefined)
+        if (item.position !== undefined) {
           this.assertPosition(
             item.position,
             `presets.upserts[${index}].position`,
           );
+        }
 
-        if (!isRecord(item.data))
+        if (!isRecord(item.data)) {
           throw new this.PayloadError(
             `presets.upserts[${index}].data must be an object`,
           );
+        }
 
         return {
           id: item.id,
@@ -668,6 +678,7 @@ class SqlCommitParser {
     if (value.activeId !== undefined) {
       this.assertId(value.activeId, "presets.activeId");
     }
+
     return {
       upserts,
       deletes,
@@ -678,23 +689,26 @@ class SqlCommitParser {
 
   private parseModules(value: unknown): NormalizedSqlCommit["modules"] {
     if (value === undefined) return undefined;
-    if (!isRecord(value))
+    if (!isRecord(value)) {
       throw new this.PayloadError("modules must be an object");
+    }
 
     const upserts = this.parseRows(
       value.upserts,
       "modules.upserts",
       (item, index) => {
         this.assertId(item.id, `modules.upserts[${index}].id`);
-        if (item.position !== undefined)
+        if (item.position !== undefined) {
           this.assertPosition(
             item.position,
             `modules.upserts[${index}].position`,
           );
-        if (!isRecord(item.data))
+        }
+        if (!isRecord(item.data)) {
           throw new this.PayloadError(
             `modules.upserts[${index}].data must be an object`,
           );
+        }
         return {
           id: item.id,
           position: item.position as number | undefined,
@@ -712,27 +726,31 @@ class SqlCommitParser {
 
   private parsePlugins(value: unknown): NormalizedSqlCommit["plugins"] {
     if (value === undefined) return undefined;
-    if (!isRecord(value))
+    if (!isRecord(value)) {
       throw new this.PayloadError("plugins must be an object");
+    }
 
     const upserts = this.parseRows(
       value.upserts,
       "plugins.upserts",
       (item, index) => {
         this.assertId(item.id, `plugins.upserts[${index}].id`);
-        if (item.position !== undefined)
+        if (item.position !== undefined) {
           this.assertPosition(
             item.position,
             `plugins.upserts[${index}].position`,
           );
-        if (!isRecord(item.data))
+        }
+        if (!isRecord(item.data)) {
           throw new this.PayloadError(
             `plugins.upserts[${index}].data must be an object`,
           );
-        if (Object.prototype.hasOwnProperty.call(item.data, "script"))
+        }
+        if (Object.prototype.hasOwnProperty.call(item.data, "script")) {
           throw new this.PayloadError(
             `plugins.upserts[${index}].data.script must be written through plugins.scripts`,
           );
+        }
         return {
           id: item.id,
           position: item.position as number | undefined,
@@ -750,10 +768,11 @@ class SqlCommitParser {
         ? undefined
         : this.parseRows(value.scripts, "plugins.scripts", (item, index) => {
             this.assertId(item.id, `plugins.scripts[${index}].id`);
-            if (typeof item.script !== "string")
+            if (typeof item.script !== "string") {
               throw new this.PayloadError(
                 `plugins.scripts[${index}].script must be a string`,
               );
+            }
             return { id: item.id, script: item.script };
           });
     const enabled =
@@ -761,10 +780,11 @@ class SqlCommitParser {
         ? undefined
         : this.parseRows(value.enabled, "plugins.enabled", (item, index) => {
             this.assertId(item.id, `plugins.enabled[${index}].id`);
-            if (typeof item.enabled !== "boolean")
+            if (typeof item.enabled !== "boolean") {
               throw new this.PayloadError(
                 `plugins.enabled[${index}].enabled must be a boolean`,
               );
+            }
             return { id: item.id, enabled: item.enabled };
           });
     return { upserts, deletes, order, scripts, enabled };
@@ -783,9 +803,11 @@ class SqlCommitParser {
         pluginStorageClear: false,
       };
     }
+
     if (!isRecord(value)) {
       throw new this.PayloadError("pluginStorage must be an object");
     }
+
     const pluginStorageUpserts = this.parseSettingUpserts(
       value.upserts,
       "pluginStorage.upserts",
@@ -813,6 +835,7 @@ class SqlCommitParser {
           `${rowField}.lastInteraction must be a non-negative safe integer`,
         );
       }
+
       return { id: row.id, lastInteraction: row.lastInteraction as number };
     });
   }
@@ -918,10 +941,11 @@ class SqlCommitParser {
 
     if (payload.idempotencyKey !== undefined) {
       this.assertId(payload.idempotencyKey, "idempotencyKey");
-      if ((payload.idempotencyKey as string).length > 128)
+      if ((payload.idempotencyKey as string).length > 128) {
         throw new this.PayloadError(
           "idempotencyKey must be at most 128 characters",
         );
+      }
     }
     return {
       ...(payload.idempotencyKey === undefined

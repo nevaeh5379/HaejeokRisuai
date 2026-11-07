@@ -148,6 +148,7 @@ test("retrieves bgEmbedding, toggles, description, id, enabled, low level access
                 moduleStore.enabledModules.includes(target.id),
               ];
             }
+
             return [field, target[field]];
           }),
         );

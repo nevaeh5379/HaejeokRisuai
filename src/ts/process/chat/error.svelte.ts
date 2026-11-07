@@ -28,6 +28,7 @@ function resolveErrorChat(context: ChatErrorContext) {
       if (target) return target;
     }
   }
+
   const selectedChar =
     context.selectedChar >= 0 ? context.selectedChar : get(selectedCharID);
   const charRoom = characterStore.characters?.[selectedChar];

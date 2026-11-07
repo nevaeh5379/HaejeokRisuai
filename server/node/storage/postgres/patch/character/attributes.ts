@@ -28,12 +28,13 @@ export const Attributes = {
           (!Object.hasOwn(CHARACTER_FIELD_COLUMNS, key) &&
             !Object.hasOwn(CHARACTER_RELATIONS, key)) ||
           (Array.isArray(value) && !value.length))
-      )
+      ) {
         attributes.push({
           character_id: id,
           key,
           value: JSON.stringify(encodeJsonValue(value)),
         });
+      }
     }
     return { attributes, attributeKeys };
   },

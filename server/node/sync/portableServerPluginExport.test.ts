@@ -52,6 +52,7 @@ describe("Node portable backup plugin export", () => {
     for await (const record of iterateServerBackupPlugins(storage)) {
       await writer.emit(record);
     }
+
     await writer.emit({
       type: "plugin-storage",
       key: "Enabled plugin",

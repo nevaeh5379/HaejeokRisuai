@@ -31,6 +31,7 @@ export async function warnNightlyIfNeeded(): Promise<void> {
   ) {
     return;
   }
+
   alertMd(language.nightlyWarning);
   await waitAlert();
   //for testing, leave empty
@@ -50,8 +51,6 @@ export async function persistStorageIfStandalone(): Promise<void> {
       window.matchMedia("(display-mode: standalone)").matches ||
       standaloneNavigator.standalone === true ||
       document.referrer.includes("android-app://");
-    if (isInStandaloneMode) {
-      await navigator.storage.persist();
-    }
+    if (isInStandaloneMode) await navigator.storage.persist();
   } catch (error) {}
 }

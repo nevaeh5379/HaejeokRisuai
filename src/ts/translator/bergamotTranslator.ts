@@ -39,11 +39,8 @@ class CacheDB {
 
       request.onsuccess = () => {
         const result = request.result;
-        if (result && result.checksum === checksum) {
-          resolve(result.buffer);
-        } else {
-          resolve(null);
-        }
+        if (result && result.checksum === checksum) resolve(result.buffer);
+        else resolve(null);
       };
 
       request.onerror = () => reject(request.error);
@@ -103,14 +100,14 @@ class FirefoxBacking extends TranslatorBacking {
         file.name = `${modelUrl}/${file.modelType}/${entry.from}${entry.to}/${file.name}.gz`;
       }
     }
+
     return registry;
   }
 
   async fetch(url, checksum, extra) {
     const cacheBuffer = await this.cache.load(url, checksum);
-    if (cacheBuffer) {
-      return cacheBuffer;
-    }
+    if (cacheBuffer) return cacheBuffer;
+
     const res = await fetch(url, {
       credentials: "omit",
     });
@@ -127,8 +124,9 @@ async function decompressGZip(buffer: ArrayBuffer) {
     const decompressor = new DecompressionStream("gzip");
     const stream = new Response(buffer).body.pipeThrough(decompressor);
     return await new Response(stream).arrayBuffer();
-  } else {
-    // GZip decompression fallback
+  } else
+  // GZip decompression fallback
+  {
     return gunzipSync(new Uint8Array(buffer)).buffer;
   }
 }

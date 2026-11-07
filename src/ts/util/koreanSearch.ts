@@ -95,9 +95,7 @@ function charToPattern(ch: string, isLastChar: boolean): string {
   }
 
   // 3. Whitespace
-  if (/\s/.test(ch)) {
-    return "\\s*";
-  }
+  if (/\s/.test(ch)) return "\\s*";
 
   // 4. Other characters
   return escapeRegExp(ch);
@@ -180,19 +178,13 @@ export function matchKoreanText(
   const queryLower = queryNorm.toLowerCase();
 
   // 1. Exact Match
-  if (targetLower === queryLower) {
-    return { matched: true, score: 1000 };
-  }
+  if (targetLower === queryLower) return { matched: true, score: 1000 };
 
   // 2. Prefix Match
-  if (targetLower.startsWith(queryLower)) {
-    return { matched: true, score: 800 };
-  }
+  if (targetLower.startsWith(queryLower)) return { matched: true, score: 800 };
 
   // 3. Standard Substring Match
-  if (targetLower.includes(queryLower)) {
-    return { matched: true, score: 600 };
-  }
+  if (targetLower.includes(queryLower)) return { matched: true, score: 600 };
 
   // 4. Whitespace-insensitive Match
   const targetNoSpace = targetLower.replace(/[\s\-_]+/g, "");
@@ -245,9 +237,11 @@ export function matchKoreanText(
         if (targetNoSpace === romanizedQuery) {
           return { matched: true, score: 480, isRomanized: true };
         }
+
         if (targetNoSpace.startsWith(romanizedQuery)) {
           return { matched: true, score: 440, isRomanized: true };
         }
+
         if (targetNoSpace.includes(romanizedQuery)) {
           return { matched: true, score: 400, isRomanized: true };
         }
@@ -259,9 +253,11 @@ export function matchKoreanText(
           if (phonTarget === phonQuery) {
             return { matched: true, score: 460, isRomanized: true };
           }
+
           if (phonTarget.startsWith(phonQuery)) {
             return { matched: true, score: 420, isRomanized: true };
           }
+
           if (phonTarget.includes(phonQuery)) {
             return { matched: true, score: 380, isRomanized: true };
           }
@@ -326,9 +322,7 @@ export function matchCharacterKorean(
   }
 
   const isMatched = nameResult.matched || creatorResult.matched || tagMatched;
-  if (!isMatched) {
-    return { matched: false, score: 0 };
-  }
+  if (!isMatched) return { matched: false, score: 0 };
 
   const finalScore = Math.max(nameResult.score, creatorScore, bestTagScore);
   return {

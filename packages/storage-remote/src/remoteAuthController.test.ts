@@ -62,11 +62,13 @@ describe("RemoteAuthController auth check", () => {
       async (path): Promise<Response> => {
         calls.push({ path });
         if (path === "/api/test_auth") {
-          if (calls.length === 1) {
-            // An intermediate device (captive portal, dead keep-alive)
-            // answered with a 200 whose body is not JSON.
+          if (calls.length === 1)
+          // An intermediate device (captive portal, dead keep-alive)
+          // answered with a 200 whose body is not JSON.
+          {
             return new Response("<html>portal</html>", { status: 200 });
           }
+
           return Response.json({ status: "success" });
         }
         throw new Error(`unexpected path ${path}`);
@@ -205,9 +207,11 @@ describe("RemoteAuthController auth check", () => {
         if (path === "/api/test_auth") {
           return Response.json({ status: "incorrect" });
         }
+
         if (path === "/api/crypto") {
           return new Response("digest-123", { status: 200 });
         }
+
         throw new Error(`unexpected path ${path}`);
       },
     );

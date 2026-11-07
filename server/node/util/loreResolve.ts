@@ -8,9 +8,8 @@ function resolveLoreEntries(
   if (!Array.isArray(messages) || !Array.isArray(entries)) {
     throw new TypeError("messages and entries must be arrays");
   }
-  if (entries.length > 10000) {
-    throw new RangeError("Too many lore entries");
-  }
+
+  if (entries.length > 10000) throw new RangeError("Too many lore entries");
 
   const activatedIndexes: any = new Set();
   const activationOrder: any = [];
@@ -50,6 +49,7 @@ function resolveLoreEntries(
                 logs.push(result.logs[l]);
               }
             }
+
             if (
               (query.negative && result.matched) ||
               (!query.negative && !result.matched)

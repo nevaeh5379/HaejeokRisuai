@@ -143,8 +143,6 @@ export const Packet = {
    *   A promise that resolves when the write is accepted immediately or `drain` fires.
    */
   async write(output: NodeJS.WritableStream, packet: Buffer): Promise<void> {
-    if (!output.write(packet)) {
-      await once(output, "drain");
-    }
+    if (!output.write(packet)) await once(output, "drain");
   },
 };

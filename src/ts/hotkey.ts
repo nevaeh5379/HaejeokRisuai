@@ -51,9 +51,8 @@ export function initHotkey() {
     for (const hotkey of hotKeys) {
       let hotKeyRanThisTime = true;
 
-      if (!hotkeyMatches(hotkey, ev)) {
-        continue;
-      }
+      if (!hotkeyMatches(hotkey, ev)) continue;
+
       switch (hotkey.action) {
         case "reroll": {
           clickQuery(".button-icon-reroll");
@@ -120,12 +119,10 @@ export function initHotkey() {
           const currentIndex = sorted.findIndex(
             (v) => v.i === get(selectedCharID),
           );
-          if (currentIndex === 0) {
-            return;
-          }
-          if (currentIndex >= sorted.length - 1) {
-            return;
-          }
+          if (currentIndex === 0) return;
+
+          if (currentIndex >= sorted.length - 1) return;
+
           selectedCharID.set(sorted[currentIndex - 1].i);
           PlaygroundStore.set(0);
           OpenRealmStore.set(false);
@@ -140,12 +137,10 @@ export function initHotkey() {
           const currentIndex = sorted.findIndex(
             (v) => v.i === get(selectedCharID),
           );
-          if (currentIndex === 0) {
-            return;
-          }
-          if (currentIndex >= sorted.length - 1) {
-            return;
-          }
+          if (currentIndex === 0) return;
+
+          if (currentIndex >= sorted.length - 1) return;
+
           selectedCharID.set(sorted[currentIndex + 1].i);
           PlaygroundStore.set(0);
           OpenRealmStore.set(false);
@@ -160,6 +155,7 @@ export function initHotkey() {
           if (get(process.doingChat) && get(selectedCharID) !== -1) {
             return false;
           }
+
           alertWait("Loading...");
           ev.preventDefault();
           ev.stopPropagation();
@@ -192,6 +188,7 @@ export function initHotkey() {
           if (database.enableScrollToActiveChar !== false) {
             window.dispatchEvent(new CustomEvent("scrollToActiveCharacter"));
           }
+
           break;
         }
         case "loadout": {
@@ -273,13 +270,12 @@ export function initHotkey() {
         }
       }
     }
+
     if (ev.key === "Escape") {
-      if (doingAlert()) {
-        alertToast("Alert Closed");
-      }
-      if (get(settingsOpen)) {
-        settingsOpen.set(false);
-      }
+      if (doingAlert()) alertToast("Alert Closed");
+
+      if (get(settingsOpen)) settingsOpen.set(false);
+
       ev.preventDefault();
     }
     if (ev.key === "Enter") {
@@ -303,18 +299,14 @@ export function initHotkey() {
   document.addEventListener("touchstart", (ev) => {
     touchs++;
     if (touchs > 2) {
-      if (Date.now() - touchStartTime > 300) {
-        return;
-      }
+      if (Date.now() - touchStartTime > 300) return;
+
       touchs = 0;
-      if (doingAlert()) {
-        return;
-      }
+      if (doingAlert()) return;
+
       quickMenu();
     }
-    if (touchs === 1) {
-      touchStartTime = Date.now();
-    }
+    if (touchs === 1) touchStartTime = Date.now();
   });
   document.addEventListener("touchend", (ev) => {
     touchs = 0;
@@ -354,21 +346,15 @@ async function quickMenu() {
     language.cancel,
   ]);
   const sel = parseInt(selStr);
-  if (sel === 0) {
-    openPresetList.set(!get(openPresetList));
-  }
-  if (sel === 1) {
-    openPersonaList.set(!get(openPersonaList));
-  }
-  if (sel === 2) {
-    loadoutModalStore.open = !loadoutModalStore.open;
-  }
+  if (sel === 0) openPresetList.set(!get(openPresetList));
+
+  if (sel === 1) openPersonaList.set(!get(openPersonaList));
+
+  if (sel === 2) loadoutModalStore.open = !loadoutModalStore.open;
 }
 
 export function hotkeyMatches(hotkey: Hotkey, ev: KeyboardEvent): boolean {
-  if (!hotkey) {
-    return false;
-  }
+  if (!hotkey) return false;
 
   hotkey.ctrl = hotkey.ctrl ?? false;
   hotkey.alt = hotkey.alt ?? false;
@@ -381,6 +367,7 @@ export function hotkeyMatches(hotkey: Hotkey, ev: KeyboardEvent): boolean {
   if (!hotkey.ctrl && !hotkey.alt && !hotkey.shift) {
     return !isTypingTarget(document.activeElement);
   }
+
   return true;
 }
 
@@ -388,31 +375,24 @@ export function hotkeyMatches(hotkey: Hotkey, ev: KeyboardEvent): boolean {
  * Whether `el` accepts text input.
  */
 function isTypingTarget(el: Element | null): boolean {
-  if (!el) {
-    return false;
-  }
-  if (["INPUT", "TEXTAREA"].includes(el.tagName)) {
-    return true;
-  }
-  if (el instanceof HTMLElement && el.isContentEditable) {
-    return true;
-  }
+  if (!el) return false;
+
+  if (["INPUT", "TEXTAREA"].includes(el.tagName)) return true;
+
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+
   return "editContext" in el && el.editContext != null;
 }
 
 function clickQuery(query: string) {
-  let ele = document.querySelector(query) as HTMLElement;
+  const ele = document.querySelector(query) as HTMLElement;
   console.log(ele);
-  if (ele) {
-    ele.click();
-  }
+  if (ele) ele.click();
 }
 
 function focusQuery(query: string) {
-  let ele = document.querySelector(query) as HTMLElement;
-  if (ele) {
-    ele.focus();
-  }
+  const ele = document.querySelector(query) as HTMLElement;
+  if (ele) ele.focus();
 }
 
 let mobileGestureInitialized = false;
@@ -421,7 +401,7 @@ export function initMobileGesture() {
   if (mobileGestureInitialized) return;
   mobileGestureInitialized = true;
 
-  let pressingPointers = new Map<
+  const pressingPointers = new Map<
     number,
     { x: number; y: number; time: number }
   >();
@@ -438,6 +418,7 @@ export function initMobileGesture() {
         ) {
           continue;
         }
+
         pressingPointers.set(touch.identifier, {
           x: touch.clientX,
           y: touch.clientY,
@@ -455,51 +436,44 @@ export function initMobileGesture() {
       for (const touch of ev.changedTouches) {
         const d = pressingPointers.get(touch.identifier);
         pressingPointers.delete(touch.identifier);
-        if (!d) {
-          continue;
-        }
+        if (!d) continue;
+
         const moveX = touch.clientX - d.x;
         const moveY = touch.clientY - d.y;
         const duration = Date.now() - d.time;
 
         // Ignore long presses or slow drags
-        if (duration > 600) {
-          continue;
-        }
+        if (duration > 600) continue;
 
         // Must be a predominantly horizontal swipe
         const isHorizontalSwipe =
           Math.abs(moveX) >= 65 && Math.abs(moveY) < Math.abs(moveX) * 0.55;
 
-        if (!isHorizontalSwipe) {
-          continue;
-        }
+        if (!isHorizontalSwipe) continue;
 
         const currentCharId = get(selectedCharID);
         const currentSideBar = get(MobileSideBar);
 
-        if (currentCharId === -1) {
-          // Home tabs navigation (0: Realm, 1: Characters, 2: Settings)
-          if (moveX > 0) {
-            MobileGUIStack.update((v) => Math.max(0, v - 1));
-          } else {
-            MobileGUIStack.update((v) => Math.min(2, v + 1));
-          }
-        } else if (currentSideBar > 0) {
-          // Inside sidebar sub-panels navigation
-          if (moveX > 0) {
-            MobileSideBar.update((v) => Math.max(0, v - 1));
-          } else {
-            MobileSideBar.update((v) => Math.min(3, v + 1));
-          }
+        if (currentCharId === -1)
+        // Home tabs navigation (0: Realm, 1: Characters, 2: Settings)
+        {
+          if (moveX > 0) MobileGUIStack.update((v) => Math.max(0, v - 1));
+          else MobileGUIStack.update((v) => Math.min(2, v + 1));
+        } else if (currentSideBar > 0)
+        // Inside sidebar sub-panels navigation
+        {
+          if (moveX > 0) MobileSideBar.update((v) => Math.max(0, v - 1));
+          else MobileSideBar.update((v) => Math.min(3, v + 1));
         } else {
           // Inside chat screen: edge swipe gestures
           const screenWidth = window.innerWidth;
-          if (d.x < 45 && moveX > 60) {
-            // Left edge swipe to go back to character list
+          if (d.x < 45 && moveX > 60)
+          // Left edge swipe to go back to character list
+          {
             selectedCharID.set(-1);
-          } else if (d.x > screenWidth - 45 && moveX < -60) {
-            // Right edge swipe to open sidebar panel
+          } else if (d.x > screenWidth - 45 && moveX < -60)
+          // Right edge swipe to open sidebar panel
+          {
             MobileSideBar.set(1);
           }
         }

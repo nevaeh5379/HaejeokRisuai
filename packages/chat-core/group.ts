@@ -84,6 +84,7 @@ function orderGroupSpeakers(
       candidates[Math.floor(randomSource.random() * candidates.length)],
     );
   }
+
   return order;
 }
 

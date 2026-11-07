@@ -29,19 +29,19 @@ export class OpfsStorage {
       return Buffer.from(await stream.arrayBuffer());
     } catch (error) {
       if (error instanceof DOMException) {
-        if (error.name === "NotFoundError") {
-          return null;
-        }
+        if (error.name === "NotFoundError") return null;
       }
+
       throw error;
     }
   }
   async keys(): Promise<string[]> {
     await this.Init();
-    let entries: string[] = [];
+    const entries: string[] = [];
     for await (const entry of this.opfs.values()) {
       entries.push(Buffer.from(entry.name, "hex").toString("utf-8"));
     }
+
     return entries;
   }
 
@@ -79,18 +79,15 @@ export class OpfsStorage {
       await this.opfs.removeEntry(Buffer.from(key, "utf-8").toString("hex"));
     } catch (error) {
       if (error instanceof DOMException) {
-        if (error.name === "NotFoundError") {
-          return null;
-        }
+        if (error.name === "NotFoundError") return null;
       }
+
       throw error;
     }
   }
 
   private async Init() {
-    if (!this.opfs) {
-      this.opfs = await window.navigator.storage.getDirectory();
-    }
+    if (!this.opfs) this.opfs = await window.navigator.storage.getDirectory();
   }
 
   listItem = this.keys;

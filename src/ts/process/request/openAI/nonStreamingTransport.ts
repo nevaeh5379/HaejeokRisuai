@@ -21,6 +21,7 @@ function resolveNodeOpenAINonStreamingTransport(
   ) {
     return { format: LLMFormat.OpenAICompatible, payload: {} };
   }
+
   if (format === LLMFormat.NanoGPT) {
     for (const subscription of [false, true]) {
       if (replacerURL === resolveNanoGPTTransportUrl("chat", subscription)) {
@@ -31,6 +32,7 @@ function resolveNodeOpenAINonStreamingTransport(
       }
     }
   }
+
   if (
     matchesNodeOllamaCloudEndpoint({
       requestURL: replacerURL,
@@ -43,6 +45,7 @@ function resolveNodeOpenAINonStreamingTransport(
       payload: { api: "openai-chat" },
     };
   }
+
   return null;
 }
 

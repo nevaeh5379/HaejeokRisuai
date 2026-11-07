@@ -146,9 +146,7 @@ describe("StorageExplorer utils", () => {
       ];
 
       const assetMap = new Map<string, NodeStorageAssetItem>();
-      for (const item of storageAssets) {
-        assetMap.set(item.key, item);
-      }
+      for (const item of storageAssets) assetMap.set(item.key, item);
 
       const assetDetails: NodeStorageAssetDetails = {
         storageType: "s3",
@@ -194,9 +192,7 @@ describe("StorageExplorer utils", () => {
       ];
 
       const assetMap = new Map<string, NodeStorageAssetItem>();
-      for (const item of storageAssets) {
-        assetMap.set(item.key, item);
-      }
+      for (const item of storageAssets) assetMap.set(item.key, item);
 
       const assetDetails: NodeStorageAssetDetails = {
         storageType: "s3",
@@ -242,9 +238,7 @@ describe("StorageExplorer utils", () => {
       ];
 
       const assetMap = new Map<string, NodeStorageAssetItem>();
-      for (const item of storageAssets) {
-        assetMap.set(item.key, item);
-      }
+      for (const item of storageAssets) assetMap.set(item.key, item);
 
       const assetDetails: NodeStorageAssetDetails = {
         storageType: "s3",
@@ -328,9 +322,7 @@ describe("StorageExplorer utils", () => {
       ];
 
       const assetMap = new Map<string, NodeStorageAssetItem>();
-      for (const item of storageAssets) {
-        assetMap.set(item.key, item);
-      }
+      for (const item of storageAssets) assetMap.set(item.key, item);
 
       const assetDetails: NodeStorageAssetDetails = {
         storageType: "s3",

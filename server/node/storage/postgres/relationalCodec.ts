@@ -72,12 +72,13 @@ function encodeJson(value?: any): any {
 }
 
 function decodeJson(value?: any): any {
-  if (typeof value === "string")
+  if (typeof value === "string") {
     try {
       return decodeJsonValue(JSON.parse(value));
     } catch (e: any) {
       return decodeJsonValue(value);
     }
+  }
 
   return decodeJsonValue(value);
 }
@@ -213,16 +214,19 @@ function rebuildLore(row?: any): any {
     alwaysActive: row.always_active,
     selective: row.selective,
   };
-  if (row.case_sensitive !== null)
+  if (row.case_sensitive !== null) {
     lore.extentions = { risu_case_sensitive: row.case_sensitive };
-  if (row.activation_percent !== null)
+  }
+  if (row.activation_percent !== null) {
     lore.activationPercent = Number(row.activation_percent);
+  }
   if (row.use_regex !== null) lore.useRegex = row.use_regex;
   if (row.book_version !== null) lore.bookVersion = row.book_version;
   if (row.lore_id !== null) lore.id = row.lore_id;
   if (row.folder !== null) lore.folder = row.folder;
-  if (row.cache_payload !== null)
+  if (row.cache_payload !== null) {
     lore.loreCache = decodeJson(row.cache_payload);
+  }
   return lore;
 }
 
@@ -407,8 +411,9 @@ function splitCharacter(row?: any): any {
     "additionalAssets",
     "ccAssets",
     "globalLore",
-  ])
+  ]) {
     delete source[key];
+  }
 
   attributes.push(...remainingAttributes(source));
   return {
@@ -462,17 +467,17 @@ function splitChat(row?: any): any {
     source.scriptstate &&
     typeof source.scriptstate === "object" &&
     containsNul(source.scriptstate)
-  )
+  ) {
     attributes.push({
       key: "scriptstate",
       value: encodeJson(source.scriptstate),
     });
-  else if (source.scriptstate && typeof source.scriptstate === "object")
+  } else if (source.scriptstate && typeof source.scriptstate === "object") {
     for (const [key, value] of Object.entries(source.scriptstate) as [
       string,
       any,
-    ][])
-      if (typeof value === "string" && !value.includes("\0"))
+    ][]) {
+      if (typeof value === "string" && !value.includes("\0")) {
         scriptState.push({
           chat_id: row.id,
           key,
@@ -481,7 +486,7 @@ function splitChat(row?: any): any {
           number_value: null,
           boolean_value: null,
         });
-      else if (typeof value === "number" && Number.isFinite(value))
+      } else if (typeof value === "number" && Number.isFinite(value)) {
         scriptState.push({
           chat_id: row.id,
           key,
@@ -490,7 +495,7 @@ function splitChat(row?: any): any {
           number_value: value,
           boolean_value: null,
         });
-      else if (typeof value === "boolean")
+      } else if (typeof value === "boolean") {
         scriptState.push({
           chat_id: row.id,
           key,
@@ -499,7 +504,7 @@ function splitChat(row?: any): any {
           number_value: null,
           boolean_value: value,
         });
-      else {
+      } else {
         attributes.push({
           key: "scriptstate",
           value: encodeJson(source.scriptstate),
@@ -507,13 +512,16 @@ function splitChat(row?: any): any {
         scriptState.length = 0;
         break;
       }
+    }
+  }
 
   const unsafeBookmarkNames: any = containsNul(source.bookmarkNames);
-  if (unsafeBookmarkNames)
+  if (unsafeBookmarkNames) {
     attributes.push({
       key: "bookmarkNames",
       value: encodeJson(source.bookmarkNames),
     });
+  }
   const bookmarks: any = relationalArray(source, "bookmarks", attributes).map(
     (messageId?: any, position?: any) => ({
       chat_id: row.id,
@@ -528,13 +536,15 @@ function splitChat(row?: any): any {
   for (const [property, memoryType] of [
     ["hypaV2Data", "hypa-v2"],
     ["hypaV3Data", "hypa-v3"],
-  ])
-    if (own(source, property))
+  ]) {
+    if (own(source, property)) {
       memory.push({
         chat_id: row.id,
         memory_type: memoryType,
         payload: encodeJson(source[property]),
       });
+    }
+  }
 
   const lore: any = splitLore(
     { chat_id: row.id },
@@ -549,8 +559,9 @@ function splitChat(row?: any): any {
     "hypaV2Data",
     "hypaV3Data",
     "localLore",
-  ])
+  ]) {
     delete source[key];
+  }
   attributes.push(...remainingAttributes(source));
   return {
     core,
@@ -597,11 +608,12 @@ function splitMessage(row?: any): any {
   const generationInfo: any = containsNul(source.generationInfo)
     ? null
     : source.generationInfo;
-  if (source.generationInfo && generationInfo === null)
+  if (source.generationInfo && generationInfo === null) {
     attributes.push({
       key: "generationInfo",
       value: encodeJson(source.generationInfo),
     });
+  }
 
   const generation: any = generationInfo
     ? {
@@ -621,11 +633,12 @@ function splitMessage(row?: any): any {
   const promptInfo: any = containsNul(source.promptInfo)
     ? null
     : source.promptInfo;
-  if (source.promptInfo && promptInfo === null)
+  if (source.promptInfo && promptInfo === null) {
     attributes.push({
       key: "promptInfo",
       value: encodeJson(source.promptInfo),
     });
+  }
 
   const prompt: any = promptInfo
     ? {
@@ -664,8 +677,9 @@ function splitMessage(row?: any): any {
     "isComment",
     "generationInfo",
     "promptInfo",
-  ])
+  ]) {
     delete source[key];
+  }
 
   attributes.push(...remainingAttributes(source));
   return { core, attributes, generation, prompt };
@@ -715,11 +729,16 @@ function rebuildCharacter(
   const scalarMap: any = options.shallow
     ? SHALLOW_CHARACTER_SCALARS
     : CHARACTER_SCALARS;
-  for (const [property, column] of Object.entries(scalarMap) as [string, any][])
-    if (row[column] !== null && row[column] !== undefined)
+  for (const [property, column] of Object.entries(scalarMap) as [
+    string,
+    any,
+  ][]) {
+    if (row[column] !== null && row[column] !== undefined) {
       character[property] = CHARACTER_BIGINT_COLUMNS.has(column)
         ? Number(row[column])
         : row[column];
+    }
+  }
 
   character.name ??= "";
   character.chatPage ??= 0;
@@ -751,10 +770,11 @@ function rebuildCharacter(
       (related.greetings || []).some(
         (item?: any) => item.greeting_type === "group-only",
       )
-    )
+    ) {
       character.group_only_greetings = related.greetings
         .filter((item?: any) => item.greeting_type === "group-only")
         .map((item?: any) => item.content);
+    }
 
     character.bias = (related.biases || []).map((item?: any) => [
       item.phrase,
@@ -814,41 +834,51 @@ function rebuildChat(
 ): any {
   const chat: any = {};
   const scalarMap: any = options.shallow ? SHALLOW_CHAT_SCALARS : CHAT_SCALARS;
-  for (const [property, column] of Object.entries(scalarMap) as [string, any][])
-    if (row[column] !== null && row[column] !== undefined)
+  for (const [property, column] of Object.entries(scalarMap) as [
+    string,
+    any,
+  ][]) {
+    if (row[column] !== null && row[column] !== undefined) {
       chat[property] =
         column === "last_message_time" ? Number(row[column]) : row[column];
+    }
+  }
 
   chat.name ??= "";
   chat.note ??= "";
   if ((related.bookmarks || []).length) {
     chat.bookmarks = related.bookmarks.map((item?: any) => item.message_id);
     chat.bookmarkNames = {};
-    for (const item of related.bookmarks)
+    for (const item of related.bookmarks) {
       if (item.name !== null) chat.bookmarkNames[item.message_id] = item.name;
+    }
   }
 
   if (!options.shallow) {
     chat.localLore = (related.lore || []).map(rebuildLore);
-    if ((related.suggestions || []).length)
+    if ((related.suggestions || []).length) {
       chat.suggestMessages = related.suggestions.map(
         (item?: any) => item.content,
       );
-    if ((related.modules || []).length)
+    }
+    if ((related.modules || []).length) {
       chat.modules = related.modules.map((item?: any) => item.module_id);
+    }
     if ((related.scriptState || []).length) {
       chat.scriptstate = {};
-      for (const item of related.scriptState)
+      for (const item of related.scriptState) {
         chat.scriptstate[item.key] =
           item.value_type === "text"
             ? item.text_value
             : item.value_type === "number"
               ? Number(item.number_value)
               : item.boolean_value;
+      }
     }
-    for (const item of related.memory || [])
+    for (const item of related.memory || []) {
       chat[item.memory_type === "hypa-v2" ? "hypaV2Data" : "hypaV3Data"] =
         decodeJson(item.payload);
+    }
 
     applyAttributes(chat, related.attributes);
   }
@@ -868,18 +898,20 @@ function rebuildMessage(
       ? row.content_text
       : Buffer.from(row.content_binary).toString("utf16le");
   const message: any = { role: row.role, data: content };
-  if (row.saying_character_id !== null)
+  if (row.saying_character_id !== null) {
     message.saying = row.saying_character_id;
+  }
   if (row.sent_time !== null) message.time = Number(row.sent_time);
   if (row.sender_name !== null) message.name = row.sender_name;
   if (row.other_user !== null) message.otherUser = row.other_user;
-  if (row.disabled_scope !== null)
+  if (row.disabled_scope !== null) {
     message.disabled =
       row.disabled_scope === "false"
         ? false
         : row.disabled_scope === "true"
           ? true
           : "allBefore";
+  }
   if (row.is_comment !== null) message.isComment = row.is_comment;
   if (related.generation) {
     const generation: any = related.generation;
@@ -890,9 +922,11 @@ function rebuildMessage(
       ["input_tokens", "inputTokens"],
       ["output_tokens", "outputTokens"],
       ["max_context", "maxContext"],
-    ])
-      if (generation[column] !== null)
+    ]) {
+      if (generation[column] !== null) {
         message.generationInfo[property] = generation[column];
+      }
+    }
 
     const timing: any = {};
     for (const [column, property] of [
@@ -900,27 +934,32 @@ function rebuildMessage(
       ["stage2_time", "stage2"],
       ["stage3_time", "stage3"],
       ["stage4_time", "stage4"],
-    ])
-      if (generation[column] !== null)
+    ]) {
+      if (generation[column] !== null) {
         timing[property] = Number(generation[column]);
+      }
+    }
 
     if (Object.keys(timing).length) message.generationInfo.stageTiming = timing;
   }
   if (related.promptInfo) {
     message.promptInfo = {};
-    if (related.promptInfo.prompt_name !== null)
+    if (related.promptInfo.prompt_name !== null) {
       message.promptInfo.promptName = related.promptInfo.prompt_name;
-    if ((related.promptToggles || []).length)
+    }
+    if ((related.promptToggles || []).length) {
       message.promptInfo.promptToggles = related.promptToggles.map(
         (item?: any) => ({
           key: item.toggle_key,
           value: item.toggle_value,
         }),
       );
-    if ((related.promptItems || []).length)
+    }
+    if ((related.promptItems || []).length) {
       message.promptInfo.promptText = related.promptItems.map((item?: any) =>
         decodeJson(item.payload),
       );
+    }
   }
   applyAttributes(message, related.attributes);
   message.chatId = row.id;
@@ -1060,11 +1099,11 @@ export function decodeCharacterReadRow<K extends keyof CharacterFields>(
     let value: unknown = characterDefault(key);
     const column = characterColumn(key);
     const relation = characterRelation(key);
-    if (column && row[column] != null)
+    if (column && row[column] != null) {
       value = CHARACTER_BIGINT_COLUMNS.has(column)
         ? Number(row[column])
         : row[column];
-    else if (relation) {
+    } else if (relation) {
       const raw = row[key];
       const rows: Record<string, unknown>[] =
         typeof raw === "string" ? JSON.parse(raw) : (raw ?? []);
@@ -1073,10 +1112,12 @@ export function decodeCharacterReadRow<K extends keyof CharacterFields>(
         value = rebuildCharacter(row, { [relation.related]: rows })[key];
       }
     }
-    if (Object.hasOwn(attributes, key))
+    if (Object.hasOwn(attributes, key)) {
       value = decodeJsonValue(attributes[key]);
-    if (key === "viewScreen" && value !== "emotion" && value !== "imggen")
+    }
+    if (key === "viewScreen" && value !== "emotion" && value !== "imggen") {
       value = "none";
+    }
     if (key === "chaId") value = row.id;
     if (key === "type") value = "character";
     values[key] = value;
@@ -1121,13 +1162,14 @@ export function encodeCharacterPatch(
     const relation = characterRelation(key);
     const unsafe = containsNul(value);
     result.attributeKeys.push(key);
-    if (column)
+    if (column) {
       result.columns[column] =
         unsafe || value === undefined
           ? column === "name" || column === "first_message"
             ? ""
             : null
           : value;
+    }
 
     if (relation) {
       const split =
@@ -1145,12 +1187,13 @@ export function encodeCharacterPatch(
       (unsafe ||
         (!column && !relation) ||
         (Array.isArray(value) && value.length === 0))
-    )
+    ) {
       result.attributes.push({
         character_id: id,
         key,
         value: encodeJsonValue(value),
       });
+    }
   }
   return result;
 }

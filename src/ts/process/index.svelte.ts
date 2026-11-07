@@ -36,7 +36,7 @@ export interface requestTokenPart {
 }
 
 export const abortChat = writable(false);
-export let requestTokenParts: { [key: string]: requestTokenPart[] } = {};
+export const requestTokenParts: { [key: string]: requestTokenPart[] } = {};
 export let previewFormated: OpenAIChat[] = [];
 export let previewBody: string = "";
 
@@ -81,6 +81,7 @@ export async function sendChat(
       lifecycleId: () => getActiveNodeGenerationLifecycleId(targetChatId),
     });
   }
+
   const signal = controller?.signal ?? arg.signal;
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
@@ -91,6 +92,7 @@ export async function sendChat(
     if (locked && targetChatId) {
       lifecycleId = await beginNodeGenerationLifecycle(targetChatId, signal);
     }
+
     if (keepAlive) {
       // Ask while we are still inside the send gesture: browsers drop the
       // notification permission prompt once the tab is backgrounded.
@@ -121,9 +123,11 @@ export async function sendChat(
     if (controller && targetChatId) {
       localGenerationController.unregister(targetChatId, controller);
     }
+
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
     }
+
     if (locked && targetChatId) endChatGeneration(targetChatId);
     if (targetChatId) {
       await boundedNativeCall(
@@ -135,8 +139,10 @@ export async function sendChat(
         NATIVE_BRIDGE_TIMEOUT_MS,
       );
     }
-    if (keepAlive) {
-      // endNativeChatRequest bounds its bridge call internally.
+
+    if (keepAlive)
+    // endNativeChatRequest bounds its bridge call internally.
+    {
       await endNativeChatRequest();
     }
   }

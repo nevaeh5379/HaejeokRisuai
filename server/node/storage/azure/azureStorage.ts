@@ -302,10 +302,12 @@ function assertSqlIdentifier(value: unknown): string {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
+
   const parts = value.split(".");
   if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
     return `[${parts[0]}]`;
   }
+
   if (
     parts.length === 2 &&
     DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
@@ -313,6 +315,7 @@ function assertSqlIdentifier(value: unknown): string {
   ) {
     return `[${parts[0]}].[${parts[1]}]`;
   }
+
   throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
@@ -415,18 +418,12 @@ async function bulkInsert(
       for (let c = 0; c < columns.length; c++) {
         const col = columns[c];
         const type = (columnTypes[c] || "").toLowerCase();
-        let val = row[col];
-        if (val === undefined || val === null) {
-          obj[col] = null;
-        } else if (Buffer.isBuffer(val)) {
-          obj[col] = val.toString("hex");
-        } else if (typeof val === "boolean") {
-          obj[col] = val ? 1 : 0;
-        } else if (typeof val === "object") {
-          obj[col] = JSON.stringify(val);
-        } else {
-          obj[col] = val;
-        }
+        const val = row[col];
+        if (val === undefined || val === null) obj[col] = null;
+        else if (Buffer.isBuffer(val)) obj[col] = val.toString("hex");
+        else if (typeof val === "boolean") obj[col] = val ? 1 : 0;
+        else if (typeof val === "object") obj[col] = JSON.stringify(val);
+        else obj[col] = val;
       }
       return obj;
     });
@@ -574,15 +571,12 @@ class AzureStorage extends SqlStorageBase {
   }
 
   async getPool(): Promise<import("mssql").ConnectionPool> {
-    if (!this.enabled) {
-      throw new Error("Azure SQL storage is disabled");
-    }
-    if (this.pool?.connected) {
-      return this.pool;
-    }
-    if (this.poolPromise != undefined) {
-      return this.poolPromise;
-    }
+    if (!this.enabled) throw new Error("Azure SQL storage is disabled");
+
+    if (this.pool?.connected) return this.pool;
+
+    if (this.poolPromise != undefined) return this.poolPromise;
+
     this.poolPromise = (async () => {
       const config = {
         server: this.server,
@@ -633,9 +627,7 @@ class AzureStorage extends SqlStorageBase {
   }
 
   assertEnabled() {
-    if (!this.enabled) {
-      throw new Error("Azure SQL storage is not enabled");
-    }
+    if (!this.enabled) throw new Error("Azure SQL storage is not enabled");
   }
 
   async close() {
@@ -709,6 +701,7 @@ class AzureStorage extends SqlStorageBase {
         "[Azure SQL startup] 3/7 no existing storage schema found; a new schema will be created.",
       );
     }
+
     const schemaSql = await this.runStartupStep(
       "4/7 load bundled storage schema",
       () => fs.readFile(this.schemaPath, "utf8"),
@@ -738,6 +731,7 @@ class AzureStorage extends SqlStorageBase {
                 VALUES (1, ${AZURE_SCHEMA_VERSION}, '${RELATIONAL_SCHEMA_LAYOUT}', 0, 0)
             `);
     }
+
     const meta = (
       await this.runStartupStep("7/7 verify applied storage schema", () =>
         pool
@@ -783,6 +777,7 @@ class AzureStorage extends SqlStorageBase {
                   ) latest;
             `);
     }
+
     const triggerSql = await fs.readFile(
       path.join(__dirname, "azure-last-message-time.sql"),
       "utf8",
@@ -1026,6 +1021,7 @@ class AzureStorage extends SqlStorageBase {
         deferredSettingKeys: [],
       };
     }
+
     const settings = (
       await pool
         .request()
@@ -1053,6 +1049,7 @@ class AzureStorage extends SqlStorageBase {
         rebuiltSettings[row.key] = mapColumnsToSettingValue(row);
       }
     }
+
     const characterRows = (
       await pool
         .request()
@@ -1113,6 +1110,7 @@ class AzureStorage extends SqlStorageBase {
     if (!state.initialized) {
       return { revision: state.revision, initialized: false, database: null };
     }
+
     return exportDatabaseSnapshotWith(new AzureDialect(pool), {
       readMeta: async () => ({
         revision: state.revision,
@@ -1287,8 +1285,9 @@ class AzureStorage extends SqlStorageBase {
     if (charRes.recordset.length === 0) return null;
     const fields: Record<string, unknown> = {};
     const core = charRes.recordset[0];
-    if (core.image !== null && core.image !== undefined)
+    if (core.image !== null && core.image !== undefined) {
       fields.image = core.image;
+    }
     for (const row of attrsRes.recordset) {
       const raw = row.value;
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -1300,6 +1299,7 @@ class AzureStorage extends SqlStorageBase {
         item.asset,
       ]);
     }
+
     const additionalAssets = assetsRes.recordset
       .filter((item) => item.asset_source === "additional")
       .map((item) => [item.name, item.uri, item.extension]);
@@ -1626,8 +1626,9 @@ class AzureStorage extends SqlStorageBase {
         : Math.max(1, Math.floor(Number(options.limit) || 1));
     const offset = Math.max(0, end - requestedLimit);
     const pageSize = Math.max(0, end - offset);
-    if (pageSize === 0)
+    if (pageSize === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
     req = target.request();
     req.input("branchChatId", sql.NVarChar(450), chatId);
     req.input("branchId", sql.NVarChar(450), branchId);
@@ -1652,8 +1653,9 @@ class AzureStorage extends SqlStorageBase {
              OPTION (MAXRECURSION 0);
         `);
     const ids = messagesRes.recordset.map((row) => row.id);
-    if (ids.length === 0)
+    if (ids.length === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
     const idsPayload = JSON.stringify(ids);
     /** Run one message-relation query for the page's message ids. */
     const relationQuery = async <TRow>(query: string): Promise<TRow[]> => {
@@ -2044,8 +2046,9 @@ class AzureStorage extends SqlStorageBase {
     const parentInput = input.parentBranchId ?? null;
     const forkMessageId = input.forkMessageId ?? null;
     const reason = input?.reason;
-    if (!reason || !["root", "manual", "reroll"].includes(reason))
+    if (!reason || !["root", "manual", "reroll"].includes(reason)) {
       throw new StoragePayloadError("Invalid chat branch reason");
+    }
     const createdAt = Number.isFinite(Number(input?.createdAt))
       ? Math.trunc(Number(input.createdAt))
       : Date.now();
@@ -2053,16 +2056,18 @@ class AzureStorage extends SqlStorageBase {
       await this.ensureChatBranchGraph(tx, chatId);
       const activeId = await this._activeBranchId(tx, chatId);
       const parentBranchId = parentInput ?? activeId;
-      if (!parentBranchId)
+      if (!parentBranchId) {
         throw new StoragePayloadError("Chat branch root does not exist");
+      }
       let req = tx.request();
       req.input("createChatId", sql.NVarChar(450), chatId);
       req.input("createParentId", sql.NVarChar(450), parentBranchId);
       const parent = await req.query(
         "SELECT 1 AS ok FROM [chat].[branches] WHERE chat_id = @createChatId AND id = @createParentId",
       );
-      if (parent.recordset.length === 0)
+      if (parent.recordset.length === 0) {
         throw new StoragePayloadError("Parent chat branch does not exist");
+      }
       req = tx.request();
       req.input("createChatId", sql.NVarChar(450), chatId);
       req.input("createBranchId", sql.NVarChar(450), branchId);
@@ -2104,8 +2109,9 @@ class AzureStorage extends SqlStorageBase {
       const exists = await req.query(
         "SELECT 1 AS ok FROM [chat].[branches] WHERE chat_id = @activateChatId AND id = @activateBranchId",
       );
-      if (exists.recordset.length === 0)
+      if (exists.recordset.length === 0) {
         throw new StoragePayloadError("Chat branch does not exist");
+      }
       req = tx.request();
       req.input("activateChatId", sql.NVarChar(450), chatId);
       req.input("activateBranchId", sql.NVarChar(450), branchId);
@@ -2119,9 +2125,7 @@ class AzureStorage extends SqlStorageBase {
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
     if (pluginId) assertId(pluginId, "pluginId");
-    if (!pluginId && this.pluginsCache) {
-      return this.pluginsCache;
-    }
+    if (!pluginId && this.pluginsCache) return this.pluginsCache;
 
     const pool = await this.getPool();
     const recordsRequest = pool.request();
@@ -2163,9 +2167,8 @@ class AzureStorage extends SqlStorageBase {
   }
 
   async loadPluginCustomStorage() {
-    if (this.pluginCustomStorageCache) {
-      return this.pluginCustomStorageCache;
-    }
+    if (this.pluginCustomStorageCache) return this.pluginCustomStorageCache;
+
     const pool = await this.getPool();
     const rows = (
       await pool
@@ -2236,10 +2239,12 @@ class AzureStorage extends SqlStorageBase {
         hash: crypto.createHash("sha256").update("{}").digest("hex"),
       };
     }
+
     const normalizedKeys = [...new Set<string>(keys.map((key) => String(key)))];
     if (normalizedKeys.length > 1000) {
       throw new StoragePayloadError("Too many setting keys requested");
     }
+
     const settingsRequest = pool.request();
     const valuesRequest = pool.request();
     const keyParameters = normalizedKeys.map((key, index) => {
@@ -2368,11 +2373,13 @@ class AzureStorage extends SqlStorageBase {
         "Storage sync finalize revision must be a non-negative integer",
       );
     }
+
     if (typeof callback !== "function") {
       throw new StoragePayloadError(
         "Storage sync finalize callback is required",
       );
     }
+
     return await this.withTransaction(async (tx) => {
       const metaRes = await tx
         .request()
@@ -2383,6 +2390,7 @@ class AzureStorage extends SqlStorageBase {
       if (currentRevision !== expectedRevisionNumber) {
         throw new StorageRevisionConflictError(currentRevision);
       }
+
       const previousReq = tx.request();
       previousReq.input("current_rev", sql.BigInt, currentRevision);
       const previousRes = await previousReq.query(
@@ -2506,8 +2514,9 @@ class AzureStorage extends SqlStorageBase {
         );
       }
 
-      if (onProgress)
+      if (onProgress) {
         onProgress({ stage: "start", message: "Starting transaction" });
+      }
 
       // 3. Process Settings
       const noteDb = authorNoteDatabase("azure", tx);
@@ -2578,6 +2587,7 @@ class AzureStorage extends SqlStorageBase {
               `Plugin ${entry.id} must have a non-empty name`,
             );
           }
+
           const request = tx.request();
           request.input("pluginId", sql.NVarChar(450), entry.id);
           request.input(
@@ -2719,22 +2729,25 @@ class AzureStorage extends SqlStorageBase {
         const ids = new Set<string>(existing.map((row) => row.preset_id));
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
-        if (!ids.size)
+        if (!ids.size) {
           throw new StoragePayloadError("At least one bot preset must remain");
+        }
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
             new Set<string>(payload.presets.order).size !== ids.size ||
             payload.presets.order.some((id) => !ids.has(id)))
-        )
+        ) {
           throw new StoragePayloadError(
             "Preset order must contain every preset ID exactly once",
           );
+        }
         if (
           payload.presets.activeId !== undefined &&
           !ids.has(payload.presets.activeId)
-        )
+        ) {
           throw new StoragePayloadError("Active bot preset does not exist");
+        }
         for (const id of payload.presets.deletes) {
           const r = tx.request();
           r.input("id", sql.NVarChar(450), id);
@@ -2803,11 +2816,13 @@ class AzureStorage extends SqlStorageBase {
               (payload.presets.order || Array.from(ids))[0];
           }
         }
-        if (activeId !== undefined)
+
+        if (activeId !== undefined) {
           payload.rootUpserts.push({
             key: "activeBotPresetId",
             value: activeId,
           });
+        }
       }
 
       dedupeRootUpserts(payload);
@@ -2913,6 +2928,7 @@ class AzureStorage extends SqlStorageBase {
           .request()
           .query("DELETE FROM [system].[plugin_custom_storage];");
       }
+
       if (payload.pluginStorageDeletes?.length) {
         const request = tx.request();
         request.input(
@@ -2980,11 +2996,12 @@ class AzureStorage extends SqlStorageBase {
       }
 
       if (payload.characters && payload.characters.length > 0) {
-        if (onProgress)
+        if (onProgress) {
           onProgress({
             stage: "characters",
             message: `Inserting ${payload.characters.length} characters`,
           });
+        }
 
         const fullPayloadChars = [];
         const shallowPayloadChars = [];
@@ -2997,11 +3014,8 @@ class AzureStorage extends SqlStorageBase {
               (data.firstMessage === undefined &&
                 data.desc === undefined &&
                 data.description === undefined));
-          if (isShallow) {
-            shallowPayloadChars.push(charRow);
-          } else {
-            fullPayloadChars.push(charRow);
-          }
+          if (isShallow) shallowPayloadChars.push(charRow);
+          else fullPayloadChars.push(charRow);
         }
 
         // 1. Process full characters (with all details and child tables)
@@ -3418,11 +3432,12 @@ class AzureStorage extends SqlStorageBase {
 
       // 5. Chats
       if (payload.chats && payload.chats.length > 0) {
-        if (onProgress)
+        if (onProgress) {
           onProgress({
             stage: "chats",
             message: `Inserting ${payload.chats.length} chats`,
           });
+        }
 
         const fullPayloadChats = [];
         const shallowPayloadChats = [];
@@ -3439,11 +3454,8 @@ class AzureStorage extends SqlStorageBase {
                 !data.hypaV2Data &&
                 !data.hypaV3Data &&
                 !data.attributes));
-          if (isShallow) {
-            shallowPayloadChats.push(chatRow);
-          } else {
-            fullPayloadChats.push(chatRow);
-          }
+          if (isShallow) shallowPayloadChats.push(chatRow);
+          else fullPayloadChats.push(chatRow);
         }
 
         if (fullPayloadChats.length > 0) {
@@ -3686,11 +3698,12 @@ class AzureStorage extends SqlStorageBase {
 
       // 6. Messages
       if (payload.messages && payload.messages.length > 0) {
-        if (onProgress)
+        if (onProgress) {
           onProgress({
             stage: "messages",
             message: `Inserting ${payload.messages.length} messages`,
           });
+        }
 
         const splitMessages: MessageSplit[] =
           payload.messages.map(splitMessage);
@@ -3919,11 +3932,12 @@ class AzureStorage extends SqlStorageBase {
               `);
       }
 
-      if (!external)
+      if (!external) {
         await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
           revision: nextRevision,
           authorNotes: summarizeAuthorNotes(authorNotes),
         });
+      }
       if (onProgress) onProgress({ stage: "finish", message: "Sync complete" });
 
       return buildRevisionResult({
@@ -3969,9 +3983,8 @@ class AzureStorage extends SqlStorageBase {
     const archiveRes = await req.query<ColdArchiveRow>(
       "SELECT * FROM [cold].[archives] WHERE id = @id",
     );
-    if (archiveRes.recordset.length === 0) {
-      return null;
-    }
+    if (archiveRes.recordset.length === 0) return null;
+
     const archiveRow = archiveRes.recordset[0];
     const kind = archiveRow.kind;
 
@@ -3985,9 +3998,8 @@ class AzureStorage extends SqlStorageBase {
 
     if (kind === "legacy") {
       const rawAttr = attributes.find((attribute) => attribute.key === "raw");
-      if (rawAttr) {
-        return JSON.parse(String(rawAttr.value));
-      }
+      if (rawAttr) return JSON.parse(String(rawAttr.value));
+
       return [];
     }
 
@@ -4264,6 +4276,7 @@ class AzureStorage extends SqlStorageBase {
       if (chatRow.original_chat_id) {
         reconstructedChat.id = chatRow.original_chat_id;
       }
+
       chats.push(reconstructedChat);
     }
 
@@ -4422,6 +4435,7 @@ class AzureStorage extends SqlStorageBase {
           }
         }
       }
+
       return {
         key: normalizedKey,
         kind: "legacy",
@@ -5594,6 +5608,7 @@ class AzureStorage extends SqlStorageBase {
       if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
         throw new StoragePayloadError("column list must not be empty");
       }
+
       const visibleNames: string[] = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
@@ -5601,6 +5616,7 @@ class AzureStorage extends SqlStorageBase {
         if (!match) {
           throw new StoragePayloadError("column was not found in the table");
         }
+
         if (!visibleNames.includes(validatedCol)) {
           visibleNames.push(validatedCol);
         }
@@ -5652,8 +5668,9 @@ class AzureStorage extends SqlStorageBase {
     let orderBy = "";
     if (sortColumn) {
       orderBy = ` ORDER BY ${assertSqlIdentifier(sortColumn)} ${sortOrder}`;
-    } else {
-      // Use first column as default sort for deterministic paging
+    } else
+    // Use first column as default sort for deterministic paging
+    {
       orderBy = ` ORDER BY ${assertSqlIdentifier(visibleColumns[0].name)} ASC`;
     }
 
@@ -5666,9 +5683,8 @@ class AzureStorage extends SqlStorageBase {
 
     const rows = rowsRes.recordset.map((row) => {
       const obj: Record<string, unknown> = {};
-      for (const column of visibleColumns) {
-        obj[column.name] = row[column.name];
-      }
+      for (const column of visibleColumns) obj[column.name] = row[column.name];
+
       return obj;
     });
 

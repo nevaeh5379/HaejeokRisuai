@@ -133,6 +133,7 @@ export function createLocalBackupAssetBatchWriter(
       },
     );
   }
+
   return new BoundedAssetBatchWriter(
     256,
     64 * 1024 * 1024,

@@ -17,12 +17,14 @@ export async function restoreUpstreamPluginStorage(
     ) {
       throw new Error(`Invalid upstream plugin storage index: ${pointer}`);
     }
+
     for (const entry of index.entries) {
       if (!entry || typeof entry.k !== "string") continue;
       if (typeof entry.l === "string") {
         const value = await readCold(entry.l);
-        if (value === undefined)
+        if (value === undefined) {
           throw new Error(`Missing upstream plugin storage value: ${entry.l}`);
+        }
         result[entry.k] = value;
       } else if (typeof entry.s === "string") {
         result[entry.k] = JSON.parse(entry.s);
@@ -41,9 +43,12 @@ export async function restoreUpstreamPluginStorage(
       }
     }
   }
+
   for (const [key, value] of Object.entries(storage ?? {})) {
-    if (key !== "_coldpluginIndex" && key !== "_coldplugin")
+    if (key !== "_coldpluginIndex" && key !== "_coldplugin") {
       result[key] = value;
+    }
   }
+
   return result;
 }

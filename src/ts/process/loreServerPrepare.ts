@@ -60,6 +60,7 @@ export function prepareLoreEntriesForServer(
   ) {
     return null;
   }
+
   const prepared: PreparedServerLoreEntry[] = [];
 
   try {
@@ -76,7 +77,7 @@ export function prepareLoreEntriesForServer(
       let depth = 0;
       let pos = "";
       let role: PreparedServerLoreEntry["role"] = "system";
-      let order = lore.insertorder;
+      const order = lore.insertorder;
       let priority = lore.insertorder;
       let inject: LoreInjection | null = null;
       let unsafe = false;
@@ -94,14 +95,16 @@ export function prepareLoreEntriesForServer(
             return;
           case "activate_only_after": {
             const value = parseInt(arg[0]);
-            if (!Number.isNaN(value) && options.chatLength < value)
+            if (!Number.isNaN(value) && options.chatLength < value) {
               activated = false;
+            }
             return;
           }
           case "activate_only_every": {
             const value = parseInt(arg[0]);
-            if (!Number.isNaN(value) && options.chatLength % value !== 0)
+            if (!Number.isNaN(value) && options.chatLength % value !== 0) {
               activated = false;
+            }
             return;
           }
           case "depth":
@@ -118,16 +121,18 @@ export function prepareLoreEntriesForServer(
               arg[0] === "user" ||
               arg[0] === "assistant" ||
               arg[0] === "system"
-            )
+            ) {
               role = arg[0];
+            }
             return;
           case "scan_depth":
             scanDepth = parseInt(arg[0]);
             return;
           case "is_greeting": {
             const value = parseInt(arg[0]);
-            if (!Number.isNaN(value) && options.greetingIndex !== value)
+            if (!Number.isNaN(value) && options.greetingIndex !== value) {
               activated = false;
+            }
             return;
           }
           case "position":
@@ -139,6 +144,7 @@ export function prepareLoreEntriesForServer(
             ) {
               pos = arg[0];
             }
+
             return;
           case "inject_lore":
             inject ??= {
@@ -227,8 +233,9 @@ export function prepareLoreEntriesForServer(
         }
       });
 
-      if (unsafe || !Number.isFinite(scanDepth) || !Number.isFinite(priority))
+      if (unsafe || !Number.isFinite(scanDepth) || !Number.isFinite(priority)) {
         return null;
+      }
       if (activated && forceState === "none" && !lore.alwaysActive) {
         searchQueries.push({ keys: lore.key.split(","), negative: false });
         if (lore.secondkey && lore.selective) {

@@ -25,15 +25,14 @@ class voiceDetector {
     };
     this.mediaRecorder.start();
     //analyze the audio volume every 100ms
-    let start = Date.now();
+    const start = Date.now();
     this.analyser.fftSize = 2048;
     const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
     this.intervalID = setInterval(() => {
       this.analyser.getByteTimeDomainData(dataArray);
       let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-      }
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+
       const _volume = sum / dataArray.length;
       if (Date.now() - start > 10000) {
         this.mediaRecorder.stop();

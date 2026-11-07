@@ -40,6 +40,7 @@ export async function processChatResponse(options: ProcessChatResponseOptions) {
   if (options.req.type === "streaming") {
     return processStreamingResponse({ ...options, req: options.req });
   }
+
   options.onModelComplete();
   return processNonStreamingResponse({ ...options, req: options.req });
 }

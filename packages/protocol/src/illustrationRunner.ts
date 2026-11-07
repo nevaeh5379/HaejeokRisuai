@@ -156,10 +156,11 @@ async function* readyBatchEntries(
   const workers = Array.from({ length: Math.min(4, indices.length) }, worker);
   try {
     for (let completed = 0; completed < indices.length; completed++) {
-      if (!ready.length)
+      if (!ready.length) {
         await new Promise<void>((resolve) => {
           wake = resolve;
         });
+      }
       yield ready.shift()!;
     }
   } finally {

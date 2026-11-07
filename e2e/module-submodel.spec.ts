@@ -67,16 +67,26 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     });
 
     // Verify Module Settings header is rendered
-    const moduleHeading = page.locator("h2").filter({ hasText: /Modules|모듈/i }).first();
+    const moduleHeading = page
+      .locator("h2")
+      .filter({ hasText: /Modules|모듈/i })
+      .first();
     await expect(moduleHeading).toBeVisible({ timeout: 10_000 });
 
     // 2. Click Plus button to open Create Module view (mode = 1)
-    const plusButton = page.locator("button:has(svg.lucide-plus), button:has(svg.lucide-folder-plus)").first();
+    const plusButton = page
+      .locator(
+        "button:has(svg.lucide-plus), button:has(svg.lucide-folder-plus)",
+      )
+      .first();
     await expect(plusButton).toBeVisible();
     await plusButton.click();
 
     // Verify we entered Create Module mode
-    const createHeading = page.locator("h2").filter({ hasText: /Create Module|모듈 생성/i }).first();
+    const createHeading = page
+      .locator("h2")
+      .filter({ hasText: /Create Module|모듈 생성/i })
+      .first();
     await expect(createHeading).toBeVisible();
 
     // 3. Fill in Module Name
@@ -87,9 +97,9 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     await expect(nameInput).toBeVisible();
     await nameInput.fill("E2E Test Module");
 
-    const auxModelSelector = page
-      .locator("button")
-      .filter({ hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i });
+    const auxModelSelector = page.locator("button").filter({
+      hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i,
+    });
 
     // 4. Verify auxiliary model selector is hidden by default when beta toggle is off
     await expect(auxModelSelector).toHaveCount(0);
@@ -111,13 +121,17 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     await auxModelButton.click();
 
     // Click OpenAI accordion to expand its models
-    const openaiButton = page.locator("div.fixed").getByText("OpenAI", { exact: true });
+    const openaiButton = page
+      .locator("div.fixed")
+      .getByText("OpenAI", { exact: true });
     await expect(openaiButton).toBeVisible();
     await openaiButton.click();
 
     // Click "GPT 5.5" model button inside the expanded accordion
     const pickedModelName = "GPT 5.5";
-    const modelOption = page.locator("div.fixed").getByText(pickedModelName, { exact: true });
+    const modelOption = page
+      .locator("div.fixed")
+      .getByText(pickedModelName, { exact: true });
     await expect(modelOption).toBeVisible();
     await modelOption.click();
 
@@ -127,7 +141,9 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     ).toBeVisible();
 
     // 6. Click "Create Module" to save the module
-    const saveButton = page.getByRole("button", { name: /Create Module|모듈 생성/i }).last();
+    const saveButton = page
+      .getByRole("button", { name: /Create Module|모듈 생성/i })
+      .last();
     await saveButton.click();
 
     // 7. Verify we are back in module list, and the module row shows the auxiliary model badge
@@ -139,12 +155,18 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     await expect(subModelBadge).toBeVisible();
 
     // 8. Click Edit on the created module and verify ModelList preserves the model
-    const moduleRow = page.locator("[data-module-id]").filter({ hasText: "E2E Test Module" }).first();
+    const moduleRow = page
+      .locator("[data-module-id]")
+      .filter({ hasText: "E2E Test Module" })
+      .first();
     const editButton = moduleRow.getByTestId("edit-module");
     await expect(editButton).toBeVisible();
     await editButton.click();
 
-    const editHeading = page.locator("h2").filter({ hasText: /Edit Module|모듈 수정/i }).first();
+    const editHeading = page
+      .locator("h2")
+      .filter({ hasText: /Edit Module|모듈 수정/i })
+      .first();
     await expect(editHeading).toBeVisible();
 
     // Verify ModelList still displays the configured auxiliary model in edit mode
@@ -153,7 +175,9 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     ).toBeVisible();
 
     // Return to module list
-    const updateButton = page.getByRole("button", { name: /Edit Module|모듈 수정/i }).last();
+    const updateButton = page
+      .getByRole("button", { name: /Edit Module|모듈 수정/i })
+      .last();
     await updateButton.click();
     await expect(moduleHeading).toBeVisible();
 
@@ -163,24 +187,30 @@ test.describe("Per-module auxiliary model (E2E)", () => {
       const modulesUrl = "/src/ts/process/modules.ts";
       const interchangeUrl = "/src/ts/interchangeability.ts";
 
-      const { moduleStore } = (await import(/* @vite-ignore */ moduleStoreUrl)) as {
+      const { moduleStore } = (await import(
+        /* @vite-ignore */ moduleStoreUrl
+      )) as {
         moduleStore: any;
       };
-      const { getModuleTriggers } = (await import(/* @vite-ignore */ modulesUrl)) as {
+      const { getModuleTriggers } = (await import(
+        /* @vite-ignore */ modulesUrl
+      )) as {
         getModuleTriggers: (char?: any, overrideIds?: string[]) => any[];
       };
-      const { convertModuleToCharacter, convertCharacterToModule } = (await import(
-        /* @vite-ignore */ interchangeUrl
-      )) as {
-        convertModuleToCharacter: (m: any) => any;
-        convertCharacterToModule: (c: any) => any;
-      };
+      const { convertModuleToCharacter, convertCharacterToModule } =
+        (await import(/* @vite-ignore */ interchangeUrl)) as {
+          convertModuleToCharacter: (m: any) => any;
+          convertCharacterToModule: (c: any) => any;
+        };
 
       const installed = moduleStore.modules.find(
         (m: any) => m.name === "E2E Test Module",
       );
       if (!installed || !installed.subModel) {
-        return { success: false, reason: "Module or subModel missing in store" };
+        return {
+          success: false,
+          reason: "Module or subModel missing in store",
+        };
       }
 
       // Add a test trigger to verify propagation
@@ -194,7 +224,9 @@ test.describe("Per-module auxiliary model (E2E)", () => {
       ];
 
       const triggers = getModuleTriggers(undefined, [installed.id]);
-      const trigger = triggers.find((t) => t.comment === "Runtime Trigger Test");
+      const trigger = triggers.find(
+        (t) => t.comment === "Runtime Trigger Test",
+      );
       if (!trigger || trigger.subModel !== installed.subModel) {
         return {
           success: false,
@@ -204,34 +236,50 @@ test.describe("Per-module auxiliary model (E2E)", () => {
 
       // Verify that when toggle is disabled, triggers do not have subModel
       const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
-      const { settingsStore } = (await import(/* @vite-ignore */ settingsStoreUrl)) as { settingsStore: any };
+      const { settingsStore } = (await import(
+        /* @vite-ignore */ settingsStoreUrl
+      )) as { settingsStore: any };
       await settingsStore.set("enableModuleSubModel", false);
       const disabledTriggers = getModuleTriggers(undefined, [installed.id]);
-      const disabledTrigger = disabledTriggers.find((t) => t.comment === "Runtime Trigger Test");
+      const disabledTrigger = disabledTriggers.find(
+        (t) => t.comment === "Runtime Trigger Test",
+      );
       if (disabledTrigger?.subModel !== undefined) {
         return {
           success: false,
           reason: "subModel was unexpectedly propagated when toggle is off",
         };
       }
+
       await settingsStore.set("enableModuleSubModel", true);
 
       // Verify character interchangeability
       const char = convertModuleToCharacter(installed);
       if (char.extentions?.moduleSubModel !== installed.subModel) {
-        return { success: false, reason: "subModel missing in character extensions" };
+        return {
+          success: false,
+          reason: "subModel missing in character extensions",
+        };
       }
 
       const mod = convertCharacterToModule(char);
       if (mod.subModel !== installed.subModel) {
-        return { success: false, reason: "subModel not restored from character" };
+        return {
+          success: false,
+          reason: "subModel not restored from character",
+        };
       }
 
       // Verify that provider execution context actually resolves to the module's subModel
       const presetStoreUrl = "/src/ts/stores/domain/presetStore.svelte.ts";
-      const providerContextUrl = "/src/ts/process/request/providerContextAdapter.ts";
-      const { presetStore } = (await import(/* @vite-ignore */ presetStoreUrl)) as { presetStore: any };
-      const { prepareBrowserProviderContext } = (await import(/* @vite-ignore */ providerContextUrl)) as {
+      const providerContextUrl =
+        "/src/ts/process/request/providerContextAdapter.ts";
+      const { presetStore } = (await import(
+        /* @vite-ignore */ presetStoreUrl
+      )) as { presetStore: any };
+      const { prepareBrowserProviderContext } = (await import(
+        /* @vite-ignore */ providerContextUrl
+      )) as {
         prepareBrowserProviderContext: (arg: any, model: any) => any;
       };
 

@@ -49,6 +49,7 @@ describe("header-routed proxy caching", () => {
         await (await fetchProxy("/proxy2", request(target))).json(),
       ).toEqual(expected);
     }
+
     expect(network).toHaveBeenCalledTimes(3);
   });
 

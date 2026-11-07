@@ -33,9 +33,8 @@ export interface LegacyDatabaseInfo {
 export function extractDatabaseStats(legacyDb: Database): LegacyDatabaseStats {
   const characters = legacyDb.characters ?? [];
   let chatCount = 0;
-  for (const c of characters) {
-    chatCount += c.chats?.length ?? 0;
-  }
+  for (const c of characters) chatCount += c.chats?.length ?? 0;
+
   return {
     characterCount: characters.length,
     chatCount,
@@ -99,9 +98,7 @@ export async function detectLocalLegacyDatabase(): Promise<LegacyDatabaseInfo | 
     console.error("Local legacy database detection failed:", error);
   }
 
-  if (!legacyBytes || legacyBytes.length === 0) {
-    return null;
-  }
+  if (!legacyBytes || legacyBytes.length === 0) return null;
 
   return parseLegacyDatabaseBytes(legacyBytes, source, detectedPath);
 }
@@ -144,9 +141,8 @@ export async function checkAndMigrateLegacyDatabase(
   storage: ISqlStorage,
 ): Promise<Database | null> {
   const info = await detectLocalLegacyDatabase();
-  if (!info || info.stats.characterCount === 0) {
-    return null;
-  }
+  if (!info || info.stats.characterCount === 0) return null;
+
   return info.db;
 }
 
@@ -168,11 +164,10 @@ export async function migrateLegacyDatabase(
     if (!replaced) {
       throw new Error("SQL storage rejected the migrated database");
     }
+
     onProgress?.("Migration complete");
 
-    if (markMigrated) {
-      await markLegacyAsMigrated();
-    }
+    if (markMigrated) await markLegacyAsMigrated();
 
     return true;
   } catch (error) {
@@ -193,9 +188,7 @@ export async function markLegacyAsMigrated(): Promise<void> {
         await join(appDir, "save/database.bin"),
       ];
       for (const dbPath of candidatePaths) {
-        if (await exists(dbPath)) {
-          await rename(dbPath, `${dbPath}.migrated`);
-        }
+        if (await exists(dbPath)) await rename(dbPath, `${dbPath}.migrated`);
       }
     } else {
       const candidates = [

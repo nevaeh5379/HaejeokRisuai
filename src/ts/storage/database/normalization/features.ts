@@ -230,9 +230,8 @@ function normalizeProviderModelOverrides(data: Database): void {
 }
 
 function normalizeHotkeys(data: Database): void {
-  if (!data.hotkeys) {
-    data.hotkeys = safeStructuredClone(defaultHotkeys);
-  } else {
+  if (!data.hotkeys) data.hotkeys = safeStructuredClone(defaultHotkeys);
+  else {
     const existingActions = new Set(
       data.hotkeys.map((hotkey) => hotkey.action),
     );
@@ -287,6 +286,7 @@ export function normalizeFeatureDatabaseSettings(data: Database): void {
   if (!comfy.workflows.some((item) => item.id === comfy.selectedWorkflowId)) {
     comfy.selectedWorkflowId = comfy.workflows[0]?.id ?? "";
   }
+
   data.statics = mergeDefaults(staticsDefaults, data.statics);
   data.customQuotesData ??= ["“", "”", "‘", "’"];
   data.seperateParameters ??= {

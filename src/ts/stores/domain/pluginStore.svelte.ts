@@ -123,9 +123,7 @@ class PluginStore
   }
 
   async loadScript(pluginId: string, force = false): Promise<PluginScript> {
-    if (!this.storage) {
-      throw new Error("Plugin store is not initialized");
-    }
+    if (!this.storage) throw new Error("Plugin store is not initialized");
 
     if (!force) {
       const cached = this.scriptCache.get(pluginId);
@@ -133,9 +131,7 @@ class PluginStore
     }
 
     const script = await this.storage.plugin.script.load(pluginId);
-    if (!script) {
-      throw new Error(`Plugin script not found: ${pluginId}`);
-    }
+    if (!script) throw new Error(`Plugin script not found: ${pluginId}`);
 
     this.scriptCache.set(pluginId, script);
     return script;
@@ -146,9 +142,7 @@ class PluginStore
     script: string,
     existingId?: string,
   ): Promise<PluginMetadata> {
-    if (!this.storage) {
-      throw new Error("Plugin store is not initialized");
-    }
+    if (!this.storage) throw new Error("Plugin store is not initialized");
 
     const existing = existingId
       ? this.getById(existingId)
@@ -202,6 +196,7 @@ class PluginStore
           `Plugin script is not loaded for compatibility access: ${id}`,
         );
       }
+
       return {
         ...metadata,
         script: script.script,
@@ -213,9 +208,8 @@ class PluginStore
     // Keep reads sequential. A compatibility snapshot necessarily contains all
     // scripts, but decoding them one at a time avoids a transient memory spike
     // on older Android devices.
-    for (const plugin of this.plugins) {
-      await this.loadScript(plugin.id);
-    }
+    for (const plugin of this.plugins) await this.loadScript(plugin.id);
+
     return this.compatibilityPlugins();
   }
 
@@ -243,9 +237,7 @@ class PluginStore
     metadata: readonly PluginMetadata[],
     scripts: readonly PluginScript[],
   ): Promise<void> {
-    if (!this.storage) {
-      throw new Error("Plugin store is not initialized");
-    }
+    if (!this.storage) throw new Error("Plugin store is not initialized");
 
     const scriptById = new Map(
       scripts.map((script) => [script.pluginId, script] as const),
@@ -285,13 +277,12 @@ class PluginStore
     for (const script of scripts) {
       this.scriptCache.set(script.pluginId, { ...script });
     }
+
     this.captureCommittedState();
   }
 
   async remove(pluginId: string): Promise<void> {
-    if (!this.storage) {
-      throw new Error("Plugin store is not initialized");
-    }
+    if (!this.storage) throw new Error("Plugin store is not initialized");
 
     await this.storage.plugin.delete(pluginId);
     this.plugins = this.plugins.filter((plugin) => plugin.id !== pluginId);
@@ -300,9 +291,7 @@ class PluginStore
   }
 
   async setEnabled(pluginId: string, enabled: boolean): Promise<void> {
-    if (!this.storage) {
-      throw new Error("Plugin store is not initialized");
-    }
+    if (!this.storage) throw new Error("Plugin store is not initialized");
 
     await this.storage.plugin.setEnabled(pluginId, enabled);
     const plugin = this.getById(pluginId);
@@ -317,6 +306,7 @@ class PluginStore
     if (this.hasPendingWrites()) {
       throw new Error("Cannot refresh plugins while local changes are pending");
     }
+
     await this.init(storage);
   }
 
@@ -336,17 +326,14 @@ class PluginStore
     );
     const deletes: string[] = [];
     for (const id of this.committed.keys()) {
-      if (!currentIdSet.has(id)) {
-        deletes.push(id);
-      }
+      if (!currentIdSet.has(id)) deletes.push(id);
     }
+
     const orderChanged =
       currentIds.length !== this.committedOrder.length ||
       currentIds.some((id, index) => id !== this.committedOrder[index]);
 
-    if (upserts.length === 0 && deletes.length === 0 && !orderChanged) {
-      return;
-    }
+    if (upserts.length === 0 && deletes.length === 0 && !orderChanged) return;
 
     const commit = createEmptySqlCommit(
       this.storage.getRevision(),

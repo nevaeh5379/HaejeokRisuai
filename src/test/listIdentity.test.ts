@@ -201,8 +201,9 @@ describe.each([false, true])(
           ]),
         ];
         const owner = characterStore.characters[0];
-        if (inFolder)
+        if (inFolder) {
           owner.chatFolders = [{ id: "folder", name: "Folder", folded: false }];
+        }
         const target = render(MobileChatList);
         await tick();
         const beta = mobileRow(target, "Beta");
@@ -231,8 +232,9 @@ describe.each([false, true])(
         characterData("Owner", [chat("Alpha", folder), chat("Beta", folder)]),
       ];
       const owner = characterStore.characters[0];
-      if (inFolder)
+      if (inFolder) {
         owner.chatFolders = [{ id: "folder", name: "Folder", folded: false }];
+      }
       const target = render(SideChatList, { chara: owner });
       await tick();
       const beta = sidebarRow(target, "Beta");

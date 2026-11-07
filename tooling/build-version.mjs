@@ -13,6 +13,7 @@ function parseBuildNumber(value, source) {
   if (!/^\d+$/.test(normalized)) {
     throw new Error(`${source} must be a non-negative integer, got: ${value}`);
   }
+
   return Number.parseInt(normalized, 10);
 }
 

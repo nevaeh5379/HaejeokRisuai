@@ -60,12 +60,13 @@ export async function readIllustrationMessage(
   while (true) {
     const page = await storage.loadChatMessagePage(target.chatId, before, 50);
     const index = page.messages.findIndex((m) => m.chatId === target.messageId);
-    if (index >= 0)
+    if (index >= 0) {
       return {
         message: page.messages[index],
         branchId: chat.activeBranchId,
         position: page.offset + index,
       };
+    }
     if (!page.hasMore || page.offset <= 0) return null;
     before = page.offset;
   }

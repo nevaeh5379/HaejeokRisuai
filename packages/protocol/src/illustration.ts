@@ -100,7 +100,7 @@ export function describeIllustrationError(
   error: unknown,
   stage: IllustrationErrorStage,
 ): IllustrationErrorDetails {
-  if (error instanceof IllustrationRequestError)
+  if (error instanceof IllustrationRequestError) {
     return {
       stage,
       code: error.code,
@@ -109,6 +109,7 @@ export function describeIllustrationError(
         ? { providerDiagnostic: error.providerDiagnostic }
         : {}),
     };
+  }
   const value = error as {
     message?: unknown;
     name?: unknown;
@@ -126,38 +127,39 @@ export function describeIllustrationError(
   if (
     value?.name === "TimeoutError" ||
     /timed?\s*out|timeout|took longer than expected/i.test(text)
-  )
+  ) {
     code = "timeout";
-  else if (
+  } else if (
     /Failed to fetch|fetch failed|NetworkError|Network request failed|Load failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|EAI_AGAIN|ERR_CONNECTION/i.test(
       `${text} ${value?.cause?.code ?? ""}`,
     )
-  )
+  ) {
     code = "connection";
-  else if (
+  } else if (
     value?.name === "SyntaxError" ||
     /invalid image data|no accepted image|Cannot read properties|not valid JSON|Unexpected token/i.test(
       text,
     )
-  )
+  ) {
     code = "invalidResponse";
-  else if (/exceed.*context limit/i.test(text)) code = "contextLimit";
+  } else if (/exceed.*context limit/i.test(text)) code = "contextLimit";
   else if (/no image tags/i.test(text)) code = "emptyTags";
   else if (/returned no image|no result URL/i.test(text)) code = "noImage";
   else if (
     /Invalid URL|URL is not set|enter .*API key|prepared submodel request is missing|cannot prepare a server illustration request|provider is unavailable|provider is not set|unsupported.*provider/i.test(
       text,
     )
-  )
+  ) {
     code = "configuration";
-  else if (
+  } else if (
     /incorrect API key|invalid.api.key|unauthorized|authentication failed/i.test(
       text,
     )
-  )
+  ) {
     code = "auth";
-  else if (/rate.limit|insufficient.quota|quota exceeded/i.test(text))
+  } else if (/rate.limit|insufficient.quota|quota exceeded/i.test(text)) {
     code = "rateLimit";
+  }
   if (code !== "unknown") return { stage, code };
   const status =
     typeof value?.status === "number"
@@ -167,7 +169,7 @@ export function describeIllustrationError(
             text,
           )?.[1],
         );
-  if (Number.isInteger(status) && status >= 400 && status <= 599)
+  if (Number.isInteger(status) && status >= 400 && status <= 599) {
     return {
       stage,
       status,
@@ -180,6 +182,7 @@ export function describeIllustrationError(
               ? "server"
               : "http",
     };
+  }
   return { stage, code };
 }
 
@@ -236,11 +239,13 @@ export interface IllustrationBatchEntry {
 /** Preserves existing image tags before a batch is replaced or rewritten. */
 export function retainIllustrationImageTags(item: Illustration): void {
   const tags = { ...item.imageTags };
-  if (item.imageId && item.tags && !Object.hasOwn(tags, item.imageId))
+  if (item.imageId && item.tags && !Object.hasOwn(tags, item.imageId)) {
     tags[item.imageId] = item.tags;
+  }
   for (const entry of item.batch?.entries ?? []) {
     if (entry.imageId && entry.tags) tags[entry.imageId] = entry.tags;
   }
+
   if (Object.keys(tags).length) item.imageTags = tags;
 }
 
@@ -267,11 +272,13 @@ export function prepareIllustrationRegeneration(
   if (
     !selected ||
     (selected !== item.imageId && !item.imageIds?.includes(selected))
-  )
+  ) {
     throw new TypeError("The selected illustration image is unavailable");
+  }
   const tags = illustrationImageTags(item, selected);
-  if (!tags)
+  if (!tags) {
     throw new TypeError("The selected illustration image has no saved tags");
+  }
   retainIllustrationImageTags(item);
   item.tags = tags;
   delete item.prompt;
@@ -416,6 +423,7 @@ export function resolveIllustrationSettings(
   ] as const) {
     result[key] = append(base[key] ?? "", character?.[key] ?? "");
   }
+
   result.recentMessages = Number.isFinite(result.recentMessages)
     ? Math.max(0, Math.floor(result.recentMessages))
     : 6;
@@ -484,8 +492,9 @@ export function findIllustrationMarkers(text: string): number[] {
           run[0] === fence[0] &&
           run.length >= fence.length &&
           /^\s*$/.test(line.slice(fenced[0].length))
-        )
+        ) {
           fence = "";
+        }
         i += line.length + (i + line.length < text.length ? 1 : 0);
         continue;
       }
@@ -552,6 +561,7 @@ export function canonicalIllustrationText(
   for (const item of message.illustrations ?? []) {
     text = text.replace(item.token, "<Illustration>");
   }
+
   return text;
 }
 
@@ -614,6 +624,7 @@ export function prepareIllustrations(
       items[i].token +
       message.data.slice(positions[i] + 14);
   }
+
   message.illustrations = [...(message.illustrations ?? []), ...items];
   const hash = illustrationSourceHash(message);
   for (const item of items) item.sourceHash = hash;
@@ -692,9 +703,11 @@ export function buildIllustrationPrompt(
     ["includeLorebook", "lorebook", "Active lorebook"],
     ["includeMemory", "memory", "Used memory"],
   ] as const) {
-    if (settings[flag] && context[key])
+    if (settings[flag] && context[key]) {
       sections.push(`${title}:\n${context[key]}`);
+    }
   }
+
   const position = message.data.indexOf(item.token);
   if (position < 0) throw new Error("Illustration position was removed");
   return {
@@ -740,10 +753,11 @@ export async function fitIllustrationPrompt(
   while (true) {
     const messages = [prompt.required[0], ...history, prompt.required[1]];
     if ((await count(messages)) + outputTokens <= maxContext) return messages;
-    if (!history.length)
+    if (!history.length) {
       throw new Error(
         "Illustration instructions and current scene exceed the submodel context limit",
       );
+    }
     history.shift();
   }
 }
@@ -789,8 +803,9 @@ export class IllustrationQueue {
    * 한국어: 대상 키 접두사를 공유하는 작업 버전이 대기·실행 중인지 확인하는 메서드.
    */
   hasPrefix(prefix: string): boolean {
-    for (const key of this.pending.keys())
+    for (const key of this.pending.keys()) {
       if (key.startsWith(prefix)) return true;
+    }
     return false;
   }
   /**

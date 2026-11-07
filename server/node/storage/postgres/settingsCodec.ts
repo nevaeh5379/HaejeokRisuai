@@ -62,12 +62,15 @@ function encodeMember(
   if (key === null && position === null) {
     return { member_key: null, encoded_member_key: null, position: null };
   }
+
   if (position !== null) {
     return { member_key: null, encoded_member_key: null, position };
   }
+
   if (canUseText(key)) {
     return { member_key: key, encoded_member_key: null, position: null };
   }
+
   return {
     member_key: null,
     encoded_member_key: encodeUtf16(key),
@@ -76,10 +79,12 @@ function encodeMember(
 }
 
 function decodeMember(row: SettingValueRow): SettingMember {
-  if (row.position !== null && row.position !== undefined)
+  if (row.position !== null && row.position !== undefined) {
     return Number(row.position);
-  if (row.member_key !== null && row.member_key !== undefined)
+  }
+  if (row.member_key !== null && row.member_key !== undefined) {
     return row.member_key;
+  }
   return decodeUtf16(row.encoded_member_key);
 }
 
@@ -102,12 +107,15 @@ function encodeValueRow(
   if (value === null || value === undefined) {
     return { ...columns, value_type: "null", ...UNSET_VALUE_COLUMNS };
   }
+
   if (Array.isArray(value)) {
     return { ...columns, value_type: "array", ...UNSET_VALUE_COLUMNS };
   }
+
   if (typeof value === "object") {
     return { ...columns, value_type: "object", ...UNSET_VALUE_COLUMNS };
   }
+
   if (typeof value === "string") {
     if (canUseText(value)) {
       return {
@@ -117,6 +125,7 @@ function encodeValueRow(
         text_value: value,
       };
     }
+
     return {
       ...columns,
       value_type: "encoded-text",
@@ -132,6 +141,7 @@ function encodeValueRow(
       number_value: value,
     };
   }
+
   if (typeof value === "boolean") {
     return {
       ...columns,
@@ -140,6 +150,7 @@ function encodeValueRow(
       boolean_value: value,
     };
   }
+
   throw new TypeError(`Unsupported PostgreSQL setting value: ${typeof value}`);
 }
 
@@ -164,11 +175,13 @@ function splitSetting(
         `PostgreSQL setting ${key} exceeds the ${maxDepth} level limit`,
       );
     }
+
     if (nextNodeId >= maxRows) {
       throw new RangeError(
         `PostgreSQL setting ${key} exceeds the ${maxRows} row limit`,
       );
     }
+
     const nodeId = nextNodeId++;
     rows.push(
       encodeValueRow(
@@ -185,6 +198,7 @@ function splitSetting(
       for (let index = 0; index < current.length; index++) {
         visit(current[index], nodeId, null, index, depth + 1);
       }
+
       return;
     }
     if (current && typeof current === "object") {
@@ -290,6 +304,7 @@ function rebuildSettings(
           `Missing PostgreSQL setting parent: ${setting.key}/${parentNodeId}`,
         );
       }
+
       attachToParent(parent, decodeMember(row), value);
     }
     if (!valuesById.has(0)) {
@@ -311,14 +326,12 @@ function rebuildSettingSubtree(
     const value = decodeValue(row);
     const nodeId = Number(row.node_id);
     valuesById.set(nodeId, value);
-    if (nodeId === rootNodeId) {
-      continue;
-    }
+    if (nodeId === rootNodeId) continue;
+
     const parentNodeId = Number(row.parent_node_id);
     const parent = valuesById.get(parentNodeId);
-    if (!parent || typeof parent !== "object") {
-      continue;
-    }
+    if (!parent || typeof parent !== "object") continue;
+
     attachToParent(parent, decodeMember(row), value);
   }
   return valuesById.get(rootNodeId);

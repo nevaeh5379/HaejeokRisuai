@@ -17,17 +17,14 @@ export async function checkNewFormat(): Promise<void> {
  */
 export function assignIds() {
   const characters = characterStore.characters;
-  if (!characters) {
-    return;
-  }
+  if (!characters) return;
+
   const assignedIds = new Set<string>();
   for (const cha of characters) {
-    if (!cha) {
-      continue;
-    }
-    if (!cha.chaId) {
-      cha.chaId = uuidv4();
-    }
+    if (!cha) continue;
+
+    if (!cha.chaId) cha.chaId = uuidv4();
+
     if (assignedIds.has(cha.chaId)) {
       console.warn(`Duplicate chaId found: ${cha.chaId}. Assigning new ID.`);
       cha.chaId = uuidv4();
@@ -36,12 +33,10 @@ export function assignIds() {
     // SQL startup may expose character metadata before its chats have
     // been hydrated. IDs are assigned when those rows are loaded/created.
     for (const chat of cha.chats ?? []) {
-      if (!chat) {
-        continue;
-      }
-      if (!chat.id) {
-        chat.id = uuidv4();
-      }
+      if (!chat) continue;
+
+      if (!chat.id) chat.id = uuidv4();
+
       if (assignedIds.has(chat.id)) {
         console.warn(`Duplicate chat ID found: ${chat.id}. Assigning new ID.`);
         chat.id = uuidv4();

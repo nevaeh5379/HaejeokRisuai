@@ -44,6 +44,7 @@ function applyMemoryPromptPolicy(
       } else {
         chat.content = `<Previous Conversation>${chat.content}</Previous Conversation>`;
       }
+
       return chat;
     })
     .filter(
@@ -90,9 +91,11 @@ function applyTriggerPromptPolicy(sections?: any, triggerResult?: any): any {
       content: prompts.promptend,
     });
   }
+
   if (prompts.historyend) {
     sections.lastChat.push({ role: "system", content: prompts.historyend });
   }
+
   if (prompts.start) {
     sections.lastChat.unshift({ role: "system", content: prompts.start });
   }

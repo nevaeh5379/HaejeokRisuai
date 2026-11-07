@@ -20,6 +20,7 @@ describe("SQLite commit preparation", () => {
       if (sql.includes("setting_extension_nodes")) {
         return nodeCodec.flatten(legacy);
       }
+
       throw new Error(`Unexpected SQL: ${sql}`);
     }) as unknown as SqliteSelectRows;
 
@@ -56,6 +57,7 @@ describe("SQLite commit preparation", () => {
       if (sql.includes("FROM bot_presets")) {
         return [{ preset_id: "a" }, { preset_id: "b" }];
       }
+
       if (sql.includes("setting_extension_nodes")) return [];
       throw new Error(`Unexpected SQL: ${sql}`);
     }) as unknown as SqliteSelectRows;

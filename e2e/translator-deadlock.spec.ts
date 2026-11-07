@@ -40,24 +40,28 @@ for (const scenario of [
       errors: [] as string[],
     };
     page.on("request", (request) => {
-      if (request.url().startsWith(endpoint) && request.method() === "POST")
+      if (request.url().startsWith(endpoint) && request.method() === "POST") {
         evidence.requests.push(request.url());
+      }
     });
     page.on("requestfailed", (request) => {
-      if (request.url().startsWith(endpoint))
+      if (request.url().startsWith(endpoint)) {
         evidence.failures.push(request.failure()?.errorText ?? "unknown");
+      }
     });
     page.on("response", (response) => {
-      if (response.url().startsWith(endpoint))
+      if (response.url().startsWith(endpoint)) {
         evidence.responses.push(response.status());
+      }
     });
     page.on("pageerror", (error) => evidence.errors.push(error.message));
     page.on("console", (message) => {
       if (
         message.type() === "log" &&
         message.text().includes("rain had stopped")
-      )
+      ) {
         evidence.inputs.push(message.text());
+      }
     });
     try {
       await page.goto("/");
@@ -96,8 +100,9 @@ for (const scenario of [
         if (
           (await setting.locator('input[type="checkbox"]').isChecked()) !==
           checked
-        )
+        ) {
           await setting.locator("label").click();
+        }
         await expect(setting.locator('input[type="checkbox"]')).toBeChecked({
           checked,
         });
@@ -124,11 +129,12 @@ for (const scenario of [
         .fill(
           "The rain had stopped by the time Iris reached the station.\n\nShe folded her umbrella and looked for the evening train.\n\nAn old clock above the ticket office showed half past six.\n\nThe platform was quiet except for a distant announcement.\n\nA shopkeeper was closing the little bakery near the stairs.\n\nIris bought the last warm loaf before he locked the door.\n\nShe carried it carefully through the crowded waiting room.\n\nNear the window, a child was drawing mountains on a map.\n\nHis father pointed toward the hills beyond the town.\n\nA train whistle finally sounded from the other platform.\n\nIris checked her ticket and picked up her suitcase.\n\nFor the first time that day, she felt ready to leave.",
         );
-      if (scenario.single)
+      if (scenario.single) {
         await page
           .locator("textarea")
           .first()
           .fill("The rain had stopped by the time Iris reached the station.");
+      }
       await page.getByRole("button", { name: "Chat", exact: true }).click();
       await expect(
         page.locator(".button-icon-translate").first(),

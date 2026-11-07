@@ -78,6 +78,7 @@ function validateRestoreId(id: string): string {
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(id)) {
     throw new Error("Invalid local backup restore id");
   }
+
   return id;
 }
 
@@ -97,6 +98,7 @@ function recordTier(record: RestoreRecord): number {
   ) {
     return 1;
   }
+
   return 2;
 }
 
@@ -137,8 +139,9 @@ export class LocalBackupImportRecordStore {
 
   private async postgresPool(): Promise<PostgresClient> {
     const pool = this.getStorage().pool;
-    if (!pool?.query)
+    if (!pool?.query) {
       throw new Error("PostgreSQL restore staging is unavailable");
+    }
     return pool as PostgresClient;
   }
 
@@ -168,6 +171,7 @@ export class LocalBackupImportRecordStore {
         throw error;
       });
     }
+
     await this.schemaReady;
   }
 
@@ -217,8 +221,9 @@ export class LocalBackupImportRecordStore {
       `);
       await connection.commit?.();
     } catch (error) {
-      if ((error as { errorNum?: number } | null)?.errorNum !== 955)
+      if ((error as { errorNum?: number } | null)?.errorNum !== 955) {
         throw error;
+      }
     } finally {
       await connection.close?.();
     }
@@ -233,6 +238,7 @@ export class LocalBackupImportRecordStore {
     if (!Number.isSafeInteger(sequence) || sequence < 0) {
       throw new Error("Invalid restore record sequence");
     }
+
     if (records.length === 0) return sequence;
     await this.ensureSchema();
     const rows: StoredRow[] = records.map((record, index) => ({
@@ -288,6 +294,7 @@ export class LocalBackupImportRecordStore {
       if (!connection.executeMany) {
         throw new Error("Oracle batch restore staging is unavailable");
       }
+
       await connection.executeMany(
         `INSERT INTO system_local_backup_import_records
            (restore_id, sequence_no, tier, payload)
@@ -416,11 +423,13 @@ export class LocalBackupImportRecordStore {
             `Restore record count mismatch: expected ${expectedRecordCount}, got ${recordCount}`,
           );
         }
+
         if (state.sourceRevision !== expectedSourceRevision) {
           throw new Error(
             `Restore source revision mismatch: expected ${expectedSourceRevision}, got ${String(state.sourceRevision)}`,
           );
         }
+
         return { recordCount, sourceRevision: state.sourceRevision, counts };
       },
     };

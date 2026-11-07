@@ -21,8 +21,9 @@ async function receive(
   try {
     await source.send((operations) => {
       const cloned = structuredClone(operations);
-      for (const operation of cloned)
+      for (const operation of cloned) {
         if (operation[0] === "rootNative") operation[0] = "native";
+      }
       receiver.apply(cloned);
     });
     return receiver.finish();
@@ -454,8 +455,9 @@ describe("sandbox database graph transport", () => {
     host.run(iframe, "");
     vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(
       (message: any) => {
-        if (message.type === "DATABASE_PART")
+        if (message.type === "DATABASE_PART") {
           throw new Error("Transfer failed");
+        }
         received.push(structuredClone(message));
       },
     );
@@ -508,8 +510,9 @@ describe("sandbox database graph transport", () => {
         const cloned = structuredClone(message);
         if (cloned.type === "DATABASE_PART") {
           order.push("part");
-          if (!receivers.has(cloned.reqId))
+          if (!receivers.has(cloned.reqId)) {
             receivers.set(cloned.reqId, createDatabaseSnapshotReceiver());
+          }
           receivers
             .get(cloned.reqId)!
             .apply(cloned.databaseOps as SnapshotOperation[]);
@@ -522,13 +525,14 @@ describe("sandbox database graph transport", () => {
       },
     );
     try {
-      for (const reqId of ["first", "second"])
+      for (const reqId of ["first", "second"]) {
         window.dispatchEvent(
           new MessageEvent("message", {
             source: iframe.contentWindow,
             data: { type: "CALL_ROOT", method: "getDatabase", reqId },
           }),
         );
+      }
       await vi.waitFor(() => expect(received).toHaveLength(2));
       expect(order).toEqual([
         "read",
@@ -542,8 +546,9 @@ describe("sandbox database graph transport", () => {
         characters: [{ chats: [{ message: [{ data: "history" }] }] }],
       });
       expect(received[1]).toEqual(received[0]);
-      for (const envelope of envelopes)
+      for (const envelope of envelopes) {
         if (envelope.databaseOps) expect(envelope.databaseOps).toHaveLength(0);
+      }
       expect(log).not.toHaveBeenCalled();
     } finally {
       host.terminate();

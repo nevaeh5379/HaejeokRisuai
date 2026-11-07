@@ -21,8 +21,9 @@ class NoteSourceService {
     if (
       source.mode === "global" &&
       !(await globalAuthorNoteStore.get(source.noteId))
-    )
+    ) {
       throw new AuthorNoteError("missing", source.noteId);
+    }
 
     // const { chat } = requireChatTarget(target);
 

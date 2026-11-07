@@ -135,7 +135,7 @@ interface fetchLog {
   status?: number;
 }
 
-let fetchLog: fetchLog[] = [];
+const fetchLog: fetchLog[] = [];
 
 export { downloadFile } from "./files/downloadFile";
 
@@ -241,18 +241,15 @@ class ThumbnailBatchLoader {
     // 1. Memory cache hit (instant)
     if (this.cache.has(loc)) {
       const cachedUrl = this.cache.get(loc)!;
-      if (!isLiveObjectUrl(cachedUrl)) {
-        // Blob behind this URL was revoked by eviction; reload it.
+      if (!isLiveObjectUrl(cachedUrl))
+      // Blob behind this URL was revoked by eviction; reload it.
+      {
         this.cache.delete(loc);
-      } else {
-        return Promise.resolve(cachedUrl);
-      }
+      } else return Promise.resolve(cachedUrl);
     }
 
     // 2. Already in-flight
-    if (this.pending.has(loc)) {
-      return this.pending.get(loc)!.promise;
-    }
+    if (this.pending.has(loc)) return this.pending.get(loc)!.promise;
 
     // 3. Queue for batching
     let resolveFn!: (url: string) => void;
@@ -447,6 +444,7 @@ export function getPreparedNativeThumbnailSrc(
   ) {
     return undefined;
   }
+
   return `/_risu_thumb_/${width}x${height}/${encodeNativeAssetKey(loc)}`;
 }
 
@@ -465,6 +463,7 @@ export async function prepareNativeThumbnails(
       ready: [] as string[],
     };
   }
+
   const result = await nativeImage.prepareThumbnails({
     keys,
     maxWidth,
@@ -476,6 +475,7 @@ export async function prepareNativeThumbnails(
       true,
     );
   }
+
   return result;
 }
 
@@ -572,9 +572,8 @@ export async function getFileSrc(
     height?: number;
   },
 ) {
-  if (!loc || loc === "") {
-    return "";
-  }
+  if (!loc || loc === "") return "";
+
   const isThumb = options?.thumbnail ?? false;
   const isDisplay = options?.display ?? false;
   const isTransient = options?.transient ?? false;
@@ -591,9 +590,8 @@ export async function getFileSrc(
       : loc;
   if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (loc.startsWith("assets")) {
-      if (appDataDirPath === "") {
-        appDataDirPath = await appDataDir();
-      }
+      if (appDataDirPath === "") appDataDirPath = await appDataDir();
+
       const cached = isThumb ? tauriThumbnailUrls.get(loc) : pathCache.get(loc);
       if (cached) {
         return cached.startsWith("blob:") ? cached : convertFileSrc(cached);
@@ -613,6 +611,7 @@ export async function getFileSrc(
             return convertFileSrc(joined);
           }
         }
+
         pathCache.set(loc, joined);
         return convertFileSrc(joined);
       }
@@ -629,18 +628,17 @@ export async function getFileSrc(
         options,
       );
     }
-    if (isThumb) {
-      return await thumbnailBatchLoader.load(loc);
-    }
+
+    if (isThumb) return await thumbnailBatchLoader.load(loc);
+
     return await nodeStorage.getDirectUrl(loc, options);
   }
   try {
     const cacheKey = cacheVariantKey;
     if (usingSw && !options?.transient) {
       const encoded = Buffer.from(cacheKey, "utf-8").toString("hex");
-      if (registeredSwCaches.get(cacheKey)) {
-        return "/sw/img/" + encoded;
-      }
+      if (registeredSwCaches.get(cacheKey)) return "/sw/img/" + encoded;
+
       let registration = swRegistrationPromises.get(cacheKey);
       if (!registration) {
         registration = (async () => {
@@ -683,11 +681,13 @@ export async function getFileSrc(
         ? undefined
         : browserAssetUrls.get(cacheKey);
       if (cachedUrl && isLiveObjectUrl(cachedUrl)) return cachedUrl;
-      if (cachedUrl) {
-        // Stale entry whose blob was revoked; drop it and fall through to a
-        // fresh load instead of handing out a dead URL.
+      if (cachedUrl)
+      // Stale entry whose blob was revoked; drop it and fall through to a
+      // fresh load instead of handing out a dead URL.
+      {
         browserAssetUrls.delete(cacheKey);
       }
+
       const isNativeImageAsset =
         isCapacitor &&
         nativeImage &&
@@ -735,6 +735,7 @@ export async function getFileSrc(
           );
         }
       }
+
       const raw = (await forageStorage.getItem(loc)) as unknown as Uint8Array;
       if (!raw) return "";
       const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;
@@ -764,15 +765,12 @@ let appDataDirPath = "";
 export async function readImage(data: string) {
   if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (data.startsWith("assets")) {
-      if (appDataDirPath === "") {
-        appDataDirPath = await appDataDir();
-      }
+      if (appDataDirPath === "") appDataDirPath = await appDataDir();
+
       return await readFile(await join(appDataDirPath, data));
     }
     return await readFile(data);
-  } else {
-    return (await forageStorage.getItem(data)) as unknown as Uint8Array;
-  }
+  } else return (await forageStorage.getItem(data)) as unknown as Uint8Array;
 }
 
 /**
@@ -789,22 +787,20 @@ export async function saveAsset(
   fileName: string = "",
 ) {
   let id = "";
-  if (customId !== "") {
-    id = customId;
-  } else {
+  if (customId !== "") id = customId;
+  else {
     try {
       id = await hasher(data);
     } catch (error) {
       id = uuidv4();
     }
   }
+
   let fileExtension: string = "png";
   const nameSource = fileName || customId;
   if (nameSource && nameSource.includes(".")) {
     const ext = nameSource.split("?")[0].split(".").pop();
-    if (ext) {
-      fileExtension = ext;
-    }
+    if (ext) fileExtension = ext;
   }
   const form = `assets/${id}.${fileExtension}`;
   const replacer = await forageStorage.setItem(form, data);
@@ -825,9 +821,7 @@ export async function saveAsset(
 export async function loadAsset(id: string) {
   if (forageStorage.realStorage instanceof TauriAssetStorage) {
     return await readFile(id, { baseDir: BaseDirectory.AppData });
-  } else {
-    return (await forageStorage.getItem(id)) as unknown as Uint8Array;
-  }
+  } else return (await forageStorage.getItem(id)) as unknown as Uint8Array;
 }
 
 export { saving };
@@ -843,9 +837,8 @@ export async function getDbBackups() {
   try {
     const { getSqlStorage } = await import("./storage/sql/sqlStorageFactory");
     const storage = await getSqlStorage();
-    if (!storage.isEnabled()) {
-      return [];
-    }
+    if (!storage.isEnabled()) return [];
+
     const revisions = await storage.revision.list(20);
     return revisions.map((r) => r.id);
   } catch {
@@ -866,11 +859,8 @@ export function setUsingSw(value: boolean) {
  * @returns {fetchLog | null} - The fetch log entry if found, otherwise null.
  */
 export function getFetchData(id: string) {
-  for (const log of fetchLog) {
-    if (log.chatId === id) {
-      return log;
-    }
-  }
+  for (const log of fetchLog) if (log.chatId === id) return log;
+
   return null;
 }
 
@@ -893,11 +883,8 @@ function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   if (originalSignal) {
-    if (originalSignal.aborted) {
-      controller.abort();
-    } else {
-      originalSignal.addEventListener("abort", onAbort, { once: true });
-    }
+    if (originalSignal.aborted) controller.abort();
+    else originalSignal.addEventListener("abort", onAbort, { once: true });
   }
 
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1130,6 +1117,7 @@ export async function globalFetch(
         if (!(error instanceof DurableModelJobUnavailableError)) {
           return { ok: false, data: `${error}`, headers: {}, status: 409 };
         }
+
         console.warn(
           "[ModelJob] durable transport unavailable; using the existing request path",
           error,
@@ -1151,27 +1139,24 @@ export async function globalFetch(
         if (browserLocalNetwork) {
           return await fetchWithPlainFetch(url, requestArg);
         }
-        if (isTauri) {
-          return await fetchWithTauri(url, requestArg);
-        }
-        if (isCapacitor) {
-          return await fetchWithPlainFetch(url, requestArg);
-        }
+
+        if (isTauri) return await fetchWithTauri(url, requestArg);
+
+        if (isCapacitor) return await fetchWithPlainFetch(url, requestArg);
+
         return await fetchWithProxy(url, requestArg);
       }
-      if (forcePlainFetch) {
-        return await fetchWithPlainFetch(url, requestArg);
-      }
+      if (forcePlainFetch) return await fetchWithPlainFetch(url, requestArg);
+
       //userScriptFetch is provided by userscript
       if (window.userScriptFetch) {
         return await fetchWithUSFetch(url, requestArg);
       }
-      if (isTauri) {
-        return await fetchWithTauri(url, requestArg);
-      }
-      if (isNodeServer) {
-        return await fetchWithProxy(url, requestArg);
-      }
+
+      if (isTauri) return await fetchWithTauri(url, requestArg);
+
+      if (isNodeServer) return await fetchWithProxy(url, requestArg);
+
       return await fetchWithPlainFetch(url, requestArg);
     } finally {
       timeoutSignal.cleanup();
@@ -1221,9 +1206,7 @@ function addFetchLogInGlobalFetch(
     });
   }
 
-  if (fetchLog.length > 20) {
-    fetchLog.pop();
-  }
+  if (fetchLog.length > 20) fetchLog.pop();
 }
 
 /**
@@ -1476,7 +1459,7 @@ export async function getUncleanables(
   uptype: "basename" | "pure" = "basename",
   options?: { chars: (character | groupChat)[] },
 ) {
-  let chars: (character | groupChat)[] = [];
+  const chars: (character | groupChat)[] = [];
   const sourceCharacters = options?.chars ?? db.characters;
   if (sourceCharacters) {
     for (let cha of sourceCharacters) {
@@ -1517,12 +1500,10 @@ export function getUncleanablesSync(
    * @param {string} data - The resource to add.
    */
   function addUncleanable(data: string) {
-    if (!data) {
-      return;
-    }
-    if (data === "") {
-      return;
-    }
+    if (!data) return;
+
+    if (data === "") return;
+
     const bn = uptype === "basename" ? getBasename(data) : data;
     uncleanable.add(bn);
   }
@@ -1531,21 +1512,18 @@ export function getUncleanablesSync(
   addUncleanable(db.userIcon);
   const chars = options?.chars ?? db.characters ?? [];
 
-  for (let cha of chars) {
-    if (cha.image) {
-      addUncleanable(cha.image);
-    }
+  for (const cha of chars) {
+    if (cha.image) addUncleanable(cha.image);
+
     if (cha.emotionImages) {
-      for (const em of cha.emotionImages) {
-        addUncleanable(em[1]);
-      }
+      for (const em of cha.emotionImages) addUncleanable(em[1]);
     }
+
     if (cha.type !== "group") {
       if (cha.additionalAssets) {
-        for (const em of cha.additionalAssets) {
-          addUncleanable(em[1]);
-        }
+        for (const em of cha.additionalAssets) addUncleanable(em[1]);
       }
+
       if (cha.vits) {
         const keys = Object.keys(cha.vits.files);
         for (const key of keys) {
@@ -1554,23 +1532,16 @@ export function getUncleanablesSync(
         }
       }
       if (cha.ccAssets) {
-        for (const asset of cha.ccAssets) {
-          addUncleanable(asset.uri);
-        }
+        for (const asset of cha.ccAssets) addUncleanable(asset.uri);
       }
     }
   }
 
   for (const module of db.modules ?? moduleStore.list) {
     const assets = module.assets;
-    if (assets) {
-      for (const asset of assets) {
-        addUncleanable(asset[1]);
-      }
-    }
-    if (module.icon) {
-      addUncleanable(module.icon);
-    }
+    if (assets) for (const asset of assets) addUncleanable(asset[1]);
+
+    if (module.icon) addUncleanable(module.icon);
   }
 
   if (db.personas) {
@@ -1579,14 +1550,9 @@ export function getUncleanablesSync(
 
       if (v.embeddedModule) {
         const assets = v.embeddedModule.assets;
-        if (assets) {
-          for (const asset of assets) {
-            addUncleanable(asset[1]);
-          }
-        }
-        if (v.embeddedModule.icon) {
-          addUncleanable(v.embeddedModule.icon);
-        }
+        if (assets) for (const asset of assets) addUncleanable(asset[1]);
+
+        if (v.embeddedModule.icon) addUncleanable(v.embeddedModule.icon);
       }
     });
   }
@@ -1598,6 +1564,7 @@ export function getUncleanablesSync(
       }
     });
   }
+
   return Array.from(uncleanable);
 }
 
@@ -1619,9 +1586,8 @@ export function replaceDbResources(
    * @returns {string} - The replaced data string or the original data if no replacement is found.
    */
   function replaceData(data: string): string {
-    if (!data) {
-      return data;
-    }
+    if (!data) return data;
+
     return replacer[data] ?? data;
   }
 
@@ -1629,14 +1595,14 @@ export function replaceDbResources(
   db.userIcon = replaceData(db.userIcon);
 
   for (const cha of db.characters) {
-    if (cha.image) {
-      cha.image = replaceData(cha.image);
-    }
+    if (cha.image) cha.image = replaceData(cha.image);
+
     if (cha.emotionImages) {
       for (let i = 0; i < cha.emotionImages.length; i++) {
         cha.emotionImages[i][1] = replaceData(cha.emotionImages[i][1]);
       }
     }
+
     if (cha.type !== "group") {
       if (cha.additionalAssets) {
         for (let i = 0; i < cha.additionalAssets.length; i++) {
@@ -1658,13 +1624,10 @@ export function checkCharOrder() {
   for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
     const folder = settingsStore.state.characterOrder[i];
     if (typeof folder !== "string" && folder) {
-      for (const f of folder.data) {
-        ordered.add(f);
-      }
+      for (const f of folder.data) ordered.add(f);
     }
-    if (typeof folder === "string") {
-      ordered.add(folder);
-    }
+
+    if (typeof folder === "string") ordered.add(folder);
   }
 
   const charIdList = new Set<string>();
@@ -1672,9 +1635,8 @@ export function checkCharOrder() {
   for (let i = 0; i < characterStore.characters.length; i++) {
     const char = characterStore.characters[i];
     const charId = char.chaId;
-    if (!char.trashTime) {
-      charIdList.add(charId);
-    }
+    if (!char.trashTime) charIdList.add(charId);
+
     if (!ordered.has(charId)) {
       if (charId !== "§temp" && charId !== "§playground" && !char.trashTime) {
         settingsStore.state.characterOrder.push(charId);
@@ -1703,11 +1665,9 @@ export function checkCharOrder() {
         }
       }
       settingsStore.state.characterOrder[i] = data;
-    } else {
-      if (!charIdList.has(data)) {
-        settingsStore.state.characterOrder.splice(i, 1);
-        i--;
-      }
+    } else if (!charIdList.has(data)) {
+      settingsStore.state.characterOrder.splice(i, 1);
+      i--;
     }
   }
 }
@@ -1727,6 +1687,7 @@ export function getRequestLog() {
       `## ${log.date}\n\n* Request URL\n\n${b}${log.url}${bend}\n\n* Request Body\n\n${b}${log.body}${bend}\n\n* Request Header\n\n${b}${log.header}${bend}\n\n` +
       `* Response Body\n\n${b}${log.response}${bend}\n\n* Response Success\n\n${b}${log.success}${bend}\n\n`;
   }
+
   return logString;
 }
 
@@ -1745,11 +1706,8 @@ export function getFetchLogs() {
  * @param {string} url - The URL to open.
  */
 export function openURL(url: string) {
-  if (isTauri) {
-    open(url);
-  } else {
-    window.open(url, "_blank");
-  }
+  if (isTauri) open(url);
+  else window.open(url, "_blank");
 }
 
 /**
@@ -1821,19 +1779,19 @@ export class LocalWriter {
     if (!Number.isSafeInteger(size) || size <= 0) {
       throw new Error("Writer buffer size must be a positive integer");
     }
+
     if (this.bufferLength !== 0) {
       throw new Error(
         "Writer buffer size cannot be changed while data is buffered",
       );
     }
+
     this.bufferSize = size;
     this.buffer = null;
   }
 
   private async flushBuffer(): Promise<void> {
-    if (!this.buffer || this.bufferLength === 0) {
-      return;
-    }
+    if (!this.buffer || this.bufferLength === 0) return;
 
     const data =
       this.bufferLength === this.buffer.byteLength
@@ -1842,11 +1800,9 @@ export class LocalWriter {
     this.buffer = null;
     this.bufferLength = 0;
 
-    if (this.tauriWriter) {
-      await this.tauriWriter.write(data);
-    } else if (this.capacitorWriter) {
-      await this.capacitorWriter.write(data);
-    } else if (this.port) {
+    if (this.tauriWriter) await this.tauriWriter.write(data);
+    else if (this.capacitorWriter) await this.capacitorWriter.write(data);
+    else if (this.port) {
       const buf = data.buffer.slice(
         data.byteOffset,
         data.byteOffset + data.byteLength,
@@ -1874,9 +1830,8 @@ export class LocalWriter {
           },
         ],
       });
-      if (!filePath) {
-        return false;
-      }
+      if (!filePath) return false;
+
       this.tauriWriter = new TauriWriter(filePath);
       return true;
     }
@@ -1935,6 +1890,7 @@ export class LocalWriter {
     if (!this.capacitorWriter) {
       throw new Error("Native asset transfer is unavailable");
     }
+
     await this.flushBuffer();
     return await this.capacitorWriter.writeAssets(keys);
   }
@@ -1964,11 +1920,9 @@ export class LocalWriter {
    */
   async write(data: Uint8Array): Promise<void> {
     if (this.bufferSize === 0) {
-      if (this.tauriWriter) {
-        await this.tauriWriter.write(data);
-      } else if (this.capacitorWriter) {
-        await this.capacitorWriter.write(data);
-      } else if (this.port) {
+      if (this.tauriWriter) await this.tauriWriter.write(data);
+      else if (this.capacitorWriter) await this.capacitorWriter.write(data);
+      else if (this.port) {
         const buf = data.buffer.slice(
           data.byteOffset,
           data.byteOffset + data.byteLength,
@@ -1980,9 +1934,7 @@ export class LocalWriter {
 
     let offset = 0;
     while (offset < data.byteLength) {
-      if (!this.buffer) {
-        this.buffer = new Uint8Array(this.bufferSize);
-      }
+      if (!this.buffer) this.buffer = new Uint8Array(this.bufferSize);
 
       const writableLength = Math.min(
         this.bufferSize - this.bufferLength,
@@ -1995,9 +1947,7 @@ export class LocalWriter {
       this.bufferLength += writableLength;
       offset += writableLength;
 
-      if (this.bufferLength === this.bufferSize) {
-        await this.flushBuffer();
-      }
+      if (this.bufferLength === this.bufferSize) await this.flushBuffer();
     }
   }
 
@@ -2055,8 +2005,8 @@ let fetchIndex = 0;
  * Stores native fetch data.
  * @type {{ [key: string]: StreamedFetchChunk[] }}
  */
-let nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {};
-let nativeFetchNotify: { [key: string]: () => void } = {};
+const nativeFetchData: { [key: string]: StreamedFetchChunk[] } = {};
+const nativeFetchNotify: { [key: string]: () => void } = {};
 
 /**
  * Interface representing a streamed fetch chunk data.
@@ -2202,9 +2152,8 @@ export class AppendableBuffer {
     const requiredLength = this.#byteLength + data.length;
     if (this.#buffer.byteLength < requiredLength) {
       let newLength = this.#buffer.byteLength * 2;
-      while (newLength < requiredLength) {
-        newLength *= 2;
-      }
+      while (newLength < requiredLength) newLength *= 2;
+
       const newBuffer = new Uint8Array(newLength);
       newBuffer.set(this.#buffer);
       this.#buffer = newBuffer;
@@ -2315,6 +2264,7 @@ async function fetchViaProxyJobWs(
   if (!created.jobId) {
     throw new Error("Proxy stream job creation returned no jobId");
   }
+
   jobId = created.jobId;
 
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -2358,9 +2308,8 @@ async function fetchViaProxyJobWs(
   };
 
   const closeAndEnd = () => {
-    if (settled) {
-      return;
-    }
+    if (settled) return;
+
     settled = true;
     if (streamController) {
       try {
@@ -2369,6 +2318,7 @@ async function fetchViaProxyJobWs(
         // no-op
       }
     }
+
     try {
       ws.close();
     } catch {
@@ -2380,9 +2330,8 @@ async function fetchViaProxyJobWs(
     const parsed = parseProxyJobWsEvent(
       typeof event.data === "string" ? event.data : "",
     );
-    if (!parsed || !streamController) {
-      return;
-    }
+    if (!parsed || !streamController) return;
+
     switch (parsed.type) {
       case "job_accepted":
       case "ping":
@@ -2416,9 +2365,8 @@ async function fetchViaProxyJobWs(
   };
 
   ws.onerror = () => {
-    if (!streamController) {
-      return;
-    }
+    if (!streamController) return;
+
     status = 502;
     responseHeaders = { "content-type": "text/plain; charset=utf-8" };
     ensureHeadersReady();
@@ -2442,6 +2390,7 @@ async function fetchViaProxyJobWs(
     if (streamController && !settled) {
       streamController.enqueue(encoder.encode("Aborted"));
     }
+
     void fetch(`/proxy-stream-jobs/${encodeURIComponent(jobId)}`, {
       method: "DELETE",
       headers: {
@@ -2450,11 +2399,8 @@ async function fetchViaProxyJobWs(
     }).catch(() => {});
     closeAndEnd();
   };
-  if (requestSignal?.aborted) {
-    abortHandler();
-  } else {
-    requestSignal?.addEventListener("abort", abortHandler, { once: true });
-  }
+  if (requestSignal?.aborted) abortHandler();
+  else requestSignal?.addEventListener("abort", abortHandler, { once: true });
 
   await waitHeaders;
   requestSignal?.removeEventListener("abort", abortHandler);
@@ -2506,12 +2452,11 @@ export async function fetchNative(
 
   arg.method = arg.method ?? "POST";
 
-  let headers = arg.headers ?? {};
+  const headers = arg.headers ?? {};
   let realBody: Uint8Array;
 
-  if (arg.method === "GET" || arg.method === "DELETE") {
-    realBody = undefined;
-  } else if (typeof arg.body === "string") {
+  if (arg.method === "GET" || arg.method === "DELETE") realBody = undefined;
+  else if (typeof arg.body === "string") {
     let body: string = arg.body;
     if (useInterceptor) {
       for (const interceptor of bodyIntercepterStore) {
@@ -2522,14 +2467,11 @@ export async function fetchNative(
         }
       }
     }
+
     realBody = new TextEncoder().encode(body);
-  } else if (arg.body instanceof Uint8Array) {
-    realBody = arg.body;
-  } else if (arg.body instanceof ArrayBuffer) {
-    realBody = new Uint8Array(arg.body);
-  } else {
-    throw new Error("Invalid body type");
-  }
+  } else if (arg.body instanceof Uint8Array) realBody = arg.body;
+  else if (arg.body instanceof ArrayBuffer) realBody = new Uint8Array(arg.body);
+  else throw new Error("Invalid body type");
 
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
@@ -2542,6 +2484,7 @@ export async function fetchNative(
   ) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
+
   const throughProxy =
     isNodeServer &&
     (useLocalNetworkRoute ||
@@ -2582,6 +2525,7 @@ export async function fetchNative(
           status: durableResponse.status,
         });
       }
+
       return durableResponse;
     } catch (error) {
       if (!(error instanceof DurableModelJobUnavailableError)) throw error;
@@ -2605,13 +2549,11 @@ export async function fetchNative(
       });
     } else if (isTauri || isCapacitor) {
       fetchIndex++;
-      if (requestSignal && requestSignal.aborted) {
-        throw new Error("aborted");
-      }
-      if (fetchIndex >= 100000) {
-        fetchIndex = 0;
-      }
-      let fetchId = fetchIndex.toString().padStart(5, "0");
+      if (requestSignal && requestSignal.aborted) throw new Error("aborted");
+
+      if (fetchIndex >= 100000) fetchIndex = 0;
+
+      const fetchId = fetchIndex.toString().padStart(5, "0");
       nativeFetchData[fetchId] = [];
       let nativeFetchHead = 0;
       let resolved = false;
@@ -2666,6 +2608,7 @@ export async function fetchNative(
       if (isCapacitor && !capStreamedFetch) {
         throw new Error("Capacitor streamed fetch plugin is unavailable");
       }
+
       if (isCapacitor) {
         cleanupTimeoutOnReturn = false;
         requestSignal?.addEventListener("abort", onAbort, { once: true });
@@ -2758,6 +2701,7 @@ export async function fetchNative(
                   if (data.success === false) {
                     throw new Error(data.error || "Native fetch failed");
                   }
+
                   // Older native plugins emit a bare end event before their
                   // result arrives. EOF is successful only after that result.
                   if (isCapacitor) await nativeResult;
@@ -2830,15 +2774,11 @@ export async function fetchNative(
         });
       }
 
-      if (resHeaders === null) {
-        resHeaders = {};
-      }
+      if (resHeaders === null) resHeaders = {};
 
       if (aborted) throw abortReason;
 
-      if (error !== "") {
-        throw new Error(error);
-      }
+      if (error !== "") throw new Error(error);
 
       // Fetch responses with these statuses must not have a body. Drain the
       // native event queue first so a conditional module request (304) also
@@ -2850,6 +2790,7 @@ export async function fetchNative(
             setTimeout(resolve, 100);
           });
         }
+
         if (aborted) throw abortReason;
         if (error) throw new Error(error);
         delete nativeFetchData[fetchId];
@@ -3029,11 +2970,9 @@ export async function loadInternalBackup() {
         },
       )
     : await forageStorage.keys();
-  let internalBackups: string[] = [];
+  const internalBackups: string[] = [];
   for (const key of keys) {
-    if (key.includes("dbbackup-")) {
-      internalBackups.push(key);
-    }
+    if (key.includes("dbbackup-")) internalBackups.push(key);
   }
 
   const selectOptions = [
@@ -3048,9 +2987,7 @@ export async function loadInternalBackup() {
 
   const alertResult = parseInt(await alertSelect(selectOptions)) - 1;
 
-  if (alertResult === -1) {
-    return;
-  }
+  if (alertResult === -1) return;
 
   const selectedBackup = internalBackups[alertResult];
 
@@ -3079,6 +3016,7 @@ export async function loadInternalBackup() {
       "SQL storage returned no startup data after backup restore",
     );
   }
+
   await installStartupData(startup, storage);
   alertNormal("Loaded backup");
 }
@@ -3106,9 +3044,8 @@ export class PerformanceDebugger {
    */
   endAndRecord(key: string) {
     this.endTime = performance.now();
-    if (!this.kv[key]) {
-      this.kv[key] = [];
-    }
+    if (!this.kv[key]) this.kv[key] = [];
+
     this.kv[key].push(this.endTime - this.startTime);
   }
 
@@ -3126,7 +3063,7 @@ export class PerformanceDebugger {
    * Logs the average time for each key to the console.
    */
   log() {
-    let table: { [key: string]: number } = {};
+    const table: { [key: string]: number } = {};
 
     for (const key in this.kv) {
       table[key] =
@@ -3138,9 +3075,8 @@ export class PerformanceDebugger {
 
   combine(other: PerformanceDebugger) {
     for (const key in other.kv) {
-      if (!this.kv[key]) {
-        this.kv[key] = [];
-      }
+      if (!this.kv[key]) this.kv[key] = [];
+
       this.kv[key].push(...other.kv[key]);
     }
   }
@@ -3188,15 +3124,16 @@ export function getLanguageCodes() {
 
 export function getVersionString(): string {
   let versionString = appVer;
-  if (appSubVer) {
-    versionString += "-" + appSubVer;
-  }
+  if (appSubVer) versionString += "-" + appSubVer;
+
   if (window.location.hostname === "nightly.risuai.xyz") {
     versionString += " (Nightly)";
   }
+
   if (window.location.hostname === "stable.risuai.xyz") {
     versionString += " (Stable)";
   }
+
   return versionString;
 }
 
@@ -3226,9 +3163,7 @@ export function toGetter<T extends object>(
 
       const value = Reflect.get(realInstance as object, prop);
 
-      if (typeof value === "function") {
-        return value.bind(realInstance);
-      }
+      if (typeof value === "function") return value.bind(realInstance);
 
       return value;
     },
@@ -3240,6 +3175,7 @@ export function toGetter<T extends object>(
       ) {
         throw new Error(`Access to property '${String(prop)}' is restricted`);
       }
+
       const realInstance = getterFn();
       return Reflect.set(realInstance as object, prop, value, receiver);
     },
@@ -3358,15 +3294,14 @@ export const chatFoldedState = $state<{
 });
 
 //Since its exported, we cannot use $derived here
-export let chatFoldedStateMessageIndex = $state({
+export const chatFoldedStateMessageIndex = $state({
   index: -1,
 });
 
 $effect.root(() => {
   $effect(() => {
-    if (!chatFoldedState.data) {
-      return;
-    }
+    if (!chatFoldedState.data) return;
+
     const char = characterStore.characters[characterStore.selectedId];
     if (!char || !char.chats) return;
     const chat = char.chats[char.chatPage];
@@ -3374,6 +3309,7 @@ $effect.root(() => {
     if (chatFoldedState.data.targetCharacterId !== char.chaId) {
       chatFoldedState.data = null;
     }
+
     if (chatFoldedState.data.targetChatId !== chat.id) {
       chatFoldedState.data = null;
     }
@@ -3411,9 +3347,8 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
     const chat = char.chats[char.chatPage];
     const message = chat.message[targetMessageIdOrIndex];
     targetMessageId = message.chatId;
-  } else {
-    targetMessageId = targetMessageIdOrIndex;
-  }
+  } else targetMessageId = targetMessageIdOrIndex;
+
   const char = characterStore.currentCharacter;
   const chat = char.chats[char.chatPage];
   chatFoldedState.data = {
@@ -3425,9 +3360,7 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
 
 export function changeChatTo(IdOrIndex: string | number) {
   let index = -1;
-  if (typeof IdOrIndex === "number") {
-    index = IdOrIndex;
-  }
+  if (typeof IdOrIndex === "number") index = IdOrIndex;
 
   if (typeof IdOrIndex === "string") {
     const currentCharacter = characterStore.currentCharacter;
@@ -3436,15 +3369,14 @@ export function changeChatTo(IdOrIndex: string | number) {
     });
   }
 
-  if (index === -1) {
-    return;
-  }
+  if (index === -1) return;
 
   const nextChat =
     characterStore.characters[characterStore.selectedId]?.chats?.[index];
   if (characterStore.characters[characterStore.selectedId]) {
     characterStore.characters[characterStore.selectedId].chatPage = index;
   }
+
   // Touch the character so same-character chat switches also refresh the
   // recent-sessions ordering (it ranks by last interaction).
   characterStore.touchCharacterInteraction(characterStore.selectedId);

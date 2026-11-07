@@ -323,7 +323,7 @@ export const SNAPSHOT_TABLES: readonly string[] = [
   "system.plugin_values",
   "system.plugin_scripts",
   "system.bot_presets",
-  "system.plugin_custom_storage"
+  "system.plugin_custom_storage",
 ];
 
 /** Looks up one table spec; unknown tables are a programming error. */
@@ -339,6 +339,7 @@ export function sqlTableColumns(name: string): readonly SqlColumnSpec[] {
   if (!table.columns || table.columns.length === 0) {
     throw new Error(`SQL table has no write columns declared: ${name}`);
   }
+
   return table.columns;
 }
 

@@ -404,6 +404,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
               total: progress.total,
             });
           }
+
           const logInfo = {
             status: state.status,
             stage: progress?.stage ?? "none",
@@ -483,9 +484,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     });
     throw error;
   } finally {
-    if (nativeWriter) {
-      await nativeWriter.close().catch(() => {});
-    }
+    if (nativeWriter) await nativeWriter.close().catch(() => {});
   }
 }
 
@@ -507,6 +506,7 @@ async function loadFullSqlBackupSnapshot(
       "SQL storage returned an uninitialized or empty database snapshot",
     );
   }
+
   return loaded.database;
 }
 
@@ -592,9 +592,8 @@ export async function listBackupAssetKeys(
   storage: BackupAssetKeyStorage = forageStorage,
   useRecursiveListing = isTauri,
 ): Promise<string[]> {
-  if (useRecursiveListing) {
-    return await storage.listAssetKeys("assets/");
-  }
+  if (useRecursiveListing) return await storage.listAssetKeys("assets/");
+
   return (await storage.keys()).filter((key) => key?.startsWith("assets/"));
 }
 
@@ -684,6 +683,7 @@ async function writeLocalBackupAssets(
   ) {
     return { missingAssets, assetMap };
   }
+
   missingAssets.push(
     ...(await exportStoredBackupAssets({
       keys,
@@ -775,6 +775,7 @@ async function writeStreamingColdStorage(
   for (const char of inventory.coldStorageCharacters.values()) {
     characters.push(char as unknown as ColdStorageCharacterReference);
   }
+
   return await confirmIncompleteColdStorageOperation(
     {
       characters,
@@ -969,6 +970,7 @@ async function saveStreamingLocalBackupWithOptions(
           ) {
             return;
           }
+
           lastProgressUpdate = now;
           reportLocalBackupProgress("database", { current, total });
         },
@@ -1167,6 +1169,7 @@ async function restoreLocalBackupSourceUnlocked(
         if (!restored) {
           console.error(`Failed to restore cold storage item ${key}`);
         }
+
         return restored;
       },
       async restoreAsset(path: string, data: Uint8Array): Promise<void> {
@@ -1253,6 +1256,7 @@ async function restoreLocalBackupSourceUnlocked(
       if (pendingDatabase || decodedDatabase) {
         throw new Error("Backup mixes legacy and streaming database formats");
       }
+
       const streamingManifest: PortableDatabaseStreamManifest | null =
         streamRestore.manifest;
       if (!streamingManifest) {
@@ -1286,6 +1290,7 @@ async function restoreLocalBackupSourceUnlocked(
           `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
         );
       }
+
       reportLocalBackupRestoreProgress("database", { percent: 97 });
       reportLocalBackupRestoreProgress("branches", { percent: 98 });
       await options.beforeDatabaseApply?.();
@@ -1299,6 +1304,7 @@ async function restoreLocalBackupSourceUnlocked(
         if (pendingDatabase || decodedDatabase) {
           throw new Error("Backup mixes legacy and streaming database formats");
         }
+
         decodedDatabase = collectedDatabase;
       }
 
@@ -1324,11 +1330,13 @@ async function restoreLocalBackupSourceUnlocked(
           );
         }
       }
+
       if (ignoredExtensionEntries > 0) {
         console.info(
           `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
         );
       }
+
       reportLocalBackupRestoreProgress("database", { percent: 90 });
       const decodedDb: object =
         decodedDatabase ??
@@ -1486,6 +1494,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
         state.progress.total ?? file.size,
       );
     }
+
     progressReporter.updateRemote(state.progress, state.status);
   };
   const unsubscribeProgress = subscribeNodeBackupProgress(job.id, (state) =>
@@ -1512,6 +1521,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
           // best-effort and must not abort a valid restore.
         }
       }
+
       await sleep(
         isNodeRealtimeConnected()
           ? Math.max(1_000, performance.progressUpdateMs)
@@ -1598,9 +1608,8 @@ async function loadCapacitorLocalBackupUnlocked(): Promise<void> {
           total > 0
             ? `${processed} / ${total} · ${language.localBackupRestoreReadingAssets}`
             : language.localBackupRestoreReadingAssets;
-      } else if (event.stage === "complete") {
-        percent = remote ? 20 : 50;
-      }
+      } else if (event.stage === "complete") percent = remote ? 20 : 50;
+
       reportLocalBackupRestoreProgress("reading", { percent, detail });
     },
   );
@@ -1612,8 +1621,9 @@ async function loadCapacitorLocalBackupUnlocked(): Promise<void> {
       alertClear();
       return;
     }
-    if (!selected.id)
+    if (!selected.id) {
       throw new Error("Native backup import session was not created");
+    }
 
     const id: string = selected.id;
     const commitNativeAssets: () => Promise<void> = createNativeAssetCommit(

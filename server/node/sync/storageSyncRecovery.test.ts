@@ -60,6 +60,7 @@ describe("StorageSyncRecoveryStore", () => {
             stream: Readable.from([Buffer.from([9, 8, 7])]),
           };
         }
+
         return { exists: false };
       }),
     };
@@ -139,6 +140,7 @@ describe("StorageSyncRecoveryStore", () => {
             stream: Readable.from([Buffer.from("old")]),
           };
         }
+
         return { exists: false };
       }),
     };

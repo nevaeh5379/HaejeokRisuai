@@ -58,9 +58,9 @@ import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { getPersonaPrompt, getUserName, getUserIcon } from "../util";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 let luaFactory: LuaFactory;
-let ScriptingSafeIds = new Set<string>();
-let ScriptingEditDisplayIds = new Set<string>();
-let ScriptingLowLevelIds = new Set<string>();
+const ScriptingSafeIds = new Set<string>();
+const ScriptingEditDisplayIds = new Set<string>();
+const ScriptingLowLevelIds = new Set<string>();
 let lastRequestResetTime = 0;
 let lastRequestsCount = 0;
 
@@ -148,11 +148,10 @@ export async function runScripted(
   const mode = arg.mode ?? "manual";
 
   let chat = arg.chat ?? characterStore.currentChat;
-  let lowLevelAccess = arg.lowLevelAccess ?? false;
+  const lowLevelAccess = arg.lowLevelAccess ?? false;
 
-  if (type === "lua") {
-    await ensureLuaFactory();
-  }
+  if (type === "lua") await ensureLuaFactory();
+
   const ScriptingEngineState = acquireScriptingEngineState(
     mode,
     type,
@@ -180,9 +179,9 @@ export async function runScripted(
           ? await note.getContent()
           : "";
       } catch (error) {
-        if (error instanceof AuthorNoteError && error.code === "missing")
+        if (error instanceof AuthorNoteError && error.code === "missing") {
           ScriptingEngineState.authorNoteRaw = "";
-        else throw error;
+        } else throw error;
       }
     }
     ScriptingEngineState.chatTarget = arg.chatTarget;
@@ -199,8 +198,9 @@ export async function runScripted(
     ScriptingEngineState.sandboxModuleIds = arg.sandboxModuleIds;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
-      if (scriptingChar && scriptingChar.type !== "simple")
+      if (scriptingChar && scriptingChar.type !== "simple") {
         return scriptingChar;
+      }
       const target = ScriptingEngineState.chatTarget;
       if (target) return resolveChatTarget(target)?.character;
       return characterStore.currentCharacter;
@@ -219,6 +219,7 @@ export async function runScripted(
       if (scriptingChar?.chaId) {
         characterStore.markCharacterDirty(scriptingChar.chaId);
       }
+
       return scriptingChar;
     };
     const getScriptingRequestCharacter = () => {
@@ -256,6 +257,7 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id) && !ScriptingEditDisplayIds.has(id)) {
           return;
         }
+
         ScriptingEngineState.setVar(key, value);
       });
       declareAPI(
@@ -264,56 +266,48 @@ export async function runScripted(
           if (!ScriptingSafeIds.has(id) && !ScriptingEditDisplayIds.has(id)) {
             return;
           }
-          if (ScriptingEngineState.setVar(key, value) === true) {
-            return true;
-          }
+
+          if (ScriptingEngineState.setVar(key, value) === true) return true;
         },
       );
       declareAPI("getGlobalVar", (id: string, key: string) => {
         return getGlobalChatVar(key, ScriptingEngineState.chatTarget);
       });
       declareAPI("stopChat", (id: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         ScriptingEngineState.stopSending = true;
       });
       declareAPI("alertError", (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         alertError(value);
       });
       declareAPI("alertNormal", (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         alertNormal(value);
       });
       declareAPI("alertInput", (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         return alertInput(value);
       });
       declareAPI("alertSelect", (id: string, value: string[]) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         return alertSelect(value);
       });
       declareAPI("alertConfirm", (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         return alertConfirm(value).then((res) => (res ? true : false));
       });
 
       declareAPI("getChatMain", (id: string, index: number) => {
         const chat = ScriptingEngineState.chat.message.at(index);
-        if (!chat) {
-          return JSON.stringify(null);
-        }
+        if (!chat) return JSON.stringify(null);
+
         const data = {
           role: chat.role,
           data: chat.data,
@@ -346,9 +340,8 @@ export async function runScripted(
       });
 
       declareAPI("setChat", (id: string, index: number, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         const message = ScriptingEngineState.chat.message?.at(index);
         if (message) {
           const newValue = value ?? "";
@@ -359,9 +352,8 @@ export async function runScripted(
         }
       });
       declareAPI("setChatRole", (id: string, index: number, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         const message = ScriptingEngineState.chat.message?.at(index);
         if (message) {
           message.role = value === "user" ? "user" : "char";
@@ -369,26 +361,23 @@ export async function runScripted(
         }
       });
       declareAPI("cutChat", (id: string, start: number, end: number) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         ScriptingEngineState.chat.message =
           ScriptingEngineState.chat.message.slice(start, end);
         ScriptingEngineState.messagesMutated = true;
       });
       declareAPI("removeChat", (id: string, index: number) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         if (ScriptingEngineState.chat.message.splice(index, 1).length > 0) {
           ScriptingEngineState.messagesMutated = true;
         }
       });
       declareAPI("addChat", (id: string, role: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
-        let roleData: "user" | "char" = role === "user" ? "user" : "char";
+        if (!ScriptingSafeIds.has(id)) return;
+
+        const roleData: "user" | "char" = role === "user" ? "user" : "char";
         ScriptingEngineState.chat.message.push({
           role: roleData,
           data: value ?? "",
@@ -398,10 +387,9 @@ export async function runScripted(
       declareAPI(
         "insertChat",
         (id: string, index: number, role: string, value: string) => {
-          if (!ScriptingSafeIds.has(id)) {
-            return;
-          }
-          let roleData: "user" | "char" = role === "user" ? "user" : "char";
+          if (!ScriptingSafeIds.has(id)) return;
+
+          const roleData: "user" | "char" = role === "user" ? "user" : "char";
           ScriptingEngineState.chat.message.splice(index, 0, {
             role: roleData,
             data: value ?? "",
@@ -411,9 +399,8 @@ export async function runScripted(
       );
 
       declareAPI("getTokens", async (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         return await tokenize(value);
       });
 
@@ -435,9 +422,8 @@ export async function runScripted(
       });
 
       declareAPI("sleep", (id: string, time: number) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         return new Promise((resolve) => {
           setTimeout(() => {
             resolve(true);
@@ -454,9 +440,8 @@ export async function runScripted(
       });
 
       declareAPI("setFullChatMain", (id: string, value: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         const realValue = JSON.parse(value);
         const previousMessages = ScriptingEngineState.chat.message ?? [];
 
@@ -476,16 +461,14 @@ export async function runScripted(
       });
 
       declareAPI("reloadDisplay", (id: string) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         ReloadGUIPointer.set(get(ReloadGUIPointer) + 1);
       });
 
       declareAPI("reloadChat", (id: string, index: number) => {
-        if (!ScriptingSafeIds.has(id)) {
-          return;
-        }
+        if (!ScriptingSafeIds.has(id)) return;
+
         ReloadChatPointer.update((v) => {
           v[index] = (v[index] ?? 0) + 1;
           return v;
@@ -496,9 +479,8 @@ export async function runScripted(
       declareAPI(
         "similarity",
         async (id: string, source: string, value: string[]) => {
-          if (!ScriptingLowLevelIds.has(id)) {
-            return;
-          }
+          if (!ScriptingLowLevelIds.has(id)) return;
+
           const processer = new HypaProcesser();
           await processer.addText(value);
           return await processer.similaritySearch(source);
@@ -506,9 +488,7 @@ export async function runScripted(
       );
 
       declareAPI("request", async (id: string, url: string) => {
-        if (!ScriptingLowLevelIds.has(id)) {
-          return;
-        }
+        if (!ScriptingLowLevelIds.has(id)) return;
 
         if (lastRequestResetTime + 60000 < Date.now()) {
           lastRequestsCount = 0;
@@ -580,9 +560,8 @@ export async function runScripted(
           negValue: string = "",
           options?: ImageGenerationOptions,
         ) => {
-          if (!ScriptingLowLevelIds.has(id)) {
-            return;
-          }
+          if (!ScriptingLowLevelIds.has(id)) return;
+
           const orientation = options?.orientation;
           if (
             orientation !== undefined &&
@@ -599,6 +578,7 @@ export async function runScripted(
           if (!scriptingChar || scriptingChar.type === "group") {
             return "Error: Image generation requires a character";
           }
+
           const gen = await generateAIImage(
             value,
             scriptingChar,
@@ -606,9 +586,8 @@ export async function runScripted(
             "inlay",
             options,
           );
-          if (!gen) {
-            return "Error: Image generation failed";
-          }
+          if (!gen) return "Error: Image generation failed";
+
           const imgHTML = new Image();
           imgHTML.src = gen;
           const inlay = await writeInlayImage(imgHTML);
@@ -632,9 +611,8 @@ export async function runScripted(
             id: character.image,
           });
 
-          if (imgid) {
-            return `{{inlayed::${imgid}}}`;
-          }
+          if (imgid) return `{{inlayed::${imgid}}}`;
+
           console.warn("Failed to create character image inlay");
           return "";
         } catch (error) {
@@ -647,9 +625,7 @@ export async function runScripted(
         try {
           const icon = getUserIcon(ScriptingEngineState.chatTarget);
 
-          if (!icon) {
-            return "";
-          }
+          if (!icon) return "";
 
           const img = await readImage(icon);
           const extention = icon.split(".").at(-1);
@@ -660,9 +636,7 @@ export async function runScripted(
             id: icon,
           });
 
-          if (imgid) {
-            return `{{inlayed::${imgid}}}`;
-          }
+          if (imgid) return `{{inlayed::${imgid}}}`;
 
           console.warn("Failed to create character image inlay");
           return "";
@@ -677,9 +651,7 @@ export async function runScripted(
       });
 
       const parseLuaOptions = (optionsStr?: string) => {
-        if (!optionsStr) {
-          return {};
-        }
+        if (!optionsStr) return {};
 
         try {
           const parsed = JSON.parse(optionsStr);
@@ -698,12 +670,9 @@ export async function runScripted(
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-              break;
-            }
-            if (value && typeof value["0"] === "string") {
-              text = value["0"];
-            }
+            if (done) break;
+
+            if (value && typeof value["0"] === "string") text = value["0"];
           }
         } finally {
           reader.releaseLock();
@@ -720,14 +689,13 @@ export async function runScripted(
           useMultimodal: boolean = false,
           optionsStr: string = "",
         ) => {
-          let prompt: {
+          const prompt: {
             role: string;
             content: string;
           }[] = JSON.parse(promptStr);
-          if (!ScriptingLowLevelIds.has(id)) {
-            return;
-          }
-          let promptbody: OpenAIChat[] = prompt.map((dict) => {
+          if (!ScriptingLowLevelIds.has(id)) return;
+
+          const promptbody: OpenAIChat[] = prompt.map((dict) => {
             let role: "system" | "user" | "assistant" = "assistant";
             switch (dict["role"]) {
               case "system":
@@ -758,14 +726,9 @@ export async function runScripted(
                 /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g,
                 (match: string, p1: string, p2: string) => {
                   if (msg.role === "assistant") {
-                    if (p2 && p1 === "inlayeddata") {
-                      inlays.push(p2);
-                    }
-                  } else {
-                    if (p2) {
-                      inlays.push(p2);
-                    }
-                  }
+                    if (p2 && p1 === "inlayeddata") inlays.push(p2);
+                  } else if (p2) inlays.push(p2);
+
                   return "";
                 },
               );
@@ -838,9 +801,8 @@ export async function runScripted(
       );
 
       declareAPI("simpleLLM", async (id: string, prompt: string) => {
-        if (!ScriptingLowLevelIds.has(id)) {
-          return;
-        }
+        if (!ScriptingLowLevelIds.has(id)) return;
+
         const result = await requestChatData(
           {
             formated: [
@@ -895,6 +857,7 @@ export async function runScripted(
         if (!scriptingChar || scriptingChar.type === "group") {
           throw "Character is a group";
         }
+
         return scriptingChar.desc;
       });
 
@@ -905,9 +868,11 @@ export async function runScripted(
         if (!scriptingChar || scriptingChar.type === "group") {
           throw "Character is a group";
         }
+
         scriptingChar.desc = desc;
-        if (scriptingChar.chaId)
+        if (scriptingChar.chaId) {
           characterStore.markCharacterDirty(scriptingChar.chaId);
+        }
       });
 
       declareAPI("getCharacterFirstMessage", (id: string) => {
@@ -920,8 +885,9 @@ export async function runScripted(
         const scriptingChar = getStoredScriptingCharacter();
         if (!scriptingChar) return false;
         scriptingChar.firstMessage = data;
-        if (scriptingChar.chaId)
+        if (scriptingChar.chaId) {
           characterStore.markCharacterDirty(scriptingChar.chaId);
+        }
         return true;
       });
 
@@ -950,8 +916,9 @@ export async function runScripted(
       declareAPI(
         type === "lua" ? "setAuthorsNoteMain" : "setAuthorsNote",
         async (id: string, content: string) => {
-          if (!ScriptingSafeIds.has(id) || typeof content !== "string")
+          if (!ScriptingSafeIds.has(id) || typeof content !== "string") {
             return false;
+          }
           const chat = ScriptingEngineState.chat;
           if (!chat) return false;
           const source = NoteSource.get(chat);
@@ -1001,8 +968,9 @@ export async function runScripted(
         const scriptingChar = getStoredScriptingCharacter();
         if (!scriptingChar) return false;
         scriptingChar.backgroundHTML = data;
-        if (scriptingChar.chaId)
+        if (scriptingChar.chaId) {
           characterStore.markCharacterDirty(scriptingChar.chaId);
+        }
         return true;
       });
 
@@ -1069,9 +1037,7 @@ export async function runScripted(
           content: string,
           options: upsertLoreBookOptions,
         ) => {
-          if (!ScriptingSafeIds.has(id)) {
-            return;
-          }
+          if (!ScriptingSafeIds.has(id)) return;
 
           const scriptingChar = getScriptingCharacter();
           const currentChat = ScriptingEngineState.chat;
@@ -1111,24 +1077,18 @@ export async function runScripted(
       );
 
       declareAPI("loadLoreBooksMain", async (id: string, reserve: number) => {
-        if (!ScriptingLowLevelIds.has(id)) {
-          return;
-        }
+        if (!ScriptingLowLevelIds.has(id)) return;
 
         const db = settingsStore.state;
         const selectedChar = getScriptingCharacter();
 
-        if (!selectedChar || selectedChar.type !== "character") {
-          return;
-        }
+        if (!selectedChar || selectedChar.type !== "character") return;
 
         const fullLoreBooks = (
           await loadLoreBookV3Prompt(ScriptingEngineState.chatTarget)
         ).actives;
         const maxContext = presetStore.state.maxContext - reserve;
-        if (maxContext < 0) {
-          return JSON.stringify([]);
-        }
+        if (maxContext < 0) return JSON.stringify([]);
 
         let totalTokens = 0;
         const loreBooks = [];
@@ -1138,15 +1098,12 @@ export async function runScripted(
             chara: selectedChar,
             chatTarget: ScriptingEngineState.chatTarget,
           }).trim();
-          if (parsed.length === 0) {
-            continue;
-          }
+          if (parsed.length === 0) continue;
 
           const tokens = await tokenize(parsed);
 
-          if (totalTokens + tokens > maxContext) {
-            break;
-          }
+          if (totalTokens + tokens > maxContext) break;
+
           totalTokens += tokens;
           loreBooks.push({
             data: parsed,
@@ -1165,14 +1122,13 @@ export async function runScripted(
           useMultimodal: boolean = false,
           optionsStr: string = "",
         ) => {
-          let prompt: {
+          const prompt: {
             role: string;
             content: string;
           }[] = JSON.parse(promptStr);
-          if (!ScriptingLowLevelIds.has(id)) {
-            return;
-          }
-          let promptbody: OpenAIChat[] = prompt.map((dict) => {
+          if (!ScriptingLowLevelIds.has(id)) return;
+
+          const promptbody: OpenAIChat[] = prompt.map((dict) => {
             let role: "system" | "user" | "assistant" = "assistant";
             switch (dict["role"]) {
               case "system":
@@ -1203,14 +1159,9 @@ export async function runScripted(
                 /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g,
                 (match: string, p1: string, p2: string) => {
                   if (msg.role === "assistant") {
-                    if (p2 && p1 === "inlayeddata") {
-                      inlays.push(p2);
-                    }
-                  } else {
-                    if (p2) {
-                      inlays.push(p2);
-                    }
-                  }
+                    if (p2 && p1 === "inlayeddata") inlays.push(p2);
+                  } else if (p2) inlays.push(p2);
+
                   return "";
                 },
               );
@@ -1249,6 +1200,7 @@ export async function runScripted(
               success: false,
             });
           }
+
           const sandboxOwner = ScriptingEngineState.sandboxOwnerModuleId
             ? getModules(
                 getScriptingRequestCharacter(),
@@ -1311,9 +1263,7 @@ export async function runScripted(
 
       declareAPI("getCharacterLastMessage", (id: string) => {
         const chat = ScriptingEngineState.chat;
-        if (!chat) {
-          return "";
-        }
+        if (!chat) return "";
 
         const selchar = getScriptingCharacter();
 
@@ -1331,9 +1281,7 @@ export async function runScripted(
 
       declareAPI("getUserLastMessage", (id: string) => {
         const chat = ScriptingEngineState.chat;
-        if (!chat) {
-          return "";
-        }
+        if (!chat) return "";
 
         let pointer = chat.message.length - 1;
         while (pointer >= 0) {
@@ -1349,9 +1297,7 @@ export async function runScripted(
 
       declareAPI("getCharacterLastMessage", (id: string) => {
         const chat = ScriptingEngineState.chat;
-        if (!chat) {
-          return "";
-        }
+        if (!chat) return "";
 
         const selchar = getScriptingCharacter();
 
@@ -1369,9 +1315,7 @@ export async function runScripted(
 
       declareAPI("getUserLastMessage", (id: string) => {
         const chat = ScriptingEngineState.chat;
-        if (!chat) {
-          return "";
-        }
+        if (!chat) return "";
 
         let pointer = chat.message.length - 1;
         while (pointer >= 0) {
@@ -1388,20 +1332,19 @@ export async function runScripted(
       if (ScriptingEngineState.type === "lua") {
         await ScriptingEngineState.engine?.doString(luaCodeWrapper(code));
       }
+
       if (ScriptingEngineState.type === "py") {
         await ScriptingEngineState.pyodide?.init(code);
       }
+
       ScriptingEngineState.code = code;
     }
-    let accessKey = v4();
+    const accessKey = v4();
     invocationAccessKey = accessKey;
-    if (mode === "editDisplay") {
-      ScriptingEditDisplayIds.add(accessKey);
-    } else {
+    if (mode === "editDisplay") ScriptingEditDisplayIds.add(accessKey);
+    else {
       ScriptingSafeIds.add(accessKey);
-      if (lowLevelAccess) {
-        ScriptingLowLevelIds.add(accessKey);
-      }
+      if (lowLevelAccess) ScriptingLowLevelIds.add(accessKey);
     }
     let res: any;
     if (ScriptingEngineState.type === "lua") {
@@ -1410,37 +1353,32 @@ export async function runScripted(
         switch (mode) {
           case "input": {
             const func = luaEngine.global.get("onInput");
-            if (func) {
-              res = await func(accessKey);
-            }
+            if (func) res = await func(accessKey);
+
             break;
           }
           case "output": {
             const func = luaEngine.global.get("onOutput");
-            if (func) {
-              res = await func(accessKey);
-            }
+            if (func) res = await func(accessKey);
+
             break;
           }
           case "start": {
             const func = luaEngine.global.get("onStart");
-            if (func) {
-              res = await func(accessKey);
-            }
+            if (func) res = await func(accessKey);
+
             break;
           }
           case "onButtonClick": {
             const func = luaEngine.global.get("onButtonClick");
-            if (func) {
-              res = await func(accessKey, data);
-            }
+            if (func) res = await func(accessKey, data);
+
             break;
           }
           case "onFormSubmit": {
             const func = luaEngine.global.get("onFormSubmit");
-            if (func) {
-              res = await func(accessKey, data, JSON.stringify(meta));
-            }
+            if (func) res = await func(accessKey, data, JSON.stringify(meta));
+
             break;
           }
           case "editRequest":
@@ -1455,23 +1393,18 @@ export async function runScripted(
               const serializedMeta = JSON.stringify(meta);
 
               res = await func(mode, accessKey, value, serializedMeta);
-              if (!directString) {
-                res = JSON.parse(res);
-              }
+              if (!directString) res = JSON.parse(res);
             }
             break;
           }
           default: {
             const func = luaEngine.global.get(mode);
-            if (func) {
-              res = await func(accessKey);
-            }
+            if (func) res = await func(accessKey);
+
             break;
           }
         }
-        if (res === false) {
-          ScriptingEngineState.stopSending = true;
-        }
+        if (res === false) ScriptingEngineState.stopSending = true;
       } catch (error) {
         console.error(error);
       }
@@ -1520,6 +1453,7 @@ export async function runScripted(
         }
       }
     }
+
     ScriptingSafeIds.delete(accessKey);
     ScriptingEditDisplayIds.delete(accessKey);
     ScriptingLowLevelIds.delete(accessKey);
@@ -1571,6 +1505,7 @@ async function makeLuaFactory() {
         }
       } catch (error) {}
     }
+
     await _luaFactory.mountFile(name, code);
   }
 
@@ -1893,15 +1828,15 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
                   v = JSON.parse(v);
                 } catch (e) {}
               }
-              if (v && typeof v === "object") {
-                v.lowLevelAccess = false;
-              }
+
+              if (v && typeof v === "object") v.lowLevelAccess = false;
+
               return v;
             })
             .filter((v) => v && typeof v === "object")
             .concat(moduleTriggers);
 
-    for (let trigger of triggers) {
+    for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
         const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
           ? trigger.sandboxOwnerModuleIds
@@ -1963,9 +1898,9 @@ export async function runLuaInteractionTrigger(
                   v = JSON.parse(v);
                 } catch (e) {}
               }
-              if (!v || typeof v !== "object") {
-                return null;
-              }
+
+              if (!v || typeof v !== "object") return null;
+
               return {
                 ...v,
                 lowLevelAccess:
@@ -1977,7 +1912,7 @@ export async function runLuaInteractionTrigger(
             .filter((v): v is triggerscript => !!v)
             .concat(moduleTriggers);
 
-    for (let trigger of triggers) {
+    for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
         const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
           ? trigger.sandboxOwnerModuleIds
@@ -2048,15 +1983,12 @@ class PyodideContext {
     this.apis[name] = func;
   }
   async init(code: string) {
-    if (this.inited) {
-      return;
-    }
+    if (this.inited) return;
+
     const id = crypto.randomUUID();
     return new Promise<void>((resolve, reject) => {
       this.worker.onmessage = (event: MessageEvent) => {
-        if (event.data.id !== id) {
-          return;
-        }
+        if (event.data.id !== id) return;
 
         if (event.data.type === "init") {
           this.inited = true;
@@ -2077,13 +2009,10 @@ class PyodideContext {
     const id = crypto.randomUUID();
     return new Promise<any>((resolve, reject) => {
       this.worker.onmessage = (event: MessageEvent) => {
-        if (event.data.id !== id) {
-          return;
-        }
+        if (event.data.id !== id) return;
 
-        if (event.data.type === "python") {
-          resolve(event.data.call);
-        } else if (event.data.type === "error") {
+        if (event.data.type === "python") resolve(event.data.call);
+        else if (event.data.type === "error") {
           reject(new Error(event.data.error));
         }
       };

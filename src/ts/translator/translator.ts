@@ -99,7 +99,7 @@ export async function runTranslator(
   };
   const engine = settingsStore.state.translatorType;
   const texts = text.split("\n");
-  let chunks: [string, boolean][] = [];
+  const chunks: [string, boolean][] = [];
 
   for (let i = 0; i < texts.length; i++) {
     if (
@@ -112,15 +112,12 @@ export async function runTranslator(
       chunks.push([texts[i], false]);
     } else {
       const previousChunk = chunks[chunks.length - 1];
-      if (previousChunk?.[1]) {
-        previousChunk[0] += "\n" + texts[i];
-      } else {
-        chunks.push([texts[i], true]);
-      }
+      if (previousChunk?.[1]) previousChunk[0] += "\n" + texts[i];
+      else chunks.push([texts[i], true]);
     }
   }
 
-  let fullResult: string[] = [];
+  const fullResult: string[] = [];
 
   for (const chunk of chunks) {
     if (chunk[1]) {
@@ -137,9 +134,7 @@ export async function runTranslator(
       }
 
       fullResult.push(result.trim());
-    } else {
-      fullResult.push(chunk[0]);
-    }
+    } else fullResult.push(chunk[0]);
   }
 
   const result = fullResult.join("\n").trim();
@@ -158,7 +153,7 @@ async function translateMain(
   text: string,
   arg: { from: string; to: string; host: string; translatorNote?: string },
 ) {
-  let db = settingsStore.state;
+  const db = settingsStore.state;
   if (db.translatorType === "llm") {
     const tr = arg.to || "en";
     return translateLLM(text, {
@@ -175,7 +170,7 @@ async function translateMain(
         ? {}
         : { source_lang: arg.from.toLocaleUpperCase() }),
     };
-    let url = db.deeplOptions.freeApi
+    const url = db.deeplOptions.freeApi
       ? "https://api-free.deepl.com/v2/translate"
       : "https://api.deepl.com/v2/translate";
     const f = await globalFetch(url, {
@@ -186,9 +181,8 @@ async function translateMain(
       body: body,
     });
 
-    if (!f.ok) {
-      return "ERR::DeepL API Error" + (await f.data);
-    }
+    if (!f.ok) return "ERR::DeepL API Error" + (await f.data);
+
     return f.data.translations[0].text;
   }
   if (db.translatorType === "deeplX") {
@@ -196,22 +190,16 @@ async function translateMain(
       const now = Date.now();
       const scheduled = Math.max(now, waitTrans);
       waitTrans = scheduled + 3000;
-      if (scheduled > now) {
-        await sleep(scheduled - now);
-      }
+      if (scheduled > now) await sleep(scheduled - now);
     }
 
     let url = db.deeplXOptions.url ?? "http://localhost:1188";
 
-    if (url.endsWith("/")) {
-      url = url.slice(0, -1);
-    }
+    if (url.endsWith("/")) url = url.slice(0, -1);
 
-    if (!url.endsWith("/translate")) {
-      url += "/translate";
-    }
+    if (!url.endsWith("/translate")) url += "/translate";
 
-    let headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json" };
 
     const body = {
       text: text,
@@ -231,9 +219,7 @@ async function translateMain(
       plainFetchForce: true,
     });
 
-    if (!f.ok) {
-      return "ERR::DeepLX API Error" + (await f.data);
-    }
+    if (!f.ok) return "ERR::DeepLX API Error" + (await f.data);
 
     return f.data.data;
   }
@@ -266,9 +252,7 @@ async function translateMain(
         const result = dom
           .querySelector(".result-container")
           ?.textContent?.trim();
-        if (result) {
-          return result;
-        }
+        if (result) return result;
       } catch (error) {}
     }
   }
@@ -283,13 +267,9 @@ async function translateMain(
 
   const res = await f.json();
 
-  if (typeof res === "string") {
-    return res as unknown as string;
-  }
+  if (typeof res === "string") return res as unknown as string;
 
-  if (!res[0] || res[0].length === 0) {
-    return text;
-  }
+  if (!res[0] || res[0].length === 0) return text;
 
   const result = (
     res[0]
@@ -327,9 +307,8 @@ export async function translateHTML(
   regenerate = false,
   chatTarget?: ChatExecutionTarget,
 ): Promise<string> {
-  if (!html) {
-    return html;
-  }
+  if (!html) return html;
+
   const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
   let alwaysExistChar: character | groupChat | simpleCharacterArgument;
   if (charArg !== "") {
@@ -337,9 +316,7 @@ export async function translateHTML(
       const charId = get(selectedCharID);
       alwaysExistChar =
         resolvedTarget?.character ?? characterStore.characters[charId];
-    } else {
-      alwaysExistChar = charArg;
-    }
+    } else alwaysExistChar = charArg;
   } else {
     alwaysExistChar = {
       type: "simple",
@@ -349,8 +326,9 @@ export async function translateHTML(
       chaId: "simple",
     };
   }
-  let db = settingsStore.state;
-  let DoingChat = get(doingChat);
+
+  const db = settingsStore.state;
+  const DoingChat = get(doingChat);
   if (DoingChat) {
     if (isExpTranslator()) {
       if (!(
@@ -360,6 +338,7 @@ export async function translateHTML(
       }
     }
   }
+
   if (db.translatorType === "llm") {
     const tr = db.translator || "en";
     const from = db.translatorInputLanguage;
@@ -402,13 +381,9 @@ export async function translateHTML(
     force: boolean = false,
     additionalChunkLength = 0,
   ) {
-    if (translationChunks.length === 0 || !superChunked) {
-      return;
-    }
+    if (translationChunks.length === 0 || !superChunked) return;
 
-    if (!force && translationChunkLength + additionalChunkLength < 5000) {
-      return;
-    }
+    if (!force && translationChunkLength + additionalChunkLength < 5000) return;
 
     const currentChunk = translationChunks;
     translationChunks = [];
@@ -424,6 +399,7 @@ export async function translateHTML(
       for (const chunk of currentChunk) {
         chunk.node.textContent = await translate(chunk.text, reverse);
       }
+
       return;
     }
 
@@ -450,14 +426,14 @@ export async function translateHTML(
       }
 
       const translateChunks = (node.textContent || "").split(/\n\n+/g);
-      let translatedChunksPromises: Promise<string>[] = [];
+      const translatedChunksPromises: Promise<string>[] = [];
       for (const chunk of translateChunks) {
         const translatedPromise = translate(chunk, reverse);
         translatedChunksPromises.push(translatedPromise);
       }
 
       const translatedChunks = await Promise.all(translatedChunksPromises);
-      let translated = translatedChunks.join("\n\n");
+      const translated = translatedChunks.join("\n\n");
       if (!reprocessDisplayScript) {
         node.textContent = translated;
         return;
@@ -494,18 +470,14 @@ export async function translateHTML(
       // Translate the text content of the node
       if (node.textContent && parent) {
         const parentName = parent.nodeName.toLowerCase();
-        if (parentName === "script" || parentName === "style") {
-          return;
-        }
+        if (parentName === "script" || parentName === "style") return;
+
         if (promises.length > 10) {
           await Promise.all(promises);
           promises = [];
         }
-        if (superChunked) {
-          await translateNodeText(node);
-        } else {
-          promises.push(translateNodeText(node));
-        }
+        if (superChunked) await translateNodeText(node);
+        else promises.push(translateNodeText(node));
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       // Translate child nodes
@@ -516,6 +488,7 @@ export async function translateHTML(
       ) {
         return;
       }
+
       // combineTranslation feature
       if (
         db.combineTranslation &&
@@ -569,6 +542,7 @@ export async function translateHTML(
         ) {
           continue;
         }
+
         await translateNode(child, node);
       }
     }
@@ -616,14 +590,12 @@ async function translateLLM(
 ): Promise<string> {
   if (!arg.regenerate) {
     const cacheMatch = await LLMCacheStorage.getItem<string>(text);
-    if (cacheMatch !== null) {
-      return cacheMatch as string;
-    }
+    if (cacheMatch !== null) return cacheMatch as string;
   }
 
   //TODO 문법 정의하는 곳에 넣기
   const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms;
-  let styleDecodes: string[] = [];
+  const styleDecodes: string[] = [];
   text = text.replace(styleDecodeRegex, (match, p1) => {
     styleDecodes.push(p1);
     return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`;
@@ -634,19 +606,17 @@ async function translateLLM(
   const currentChar = characterStore.characters[charIndex];
   let translatorNote = "";
   console.log(arg.translatorNote);
-  if (arg.translatorNote) {
-    translatorNote = arg.translatorNote;
-  } else if (currentChar?.type === "character") {
+  if (arg.translatorNote) translatorNote = arg.translatorNote;
+  else if (currentChar?.type === "character") {
     translatorNote = currentChar.translatorNote ?? "";
-  } else {
-    translatorNote = "";
-  }
+  } else translatorNote = "";
+
   console.log(translatorNote);
 
   let formated: OpenAIChat[] = [];
   const preset = getCurrentTranslatorPreset();
   let prompt = preset.prompt || defaultTranslatorPrompt;
-  let parsedPrompt = parseChatML(
+  const parsedPrompt = parseChatML(
     prompt
       .replaceAll("{{slot::from}}", arg.from)
       .replaceAll("{{slot}}", arg.to)
@@ -654,9 +624,8 @@ async function translateLLM(
       .replaceAll("{{slot::content}}", text)
       .replaceAll("{{slot::tnote}}", translatorNote),
   );
-  if (parsedPrompt) {
-    formated = parsedPrompt;
-  } else {
+  if (parsedPrompt) formated = parsedPrompt;
+  else {
     prompt = prompt
       .replaceAll("{{slot}}", arg.to)
       .replaceAll("{{slot::tnote}}", translatorNote)
@@ -709,9 +678,7 @@ export async function searchLLMCache(
 ): Promise<{ key: string; value: string }[]> {
   const results: { key: string; value: string }[] = [];
   await LLMCacheStorage.iterate<string, void>((value, key) => {
-    if (key.includes(partialKey)) {
-      results.push({ key, value });
-    }
+    if (key.includes(partialKey)) results.push({ key, value });
   });
   return results;
 }
@@ -741,6 +708,7 @@ export async function importLLMCacheFromJSON(
       failed++;
     }
   }
+
   return { count, failed };
 }
 
@@ -781,17 +749,12 @@ export function applyEdittransRegex(
   let orderChanged = false;
 
   for (const script of scripts) {
-    if (script.type !== "edittrans") {
-      continue;
-    }
-    if (!script.in) {
-      continue;
-    }
+    if (script.type !== "edittrans") continue;
+
+    if (!script.in) continue;
 
     let flag = "g";
-    if (script.ableFlag) {
-      flag = script.flag || "g";
-    }
+    if (script.ableFlag) flag = script.flag || "g";
 
     let order = 0;
     const actions: string[] = [];
@@ -803,17 +766,15 @@ export function applyEdittransRegex(
         if (m.startsWith("order ")) {
           order = parseInt(m.substring(6));
           orderChanged = true;
-        } else {
-          actions.push(m);
-        }
+        } else actions.push(m);
       }
 
       return "";
     });
 
     if (actions.includes("move_top") || actions.includes("move_bottom")) {
-      flag = flag.replace("g", ""); //temperary fix
-    }
+      flag = flag.replace("g", "");
+    } //temperary fix
 
     //remove unsupported flag
     flag = flag.trim().replace(/[^dgimsuvy]/g, "");
@@ -824,16 +785,12 @@ export function applyEdittransRegex(
       .filter((v, i, a) => a.indexOf(v) === i)
       .join("");
 
-    if (flag.length === 0) {
-      flag = "u";
-    }
+    if (flag.length === 0) flag = "u";
 
     parsedScripts.push({ script, flag, order, actions });
   }
 
-  if (orderChanged) {
-    parsedScripts.sort((a, b) => b.order - a.order); //sort by order
-  }
+  if (orderChanged) parsedScripts.sort((a, b) => b.order - a.order); //sort by order
 
   for (const pscript of parsedScripts) {
     try {
@@ -860,9 +817,8 @@ export function applyEdittransRegex(
             const out = outScript
               .replace(/(?<!\$)\$[0-9]+/g, (v) => {
                 const index = parseInt(v.substring(1));
-                if (index < matched.length) {
-                  return matched[index];
-                }
+                if (index < matched.length) return matched[index];
+
                 return v;
               })
               .replace(/\$\&/g, inData)
@@ -872,21 +828,18 @@ export function applyEdittransRegex(
                 if (matched.groups && matched.groups[groupName]) {
                   return matched.groups[groupName];
                 }
+
                 return v;
               });
-            if (pscript.actions.includes("move_top")) {
-              text = out + "\n" + text;
-            } else {
-              text = text + "\n" + out;
-            }
+            if (pscript.actions.includes("move_top")) text = out + "\n" + text;
+            else text = text + "\n" + out;
           }
         }
-      } else {
-        text = text.replace(reg, outScript);
-      }
+      } else text = text.replace(reg, outScript);
     } catch (error) {
       console.error(error);
     }
   }
+
   return text;
 }

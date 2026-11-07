@@ -8,13 +8,15 @@ export function isSafeModeEnabled(): Promise<boolean> {
 }
 
 async function resolveSafeMode(): Promise<boolean> {
-  if (new URLSearchParams(globalThis.location?.search).get("safe") === "1")
+  if (new URLSearchParams(globalThis.location?.search).get("safe") === "1") {
     return true;
+  }
   if (
     (globalThis as typeof globalThis & { __HAEJEOK_SAFE_MODE__?: boolean })
       .__HAEJEOK_SAFE_MODE__ === true
-  )
+  ) {
     return true;
+  }
   if (isTauri) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<boolean>("get_safe_mode");

@@ -31,11 +31,11 @@ export async function requestOobaLegacy(
   const currentChar = resolveRequestCharacter(arg);
   const useStreaming = arg.useStreaming;
   const abortSignal = arg.abortSignal;
-  let streamUrl = presetStore.state.textgenWebUIStreamURL.replace(
+  const streamUrl = presetStore.state.textgenWebUIStreamURL.replace(
     /\/api.*/,
     "/api/v1/stream",
   );
-  let blockingUrl = presetStore.state.textgenWebUIBlockingURL.replace(
+  const blockingUrl = presetStore.state.textgenWebUIBlockingURL.replace(
     /\/api.*/,
     "/api/v1/generate",
   );
@@ -79,7 +79,7 @@ export async function requestOobaLegacy(
     prompt: prompt,
   };
 
-  let headers: Record<string, string> =
+  const headers: Record<string, string> =
     aiModel === "textgen_webui"
       ? {}
       : {
@@ -163,7 +163,7 @@ export async function requestOobaLegacy(
   const dat = res.data as any;
   if (res.ok) {
     try {
-      let result: string = dat.results[0].text ?? "";
+      const result: string = dat.results[0].text ?? "";
 
       return {
         type: "success",
@@ -210,6 +210,7 @@ export async function requestOoba(
       );
     });
   }
+
   let bodyTemplate: Record<string, any> = {
     prompt: prompt,
     presence_penalty:
@@ -236,12 +237,10 @@ export async function requestOoba(
       OobaParams.includes(key)
     ) {
       bodyTemplate[key] = OobaBodyTemplate[key];
-    } else if (bodyTemplate[key]) {
-      delete bodyTemplate[key];
-    }
+    } else if (bodyTemplate[key]) delete bodyTemplate[key];
   }
 
-  let headers: Record<string, string> = {};
+  const headers: Record<string, string> = {};
   bodyTemplate = applyAdditionalParameters(
     bodyTemplate,
     headers,
@@ -272,6 +271,7 @@ export async function requestOoba(
       result: language.errors.httpError + `${JSON.stringify(response.data)}`,
     };
   }
+
   const text: string = response.data.choices[0].text ?? "";
   return {
     type: "success",
@@ -293,9 +293,7 @@ export async function requestKobold(
     chatTarget: arg.triggerTarget,
   });
   const url = new URL(presetStore.state.koboldURL);
-  if (url.pathname.length < 3) {
-    url.pathname = "api/v1/generate";
-  }
+  if (url.pathname.length < 3) url.pathname = "api/v1/generate";
 
   let body = applyParameters(
     {
@@ -314,7 +312,7 @@ export async function requestKobold(
     },
   ) as KoboldGenerationInputSchema;
 
-  let headers: Record<string, string> = {
+  const headers: Record<string, string> = {
     "content-type": "application/json",
   };
 

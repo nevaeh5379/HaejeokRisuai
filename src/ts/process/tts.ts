@@ -63,12 +63,15 @@ async function runPostprocessorPipeline(
     }
 
     if (!result) continue;
-    if (result.skip)
+    if (result.skip) {
       return { audio: currentAudio, mimeType: currentMime, skip: true };
-    if (result.audio && result.audio.byteLength > 0)
+    }
+    if (result.audio && result.audio.byteLength > 0) {
       currentAudio = result.audio;
-    if (typeof result.mimeType === "string" && result.mimeType)
+    }
+    if (typeof result.mimeType === "string" && result.mimeType) {
       currentMime = result.mimeType;
+    }
   }
 
   return { audio: currentAudio, mimeType: currentMime, skip: false };
@@ -94,26 +97,21 @@ export async function sayTTS(character: character, text: string) {
   try {
     if (!character) {
       const v = characterStore.currentCharacter;
-      if (v.type === "group") {
-        return;
-      }
+      if (v.type === "group") return;
+
       character = v;
     }
 
-    if (!text) {
-      return;
-    }
+    if (!text) return;
 
-    let db = settingsStore.state;
+    const db = settingsStore.state;
     text = text.replace(/\*/g, "");
 
     if (character.ttsReadOnlyQuoted) {
       const matches = text.match(/["「](.*?)["」]/g);
       if (matches && matches.length > 0) {
         text = matches.map((match) => match.slice(1, -1)).join("");
-      } else {
-        text = "";
-      }
+      } else text = "";
     }
 
     const beforeResult = await runHookPipeline<
@@ -124,9 +122,8 @@ export async function sayTTS(character: character, text: string) {
       ttsMode: character.ttsMode ?? "",
       characterId: character.chaId,
     });
-    if (beforeResult.skip) {
-      return;
-    }
+    if (beforeResult.skip) return;
+
     text = beforeResult.ctx.text;
 
     switch (character.ttsMode) {
@@ -136,10 +133,9 @@ export async function sayTTS(character: character, text: string) {
           const voices = speechSynthesis.getVoices();
           let voiceIndex = 0;
           for (let i = 0; i < voices.length; i++) {
-            if (voices[i].name === character.ttsSpeech) {
-              voiceIndex = i;
-            }
+            if (voices[i].name === character.ttsSpeech) voiceIndex = i;
           }
+
           utterThis.voice = voices[voiceIndex];
           const speak = speechSynthesis.speak(utterThis);
         }
@@ -167,9 +163,8 @@ export async function sayTTS(character: character, text: string) {
             ttsMode: character.ttsMode ?? "",
             characterId: character.chaId,
           });
-        } else {
-          alertError(await da.text());
-        }
+        } else alertError(await da.text());
+
         break;
       }
       case "VOICEVOX": {
@@ -253,21 +248,19 @@ export async function sayTTS(character: character, text: string) {
           } catch (error) {
             alertError(language.errors.httpError + `${error}`);
           }
+        } else if (dat.error && dat.error.message) {
+          alertError(language.errors.httpError + `${dat.error.message}`);
         } else {
-          if (dat.error && dat.error.message) {
-            alertError(language.errors.httpError + `${dat.error.message}`);
-          } else {
-            alertError(
-              language.errors.httpError + `${Buffer.from(res.data).toString()}`,
-            );
-          }
+          alertError(
+            language.errors.httpError + `${Buffer.from(res.data).toString()}`,
+          );
         }
+
         break;
       }
       case "novelai": {
-        if (text === "") {
-          break;
-        }
+        if (text === "") break;
+
         const encodedText = encodeURIComponent(text);
         const encodedSeed = encodeURIComponent(character.naittsConfig.voice);
 
@@ -286,15 +279,15 @@ export async function sayTTS(character: character, text: string) {
             ttsMode: character.ttsMode ?? "",
             characterId: character.chaId,
           });
-        } else {
-          alertError("Error fetching or decoding audio data");
-        }
+        } else alertError("Error fetching or decoding audio data");
+
         break;
       }
       case "huggingface": {
         if (character.hfTTS.language !== "en") {
           text = await runTranslator(text, "en", character.hfTTS.language);
         }
+
         while (true) {
           const response = await fetch(
             `https://api-inference.huggingface.co/models/${character.hfTTS.model}`,
@@ -330,9 +323,8 @@ export async function sayTTS(character: character, text: string) {
               ttsMode: character.ttsMode ?? "",
               characterId: character.chaId,
             });
-          } else {
-            alertError("Error fetching or decoding audio data");
-          }
+          } else alertError("Error fetching or decoding audio data");
+
           return;
         }
       }
@@ -394,15 +386,14 @@ export async function sayTTS(character: character, text: string) {
               path.data.message +
               "/public/audio/" +
               character.gptSoVitsConfig.ref_audio_data.fileName;
-          } else {
-            throw new Error("Failed to Auto get path");
-          }
+          } else throw new Error("Failed to Auto get path");
         } else {
           body.ref_audio_path =
             character.gptSoVitsConfig.ref_audio_path +
             "/public/audio/" +
             character.gptSoVitsConfig.ref_audio_data.fileName;
         }
+
         console.log(body);
 
         const response = await globalFetch(
@@ -448,9 +439,7 @@ export async function sayTTS(character: character, text: string) {
               gainNode.connect(audioContext.destination);
               sourceNode.start();
             }
-          } else {
-            await playAudio(response.data.buffer, mimeType, hookCtx);
-          }
+          } else await playAudio(response.data.buffer, mimeType, hookCtx);
         } else {
           const textBuffer: Uint8Array = response.data.buffer;
           const text = Buffer.from(textBuffer).toString("utf-8");
@@ -506,12 +495,9 @@ export async function sayTTS(character: character, text: string) {
 export const oaiVoices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
 
 export function stopTTS() {
-  if (sourceNode) {
-    sourceNode.stop();
-  }
-  if (speechSynthesis && SpeechSynthesisUtterance) {
-    speechSynthesis.cancel();
-  }
+  if (sourceNode) sourceNode.stop();
+
+  if (speechSynthesis && SpeechSynthesisUtterance) speechSynthesis.cancel();
 }
 
 export function getWebSpeechTTSVoices() {
@@ -521,7 +507,7 @@ export function getWebSpeechTTSVoices() {
 }
 
 export async function getElevenTTSVoices() {
-  let db = settingsStore.state;
+  const db = settingsStore.state;
 
   const data = await fetch("https://api.elevenlabs.io/v1/voices", {
     headers: {
@@ -566,11 +552,12 @@ export function getNovelAIVoices() {
 }
 
 export function FixNAITTS(data: character) {
-  if (data.naittsConfig === undefined) {
-    // Mirror the defaults used by CharConfig.svelte's $effect.pre
-    // initializer so that the NovelAI request URL — which templates
-    // in `version` and branches on `customvoice` — gets valid values
-    // instead of the literal string "undefined".
+  if (data.naittsConfig === undefined)
+  // Mirror the defaults used by CharConfig.svelte's $effect.pre
+  // initializer so that the NovelAI request URL — which templates
+  // in `version` and branches on `customvoice` — gets valid values
+  // instead of the literal string "undefined".
+  {
     data.naittsConfig = {
       customvoice: false,
       voice: "Anananan",

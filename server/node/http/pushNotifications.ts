@@ -104,6 +104,7 @@ function createPushNotificationManager({
       if (error?.code !== "ENOENT") {
         logger.warn?.("[push] failed to load subscriptions", error);
       }
+
       return;
     }
     if (!Array.isArray(snapshot)) {
@@ -136,6 +137,7 @@ function createPushNotificationManager({
     ) {
       return { error: "Invalid subscription payload" };
     }
+
     const existing: any = subscriptions.get(endpoint);
     if (existing) {
       existing.keys = keys;
@@ -156,6 +158,7 @@ function createPushNotificationManager({
     if (typeof endpoint !== "string") {
       return { error: "Invalid subscription payload" };
     }
+
     subscriptions.delete(endpoint);
     return { success: true };
   }
@@ -227,13 +230,15 @@ function createPushNotificationManager({
       const delivered: any = await sendNotification(subscription, payload);
       if (delivered) sent += 1;
 
-      if (subscription.failures > 0 && subscriptions.has(subscription.endpoint)) {
+      if (
+        subscription.failures > 0 &&
+        subscriptions.has(subscription.endpoint)
+      ) {
         hasFailures = true;
       }
     }
-    if (hasFailures) {
-      void persist().catch(() => {});
-    }
+    if (hasFailures) void persist().catch(() => {});
+
     return { sent };
   }
 

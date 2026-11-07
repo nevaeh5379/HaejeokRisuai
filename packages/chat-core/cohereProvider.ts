@@ -40,9 +40,8 @@ function prepareCohereConversation(messages?: any, modelId?: any): any {
   } else {
     while (lastChat?.role !== "user") {
       lastChat = formated.pop();
-      if (!lastChat) {
-        return { ok: false, error: COHERE_USER_MESSAGE_ERROR };
-      }
+      if (!lastChat) return { ok: false, error: COHERE_USER_MESSAGE_ERROR };
+
       lastChatPrompt =
         (lastChat.role === "user" ? "" : `${lastChat.role}: `) +
         "\n" +
@@ -64,12 +63,15 @@ function prepareCohereConversation(messages?: any, modelId?: any): any {
         if (message.role === "assistant") {
           return { role: "CHATBOT", message: message.content };
         }
+
         if (message.role === "system") {
           return { role: "SYSTEM", message: message.content };
         }
+
         if (message.role === "user") {
           return { role: "USER", message: message.content };
         }
+
         return null;
       })
       .filter((message?: any) => message?.message),
@@ -83,11 +85,8 @@ function prepareCohereConversation(messages?: any, modelId?: any): any {
   }
 
   if (preamble) {
-    if (body.chat_history.length > 0) {
-      body.preamble = preamble;
-    } else {
-      body.message = `system: ${preamble}`;
-    }
+    if (body.chat_history.length > 0) body.preamble = preamble;
+    else body.message = `system: ${preamble}`;
   }
 
   return { ok: true, body };
@@ -95,14 +94,10 @@ function prepareCohereConversation(messages?: any, modelId?: any): any {
 
 function decodeCohereResponse(ok: boolean, data: unknown): ChatModelResponse;
 function decodeCohereResponse(ok?: any, data?: any): any {
-  if (!ok) {
-    return { type: "fail", result: JSON.stringify(data) };
-  }
+  if (!ok) return { type: "fail", result: JSON.stringify(data) };
 
   const result: any = data?.text;
-  if (!result) {
-    return { type: "fail", result: JSON.stringify(data) };
-  }
+  if (!result) return { type: "fail", result: JSON.stringify(data) };
 
   return { type: "success", result };
 }

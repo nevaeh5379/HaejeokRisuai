@@ -50,6 +50,7 @@ async function expandRememberedToolCalls(
       content: currentContent,
     });
   }
+
   return processedMessages;
 }
 

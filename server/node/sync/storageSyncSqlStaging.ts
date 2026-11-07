@@ -51,11 +51,13 @@ function normalizePlan(input?: any): any {
   ) {
     throw new StorageSyncSqlError("Storage sync SQL stream plan is invalid");
   }
+
   if ((size === 0) !== (recordCount === 0)) {
     throw new StorageSyncSqlError(
       "Empty SQL streams must have zero records and non-empty streams must have records",
     );
   }
+
   return { formatVersion, size, recordCount, sha256 };
 }
 
@@ -65,6 +67,7 @@ function serializePlan(session?: any): any {
       "Storage sync SQL stream has not been planned",
     );
   }
+
   return { ...session.sql, status: session.status };
 }
 
@@ -79,6 +82,7 @@ class StorageSyncSqlStagingStore {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
       throw new StorageSyncSqlError("Invalid storage sync session id");
     }
+
     return path.join(this.rootPath, sessionId);
   }
 
@@ -107,6 +111,7 @@ class StorageSyncSqlStagingStore {
         "Only target sync sessions accept SQL streams",
       );
     }
+
     if (session.sql) return serializePlan(session);
     if (session.assets && session.status !== "assets-ready") {
       throw new StorageSyncSqlError(
@@ -114,6 +119,7 @@ class StorageSyncSqlStagingStore {
         "assets_not_ready",
       );
     }
+
     const plan: any = normalizePlan(input);
     const filePath: any = this.filePath(session.id);
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
@@ -134,9 +140,8 @@ class StorageSyncSqlStagingStore {
       }
       await fs.promises.writeFile(filePath, Buffer.alloc(0));
       session.status = "sql-ready";
-    } else {
-      session.status = "receiving-sql";
-    }
+    } else session.status = "receiving-sql";
+
     try {
       this.persistPlan(session);
     } catch (error: any) {
@@ -156,6 +161,7 @@ class StorageSyncSqlStagingStore {
     if (session.role !== "target" || !session.sql) {
       throw new StorageSyncSqlError("Storage sync SQL stream is not planned");
     }
+
     if (
       !(data instanceof Uint8Array) ||
       data.byteLength > STORAGE_SYNC_CHUNK_SIZE_BYTES
@@ -165,6 +171,7 @@ class StorageSyncSqlStagingStore {
         "chunk_too_large",
       );
     }
+
     if (
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
@@ -175,12 +182,14 @@ class StorageSyncSqlStagingStore {
         "offset_mismatch",
       );
     }
+
     if (offset + data.byteLength > session.sql.size) {
       throw new StorageSyncSqlError(
         "Storage sync SQL chunk exceeds declared size",
         "sql_size_mismatch",
       );
     }
+
     if (session.sql.state === "ready") return serializePlan(session);
     if (session.sqlUploadInProgress) {
       throw new StorageSyncSqlError(
@@ -212,6 +221,7 @@ class StorageSyncSqlStagingStore {
               "sql_write_failed",
             );
           }
+
           written += result.bytesWritten;
         }
       } finally {
@@ -232,9 +242,8 @@ class StorageSyncSqlStagingStore {
         }
         session.sql.state = "ready";
         session.status = "sql-ready";
-      } else {
-        session.status = "receiving-sql";
-      }
+      } else session.status = "receiving-sql";
+
       return serializePlan(session);
     } finally {
       session.sqlUploadInProgress = false;
@@ -253,6 +262,7 @@ class StorageSyncSqlStagingStore {
         "sql_not_ready",
       );
     }
+
     try {
       return await readStorageSyncSqlRecords(this.filePath(session.id), {
         expectedRecordCount: session.sql.recordCount,

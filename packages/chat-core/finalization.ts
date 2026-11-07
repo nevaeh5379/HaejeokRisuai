@@ -58,9 +58,8 @@ const COMPLETION_PUNCTUATION: ReadonlySet<string> = new Set([
 function endsWithCompletionPunctuation(text: string): boolean {
   if (!text) return true;
   let idx = text.length - 1;
-  while (idx >= 0 && /\s/.test(text[idx])) {
-    idx--;
-  }
+  while (idx >= 0 && /\s/.test(text[idx])) idx--;
+
   if (idx < 0) return true;
   const lastChar = text[idx];
   const code = text.charCodeAt(idx);

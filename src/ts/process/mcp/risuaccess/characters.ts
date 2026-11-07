@@ -430,6 +430,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -439,7 +440,7 @@ export class CharacterHandler extends MCPToolHandler {
       ];
     }
 
-    let response: Record<string, any> = {};
+    const response: Record<string, any> = {};
 
     const fieldRemap = {
       name: "name",
@@ -487,6 +488,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -530,6 +532,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -579,6 +582,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -652,6 +656,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -702,20 +707,15 @@ export class CharacterHandler extends MCPToolHandler {
 
     const entry = char.globalLore[entryIndex];
 
-    if (content !== undefined) {
-      entry.content = content;
-    }
-    if (keys !== undefined) {
-      entry.key = alwaysActive ? "" : keys.join(",");
-    }
-    if (newName !== undefined) {
-      entry.comment = newName;
-    }
+    if (content !== undefined) entry.content = content;
+
+    if (keys !== undefined) entry.key = alwaysActive ? "" : keys.join(",");
+
+    if (newName !== undefined) entry.comment = newName;
+
     if (alwaysActive !== undefined) {
       entry.alwaysActive = alwaysActive;
-      if (alwaysActive) {
-        entry.key = "";
-      }
+      if (alwaysActive) entry.key = "";
     }
 
     return [
@@ -739,6 +739,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -796,6 +797,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -845,6 +847,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -868,9 +871,7 @@ export class CharacterHandler extends MCPToolHandler {
       ];
     }
 
-    if (!char.customscript) {
-      char.customscript = [];
-    }
+    if (!char.customscript) char.customscript = [];
 
     const scriptIndex = char.customscript.findIndex((script) => {
       const displayName =
@@ -927,6 +928,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -950,9 +952,7 @@ export class CharacterHandler extends MCPToolHandler {
       ];
     }
 
-    if (!char.customscript) {
-      char.customscript = [];
-    }
+    if (!char.customscript) char.customscript = [];
 
     const scriptIndex = char.customscript.findIndex((script) => {
       const displayName =
@@ -991,6 +991,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -1027,6 +1028,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -1050,9 +1052,7 @@ export class CharacterHandler extends MCPToolHandler {
       ];
     }
 
-    if (!char.additionalAssets) {
-      char.additionalAssets = [];
-    }
+    if (!char.additionalAssets) char.additionalAssets = [];
 
     const assetIndex = char.additionalAssets.findIndex((asset) => {
       const displayName =
@@ -1088,6 +1088,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {
@@ -1131,6 +1132,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {

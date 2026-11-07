@@ -166,6 +166,7 @@ export async function getFFmpeg(): Promise<FFmpegClient> {
       throw error;
     });
   }
+
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timed = Promise.race([
     clientPromise,
@@ -190,8 +191,9 @@ async function spawnAndLoad(): Promise<FFmpegClient> {
     const url = `${CORE_BASE_URL}/${file}`;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0)
+      if (attempt > 0) {
         await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+      }
       try {
         return await toBlobURL(url, mime);
       } catch (e) {

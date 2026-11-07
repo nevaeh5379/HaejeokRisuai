@@ -63,13 +63,15 @@ describe("PresetStore independent active ownership", () => {
       getRevision: () => 0,
 
       commit: vi.fn(async (commit: SqlCommit) => {
-        for (const entry of commit.root.upserts)
+        for (const entry of commit.root.upserts) {
           root.set(entry.key, structuredClone(entry.value));
-        for (const entry of commit.presets?.upserts ?? [])
+        }
+        for (const entry of commit.presets?.upserts ?? []) {
           documents.set(entry.id, {
             ...structuredClone(entry.data),
             id: entry.id,
           });
+        }
         for (const id of commit.presets?.deletes ?? []) documents.delete(id);
         activeId = commit.presets?.activeId ?? activeId;
         return { revision: 1 };
@@ -101,8 +103,9 @@ describe("PresetStore independent active ownership", () => {
     expect((await presetStore.load("one")).autoSuggestPrefix).toBe("prefix");
     expect(presetStore.hasPendingWrites()).toBe(true);
     await presetStore.flush();
-    for (const key of PRESET_SETTING_KEYS)
+    for (const key of PRESET_SETTING_KEYS) {
       expect(documents.get("one")[key], key).toEqual(state[key]);
+    }
     await presetStore.activate("two");
     await presetStore.activate("one");
     expect($stateSnapshot()).toEqual(state);
@@ -141,10 +144,11 @@ describe("PresetStore independent active ownership", () => {
         if (value.action === `preset:${failure}`) throw new Error("disk full");
         return commit(value);
       });
-      if (failure === "load")
+      if (failure === "load") {
         storage.preset.load = vi.fn(async () => {
           throw new Error("load failed");
         });
+      }
       await expect(presetStore.activate("two")).rejects.toThrow();
       expect(presetStore.activeId).toBe("one");
       expect(presetStore.state.mainPrompt).toBe("edited");

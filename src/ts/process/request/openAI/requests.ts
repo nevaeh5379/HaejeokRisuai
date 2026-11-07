@@ -46,9 +46,7 @@ export async function requestOpenAI(
   }
 
   const prepared = await prepareModernOpenAIRequest(arg, formatedChat);
-  if (prepared.ok === false) {
-    return { type: "fail", result: prepared.error };
-  }
+  if (prepared.ok === false) return { type: "fail", result: prepared.error };
 
   const {
     body,

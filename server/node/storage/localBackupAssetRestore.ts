@@ -24,6 +24,7 @@ export async function openDirectRestoreAsset(
   if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
     throw new Error("Asset restore entry size is invalid");
   }
+
   const writer = storage.createWriteStream(keyToHex(key), {
     generateThumbnail: false,
   });
@@ -37,6 +38,7 @@ export async function openDirectRestoreAsset(
       if (written > expectedSize) {
         throw new Error(`Asset restore entry exceeded ${expectedSize} bytes`);
       }
+
       if (!writer.stream.write(chunk)) await once(writer.stream, "drain");
     },
     async close(): Promise<void> {

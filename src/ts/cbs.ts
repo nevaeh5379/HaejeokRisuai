@@ -217,6 +217,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     if (matcherArg.chara && typeof matcherArg.chara !== "string") {
       return matcherArg.chara;
     }
+
     return resolveRoom(matcherArg).room;
   };
 
@@ -224,9 +225,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "char",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.consistantChar) {
-        return "botname";
-      }
+      if (matcherArg.consistantChar) return "botname";
+
       if (matcherArg.chara) {
         if (typeof matcherArg.chara === "string") return matcherArg.chara;
         return matcherArg.chara.nickname || matcherArg.chara.name;
@@ -242,9 +242,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "user",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.consistantChar) {
-        return "username";
-      }
+      if (matcherArg.consistantChar) return "username";
+
       return getUserName(matcherArg.chatTarget);
     },
     alias: [],
@@ -276,6 +275,7 @@ export function registerCBS(arg: CBSRegisterArg) {
         if (chat.message[pointer].role === "char") {
           return chat.message[pointer].data;
         }
+
         pointer--;
       }
       return chat.fmIndex === -1
@@ -299,6 +299,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           if (chat.message[pointer].role === "user") {
             return chat.message[pointer].data;
           }
+
           pointer--;
         }
         return chat.fmIndex === -1
@@ -317,9 +318,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "personality",
     callback: (str, matcherArg, args, vars) => {
       const achara = resolveSpeaker(matcherArg);
-      if (!achara || achara.type === "group") {
-        return "";
-      }
+      if (!achara || achara.type === "group") return "";
+
       return risuChatParser(achara.personality, matcherArg);
     },
     alias: ["charpersona"],
@@ -331,9 +331,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "description",
     callback: (str, matcherArg, args, vars) => {
       const achara = resolveSpeaker(matcherArg);
-      if (!achara || achara.type === "group") {
-        return "";
-      }
+      if (!achara || achara.type === "group") return "";
+
       return risuChatParser(achara.desc, matcherArg);
     },
     alias: ["chardesc"],
@@ -345,9 +344,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "scenario",
     callback: (str, matcherArg, args, vars) => {
       const achara = resolveSpeaker(matcherArg);
-      if (!achara || achara.type === "group") {
-        return "";
-      }
+      if (!achara || achara.type === "group") return "";
+
       return risuChatParser(achara.scenario, matcherArg);
     },
     alias: [],
@@ -359,9 +357,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "exampledialogue",
     callback: (str, matcherArg, args, vars) => {
       const achara = resolveSpeaker(matcherArg);
-      if (!achara || achara.type === "group") {
-        return "";
-      }
+      if (!achara || achara.type === "group") return "";
+
       return risuChatParser(achara.exampleMessage, matcherArg);
     },
     alias: ["examplemessage", "example_dialogue"],
@@ -488,9 +485,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       const raw =
         matcherArg.authorNoteContent ??
         (chat?.globalAuthorNoteId === undefined ? chat?.note : "");
-      if (raw) {
-        return risuChatParser(raw, matcherArg);
-      }
+      if (raw) return risuChatParser(raw, matcherArg);
+
       const template = db.promptTemplate;
       if (template) {
         for (const v of template) {
@@ -499,6 +495,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           }
         }
       }
+
       return "";
     },
     alias: ["author_note"],
@@ -540,18 +537,16 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "messagetime",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.tokenizeAccurate) {
-        return `00:00:00`;
-      }
-      if (matcherArg.chatID === -1) {
-        return "[Cannot get time]";
-      }
+      if (matcherArg.tokenizeAccurate) return `00:00:00`;
+
+      if (matcherArg.chatID === -1) return "[Cannot get time]";
 
       const { room: selchar, chat } = resolveRoom(matcherArg);
       const message = chat.message[matcherArg.chatID];
       if (!message.time) {
         return "[Cannot get time, message was sent in older version]";
       }
+
       const date = new Date(message.time);
       return date.toLocaleTimeString();
     },
@@ -563,17 +558,16 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "messagedate",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.tokenizeAccurate) {
-        return `00:00:00`;
-      }
-      if (matcherArg.chatID === -1) {
-        return "[Cannot get time]";
-      }
+      if (matcherArg.tokenizeAccurate) return `00:00:00`;
+
+      if (matcherArg.chatID === -1) return "[Cannot get time]";
+
       const { room: selchar, chat } = resolveRoom(matcherArg);
       const message = chat.message[matcherArg.chatID];
       if (!message.time) {
         return "[Cannot get time, message was sent in older version]";
       }
+
       const date = new Date(message.time);
       return date.toLocaleDateString();
     },
@@ -645,12 +639,10 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "messageidleduration",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.tokenizeAccurate) {
-        return `00:00:00`;
-      }
-      if (matcherArg.chatID === -1) {
-        return "[Cannot get time]";
-      }
+      if (matcherArg.tokenizeAccurate) return `00:00:00`;
+
+      if (matcherArg.chatID === -1) return "[Cannot get time]";
+
       const { room: selchar, chat } = resolveRoom(matcherArg);
 
       let pointer = matcherArg.chatID;
@@ -667,27 +659,26 @@ export function registerCBS(arg: CBSRegisterArg) {
             break;
           }
         }
+
         pointer--;
       }
 
-      if (!message) {
-        return "[No user message found]";
-      }
+      if (!message) return "[No user message found]";
 
-      if (!previous_message) {
-        return "[No previous user message found]";
-      }
+      if (!previous_message) return "[No previous user message found]";
+
       if (!message.time) {
         return "[Cannot get time, message was sent in older version]";
       }
+
       if (!previous_message.time) {
         return "[Cannot get time, previous message was sent in older version]";
       }
 
-      let duration = message.time - previous_message.time;
+      const duration = message.time - previous_message.time;
       let seconds = Math.floor(duration / 1000);
       let minutes = Math.floor(seconds / 60);
-      let hours = Math.floor(minutes / 60);
+      const hours = Math.floor(minutes / 60);
       seconds = seconds % 60;
       minutes = minutes % 60;
       return (
@@ -706,14 +697,11 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "idleduration",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.tokenizeAccurate) {
-        return `00:00:00`;
-      }
+      if (matcherArg.tokenizeAccurate) return `00:00:00`;
+
       const { room: selchar, chat } = resolveRoom(matcherArg);
       const messages = chat.message;
-      if (messages.length === 0) {
-        return `00:00:00`;
-      }
+      if (messages.length === 0) return `00:00:00`;
 
       const lastMessage = messages[messages.length - 1];
 
@@ -723,11 +711,11 @@ export function registerCBS(arg: CBSRegisterArg) {
 
       const now = new Date();
 
-      let duration = now.getTime() - lastMessage.time;
+      const duration = now.getTime() - lastMessage.time;
 
       let seconds = Math.floor(duration / 1000);
       let minutes = Math.floor(seconds / 60);
-      let hours = Math.floor(minutes / 60);
+      const hours = Math.floor(minutes / 60);
 
       seconds = seconds % 60;
       minutes = minutes % 60;
@@ -783,9 +771,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.cbsConditions.chatRole) {
         return matcherArg.cbsConditions.chatRole;
       }
-      if (matcherArg.cbsConditions.firstmsg) {
-        return "char";
-      }
+
+      if (matcherArg.cbsConditions.firstmsg) return "char";
+
       if (matcherArg.chatID !== -1) {
         const { chat } = resolveRoom(matcherArg);
         return (
@@ -802,9 +790,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "isfirstmsg",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.cbsConditions.firstmsg) {
-        return "1";
-      }
+      if (matcherArg.cbsConditions.firstmsg) return "1";
+
       return "0";
     },
     alias: ["isfirstmsg", "isfirstmessage"],
@@ -924,9 +911,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "addvar",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.rmVar) {
-        return "";
-      }
+      if (matcherArg.rmVar) return "";
+
       if (matcherArg.runVar) {
         setChatVar(
           args[0],
@@ -947,9 +933,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "setvar",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.rmVar) {
-        return "";
-      }
+      if (matcherArg.rmVar) return "";
+
       if (matcherArg.runVar) {
         setChatVar(args[0], args[1], matcherArg.chatTarget);
         return "";
@@ -964,14 +949,14 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "setdefaultvar",
     callback: (str, matcherArg, args, vars) => {
-      if (matcherArg.rmVar) {
-        return "";
-      }
+      if (matcherArg.rmVar) return "";
+
       if (matcherArg.runVar) {
         const currentValue = getChatVar(args[0], matcherArg.chatTarget);
         if (!currentValue || currentValue === "null") {
           setChatVar(args[0], args[1], matcherArg.chatTarget);
         }
+
         return "";
       }
       return null;
@@ -1109,6 +1094,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.displaying) {
         return `<br><div class="risu-file">${args[0]}</div><br>`;
       }
+
       return Buffer.from(args[1], "base64").toString("utf-8");
     },
     alias: [],
@@ -1363,9 +1349,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "objectassert",
     callback: (str, matcherArg, args, vars) => {
       const dict = parseDict(args[0]);
-      if (!dict[args[1]]) {
-        dict[args[1]] = args[2];
-      }
+      if (!dict[args[1]]) dict[args[1]] = args[2];
+
       return JSON.stringify(dict);
     },
     alias: ["dictassert", "object_assert"],
@@ -1387,10 +1372,9 @@ export function registerCBS(arg: CBSRegisterArg) {
           ) {
             return "null";
           }
+
           current = parsed[arg];
-          if (!current) {
-            return "null";
-          }
+          if (!current) return "null";
         }
         return current;
       } catch (error) {
@@ -1455,9 +1439,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const arr = parseArray(args[0]);
       const index = Number(args[1]);
-      if (index >= arr.length) {
-        arr[index] = args[2];
-      }
+      if (index >= arr.length) arr[index] = args[2];
+
       return makeArray(arr);
     },
     alias: ["arrayassert"],
@@ -1478,13 +1461,12 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "makedict",
     callback: (str, matcherArg, args, vars) => {
-      let out = {};
+      const out = {};
       for (let i = 0; i < args.length; i++) {
         const current = args[i];
         const firstEqual = current.indexOf("=");
-        if (firstEqual === -1) {
-          continue;
-        }
+        if (firstEqual === -1) continue;
+
         const key = current.substring(0, firstEqual);
         const value = current.substring(firstEqual + 1);
         out[key] = value ?? "null";
@@ -1501,9 +1483,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "emotionlist",
     callback: (str, matcherArg, args, vars) => {
       const selchar = resolveSpeaker(matcherArg);
-      if (!selchar) {
-        return "";
-      }
+      if (!selchar) return "";
+
       return (
         makeArray(
           selchar.emotionImages?.map((f) => {
@@ -1521,9 +1502,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "assetlist",
     callback: (str, matcherArg, args, vars) => {
       const selchar = resolveSpeaker(matcherArg);
-      if (!selchar || selchar.type === "group") {
-        return "";
-      }
+      if (!selchar || selchar.type === "group") return "";
+
       return makeArray(
         selchar.additionalAssets?.map((f) => {
           return f[0];
@@ -1546,6 +1526,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       ) {
         return modelInfo.flags.includes(LLMFlags.hasPrefill) ? "1" : "0";
       }
+
       return db.aiModel.startsWith("claude") ? "1" : "0";
     },
     alias: ["prefill_supported", "prefill"],
@@ -1579,6 +1560,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (args.length > 0) {
         return str.repeat(Number(args[0]) < 1 ? 1 : Number(args[0]));
       }
+
       return "\\n";
     },
     alias: ["cnl", "cnewline"],
@@ -1743,9 +1725,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       return makeArray(
         chat.message.map((f) => {
           let data = "";
-          if (args.includes("role")) {
-            data += f.role + ": ";
-          }
+          if (args.includes("role")) data += f.role + ": ";
+
           data += f.data;
           return data;
         }),
@@ -1763,11 +1744,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       const start = arr.length > 1 ? Number(arr[0]) : 0;
       const end = arr.length > 1 ? Number(arr[1]) : Number(arr[0]);
       const step = arr.length > 2 ? Number(arr[2]) : 1;
-      let out: string[] = [];
+      const out: string[] = [];
 
-      for (let i = start; i < end; i += step) {
-        out.push(i.toString());
-      }
+      for (let i = start; i < end; i += step) out.push(i.toString());
 
       return makeArray(out);
     },
@@ -1787,9 +1766,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       let t = 0;
       if (secondParam) {
         t = Number(secondParam) / 1000;
-        if (isNaN(t)) {
-          t = 0;
-        }
+        if (isNaN(t)) t = 0;
       }
       return dateTimeFormat(args[0], t);
     },
@@ -1809,9 +1786,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       let t = 0;
       if (secondParam) {
         t = Number(secondParam) / 1000;
-        if (isNaN(t)) {
-          t = 0;
-        }
+        if (isNaN(t)) t = 0;
       }
       return dateTimeFormat(args[0], t);
     },
@@ -1825,10 +1800,9 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const modules = getModules(resolveRoom(matcherArg).room);
       for (const module of modules) {
-        if (module.namespace === args[0]) {
-          return "1";
-        }
+        if (module.namespace === args[0]) return "1";
       }
+
       return "0";
     },
     alias: ["module_enabled"],
@@ -1842,9 +1816,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       const module = getModules(resolveRoom(matcherArg).room)?.find((f) => {
         return f.namespace === args[0];
       });
-      if (!module) {
-        return "";
-      }
+      if (!module) return "";
+
       return makeArray(
         module.assets?.map((f) => {
           return f[0];
@@ -1862,9 +1835,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       const array = parseArray(args[0]);
       const filterTypes = ["all", "nonempty", "unique"];
       let filterType = filterTypes.indexOf(args[1]);
-      if (filterType === -1) {
-        filterType = 0;
-      }
+      if (filterType === -1) filterType = 0;
+
       return makeArray(
         array.filter((f, i) => {
           switch (filterType) {
@@ -1918,9 +1890,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       return Math.min(
         ...val.map((f) => {
           const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
+          if (isNaN(num)) return 0;
+
           return num;
         }),
       ).toString();
@@ -1937,9 +1908,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       return Math.max(
         ...val.map((f) => {
           const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
+          if (isNaN(num)) return 0;
+
           return num;
         }),
       ).toString();
@@ -1956,9 +1926,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       return val
         .map((f) => {
           const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
+          if (isNaN(num)) return 0;
+
           return num;
         })
         .reduce((a, b) => a + b, 0)
@@ -1976,9 +1945,8 @@ export function registerCBS(arg: CBSRegisterArg) {
       const sum = val
         .map((f) => {
           const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
+          if (isNaN(num)) return 0;
+
           return num;
         })
         .reduce((a, b) => a + b, 0);
@@ -2056,9 +2024,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const min = Number(args[0]);
       const max = Number(args[1]);
-      if (isNaN(min) || isNaN(max)) {
-        return "NaN";
-      }
+      if (isNaN(min) || isNaN(max)) return "NaN";
+
       return (Math.floor(Math.random() * (max - min + 1)) + min).toString();
     },
     alias: [],
@@ -2072,13 +2039,13 @@ export function registerCBS(arg: CBSRegisterArg) {
       const notation = args[0].split("d");
       const num = Number(notation[0]);
       const sides = Number(notation[1]);
-      if (isNaN(num) || isNaN(sides)) {
-        return "NaN";
-      }
+      if (isNaN(num) || isNaN(sides)) return "NaN";
+
       let total = 0;
       for (let i = 0; i < num; i++) {
         total += Math.floor(Math.random() * sides) + 1;
       }
+
       return total.toString();
     },
     alias: [],
@@ -2197,9 +2164,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "xor",
     callback: (str, matcherArg, args, vars) => {
       const buf = new TextEncoder().encode(args[0]);
-      for (let i = 0; i < buf.length; i++) {
-        buf[i] ^= 0xff;
-      }
+      for (let i = 0; i < buf.length; i++) buf[i] ^= 0xff;
+
       return Buffer.from(buf).toString("base64");
     },
     alias: ["xorencrypt", "xorencode", "xore"],
@@ -2211,9 +2177,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "xordecrypt",
     callback: (str, matcherArg, args, vars) => {
       const buf = Buffer.from(args[0], "base64");
-      for (let i = 0; i < buf.length; i++) {
-        buf[i] ^= 0xff;
-      }
+      for (let i = 0; i < buf.length; i++) buf[i] ^= 0xff;
+
       return new TextDecoder().decode(buf);
     },
     alias: ["xordecode", "xord"],
@@ -2225,9 +2190,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "crypt",
     callback: (str, matcherArg, args, vars) => {
       let shift = args[1] ? Number(args[1]) : 32768;
-      if (isNaN(shift)) {
-        shift = 32768;
-      }
+      if (isNaN(shift)) shift = 32768;
 
       let result = "";
       for (let i = 0; i < args[0].length; i++) {
@@ -2237,9 +2200,8 @@ export function registerCBS(arg: CBSRegisterArg) {
           continue;
         }
         let shiftedCode = charCode + shift;
-        if (shiftedCode > 65535) {
-          shiftedCode -= 65536;
-        }
+        if (shiftedCode > 65535) shiftedCode -= 65536;
+
         result += String.fromCharCode(shiftedCode);
       }
       return result;
@@ -2258,20 +2220,14 @@ export function registerCBS(arg: CBSRegisterArg) {
     args: string[],
     rand: number,
   ): string => {
-    if (args.length === 0) {
-      return rand.toString();
-    }
+    if (args.length === 0) return rand.toString();
 
     let arr: unknown[];
     if (args.length === 1) {
       if (args[0].startsWith("[") && args[0].endsWith("]")) {
         arr = parseArray(args[0]);
-      } else {
-        arr = args[0].replace(/\\,/g, "§X").split(/\:|\,/g);
-      }
-    } else {
-      arr = args;
-    }
+      } else arr = args[0].replace(/\\,/g, "§X").split(/\:|\,/g);
+    } else arr = args;
 
     const index = matcherArg.tokenizeAccurate
       ? 0
@@ -2309,25 +2265,23 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "roll",
     callback: (str, matcherArg, args, vars) => {
-      if (args.length === 0) {
-        return "1";
-      }
+      if (args.length === 0) return "1";
+
       const notation = args[0].split("d");
       let num = 1;
       let sides = 6;
       if (notation.length === 2) {
         num = Number(notation[0] || 1);
         sides = Number(notation[1] || 6);
-      } else if (notation.length === 1) {
-        sides = Number(notation[0]);
-      }
-      if (isNaN(num) || isNaN(sides) || num < 1 || sides < 1) {
-        return "NaN";
-      }
+      } else if (notation.length === 1) sides = Number(notation[0]);
+
+      if (isNaN(num) || isNaN(sides) || num < 1 || sides < 1) return "NaN";
+
       let total = 0;
       for (let i = 0; i < num; i++) {
         total += Math.floor(Math.random() * sides) + 1;
       }
+
       return total.toString();
     },
     alias: [],
@@ -2338,21 +2292,18 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "rollp",
     callback: (str, matcherArg, args, vars) => {
-      if (args.length === 0) {
-        return "1";
-      }
+      if (args.length === 0) return "1";
+
       const notation = args[0].split("d");
       let num = 1;
       let sides = 6;
       if (notation.length === 2) {
         num = Number(notation[0] || 1);
         sides = Number(notation[1] || 6);
-      } else if (notation.length === 1) {
-        sides = Number(notation[0]);
-      }
-      if (isNaN(num) || isNaN(sides) || num < 1 || sides < 1) {
-        return "NaN";
-      }
+      } else if (notation.length === 1) sides = Number(notation[0]);
+
+      if (isNaN(num) || isNaN(sides) || num < 1 || sides < 1) return "NaN";
+
       let total = 0;
       for (let i = 0; i < num; i++) {
         const { room: selchar, chat: selChat } = resolveRoom(matcherArg);
@@ -2392,9 +2343,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "comment",
     callback: (str, matcherArg, args, vars) => {
-      if (!matcherArg.displaying) {
-        return "";
-      }
+      if (!matcherArg.displaying) return "";
+
       return `<div class="risu-comment">${args[0]}</div>`;
     },
     alias: [],
@@ -2425,7 +2375,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "codeblock",
     callback: (str, matcherArg, args, vars) => {
-      let code = args[args.length - 1]
+      const code = args[args.length - 1]
         .replace(/\"/g, "&quot;")
         .replace(/\'/g, "&#39;")
         .replace(/</g, "&lt;")
@@ -2450,26 +2400,20 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "bkspc",
     callback: (str, matcherArg, args, vars) => {
       let root = matcherArg?.getNested?.()?.[0];
-      if (!root) {
-        return "";
-      }
+      if (!root) return "";
+
       root = root.trimEnd();
 
       let trimPointer = root.length - 1;
 
       for (; trimPointer >= 0; trimPointer--) {
         const char = root[trimPointer];
-        if (trimPointer === 0) {
-          break;
-        }
-        if (char === " " || char === "\n" || char === "\t") {
-          break;
-        }
+        if (trimPointer === 0) break;
+
+        if (char === " " || char === "\n" || char === "\t") break;
       }
 
-      if (trimPointer === -1) {
-        trimPointer = 0;
-      }
+      if (trimPointer === -1) trimPointer = 0;
 
       matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd());
       return "";
@@ -2483,9 +2427,8 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "erase",
     callback: (str, matcherArg, args, vars) => {
       let root = matcherArg?.getNested?.()?.[0];
-      if (!root) {
-        return "";
-      }
+      if (!root) return "";
+
       root = root.trimEnd();
 
       let trimPointer = root.length - 1;
@@ -2497,16 +2440,12 @@ export function registerCBS(arg: CBSRegisterArg) {
           sentenceEndFound = true;
           break;
         }
-        if (trimPointer === 0) {
-          break;
-        }
+        if (trimPointer === 0) break;
       }
 
-      if (trimPointer === -1) {
-        trimPointer = 0;
-      } else if (sentenceEndFound) {
-        trimPointer += 1;
-      }
+      if (trimPointer === -1) trimPointer = 0;
+      else if (sentenceEndFound) trimPointer += 1;
+
       matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd());
       return "";
     },

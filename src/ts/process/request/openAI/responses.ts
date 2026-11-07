@@ -55,12 +55,12 @@ import {
 } from "./shared";
 
 function responseTextContentToString(content: any): string {
-  if (typeof content === "string") {
-    return content;
-  }
+  if (typeof content === "string") return content;
+
   if (Array.isArray(content)) {
     return content.map((c) => c?.text ?? "").join("\n");
   }
+
   return "";
 }
 
@@ -174,6 +174,7 @@ async function buildResponseInputItems(
             });
           }
         }
+
         break;
       }
       case "user":
@@ -210,9 +211,8 @@ async function buildResponseInputItems(
           }
         }
 
-        if (item.content.length > 0) {
-          items.push(item);
-        }
+        if (item.content.length > 0) items.push(item);
+
         break;
       }
     }
@@ -244,9 +244,7 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
           ),
         )!
       : (arg.customURL ?? DEFAULT_OPENAI_RESPONSES_URL);
-  if (arg.modelInfo?.endpoint) {
-    requestURL = arg.modelInfo.endpoint;
-  }
+  if (arg.modelInfo?.endpoint) requestURL = arg.modelInfo.endpoint;
 
   let risuIdentify = false;
   if (requestURL.startsWith("risu::")) {
@@ -269,9 +267,7 @@ function getResponsesRequestURL(arg: RequestDataArgumentExtended): {
         // keep as-is
       } else if (lastSegment === "v1") {
         url.pathname = url.pathname.replace(/\/?$/, "/responses");
-      } else {
-        url.pathname = url.pathname.replace(/\/?$/, "/v1/responses");
-      }
+      } else url.pathname = url.pathname.replace(/\/?$/, "/v1/responses");
 
       requestURL = url.toString();
     } catch {
@@ -325,9 +321,9 @@ function buildResponsesHeaders(
     headers["Authorization"] =
       "Bearer " + db.OaiCompAPIKeys[arg.modelInfo.keyIdentifier];
   }
-  if (risuIdentify) {
-    headers["X-Proxy-Risu"] = "RisuAI";
-  }
+
+  if (risuIdentify) headers["X-Proxy-Risu"] = "RisuAI";
+
   if (
     aiModel === "nanogpt" &&
     resolveProviderRoleSettingForMode(
@@ -398,9 +394,11 @@ function sanitizeResponsesContinuationItem(item: any): ResponseItem | null {
           },
         ];
       }
+
       if (contentItem?.type === "refusal") {
         return [{ type: "refusal", refusal: contentItem.refusal ?? "" }];
       }
+
       return [];
     });
 
@@ -415,7 +413,6 @@ function sanitizeResponsesContinuationItem(item: any): ResponseItem | null {
   return null;
 }
 
-
 function toExternalResponsesBody(
   body: Record<string, any>,
 ): Record<string, any> {
@@ -428,12 +425,10 @@ function toExternalResponsesBody(
   if (requestBody.store === false && Array.isArray(requestBody.input)) {
     requestBody.input = requestBody.input.flatMap((item: any) => {
       const sanitized = sanitizeResponsesContinuationItem(item);
-      if (sanitized) {
-        return [sanitized];
-      }
-      if (item?.type === "reasoning") {
-        return [];
-      }
+      if (sanitized) return [sanitized];
+
+      if (item?.type === "reasoning") return [];
+
       if (item && typeof item === "object") {
         const { id: _serverItemId, ...clientItem } = item;
         return [clientItem];
@@ -441,6 +436,7 @@ function toExternalResponsesBody(
       return [item];
     });
   }
+
   return requestBody;
 }
 
@@ -460,6 +456,7 @@ async function buildResponsesBody(
       })),
     );
   }
+
   if (presetStore.state.modelTools.includes("search")) {
     tools.push({ type: "web_search_preview" });
   }
@@ -470,7 +467,7 @@ async function buildResponsesBody(
       isReasoningCapabilityParameter(p),
   );
 
-  let body = applyParameters(
+  const body = applyParameters(
     {
       model: getResponsesRequestModel(arg),
       input: await buildResponseInputItems(arg),
@@ -489,16 +486,14 @@ async function buildResponsesBody(
     },
   );
 
-  if (body.tools.length === 0) {
-    delete body.tools;
-  }
+  if (body.tools.length === 0) delete body.tools;
+
   if (arg.modelInfo.parameters.includes("reasoning_effort" as any)) {
     body.reasoning ??= {};
     body.reasoning.summary ??= "auto";
   }
-  if (arg.aiModel === "ollama-cloud") {
-    delete body.store;
-  }
+  if (arg.aiModel === "ollama-cloud") delete body.store;
+
   if (presetStore.state.jsonSchemaEnabled || arg.schema) {
     body.text ??= {};
     body.text.format = {
@@ -511,18 +506,15 @@ async function buildResponsesBody(
 }
 
 function collectResponsesReasoningText(value: any): string[] {
-  if (!value) {
-    return [];
-  }
-  if (typeof value === "string") {
-    return [value];
-  }
+  if (!value) return [];
+
+  if (typeof value === "string") return [value];
+
   if (Array.isArray(value)) {
     return value.flatMap((item) => collectResponsesReasoningText(item));
   }
-  if (typeof value !== "object") {
-    return [];
-  }
+
+  if (typeof value !== "object") return [];
 
   const texts: string[] = [];
   for (const key of [
@@ -532,26 +524,21 @@ function collectResponsesReasoningText(value: any): string[] {
     "reasoning",
     "summary",
   ]) {
-    if (typeof value[key] === "string") {
-      texts.push(value[key]);
-    }
+    if (typeof value[key] === "string") texts.push(value[key]);
   }
+
   return texts;
 }
 
 function extractResponsesReasoningTexts(item: any): string[] {
-  if (item?.type !== "reasoning") {
-    return [];
-  }
+  if (item?.type !== "reasoning") return [];
 
   const texts = [
     ...collectResponsesReasoningText(item.summary),
     ...collectResponsesReasoningText(item.content),
   ];
   for (const key of ["text", "summary_text", "reasoning_text", "reasoning"]) {
-    if (typeof item[key] === "string") {
-      texts.push(item[key]);
-    }
+    if (typeof item[key] === "string") texts.push(item[key]);
   }
 
   return texts.filter((text) => text.length > 0);
@@ -567,17 +554,15 @@ function extractResponsesText(
   const thoughts: string[] = [];
   const hasTopLevelOutputText = typeof data?.output_text === "string";
 
-  if (hasTopLevelOutputText) {
-    texts.push(data.output_text);
-  }
+  if (hasTopLevelOutputText) texts.push(data.output_text);
 
   for (const item of data?.output ?? []) {
     if (item?.type === "reasoning") {
       thoughts.push(...extractResponsesReasoningTexts(item));
     }
-    if (item?.type !== "message") {
-      continue;
-    }
+
+    if (item?.type !== "message") continue;
+
     for (const content of item.content ?? []) {
       if (
         !hasTopLevelOutputText &&
@@ -586,20 +571,20 @@ function extractResponsesText(
       ) {
         texts.push(content.text);
       }
+
       if (content?.type === "refusal" && content.refusal) {
         refusals.push(content.refusal);
       }
     }
   }
 
-  if (refusals.length > 0 && texts.length === 0) {
-    return refusals.join("\n");
-  }
+  if (refusals.length > 0 && texts.length === 0) return refusals.join("\n");
 
   let result = texts.join("\n");
   if (thoughts.length > 0 && !result.startsWith("<Thoughts>")) {
     result = `<Thoughts>\n\n${thoughts.join("\n\n")}\n\n</Thoughts>\n${result}`;
   }
+
   if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
     return extractJSON(
       result,
@@ -634,14 +619,11 @@ async function appendResponsesToolOutputs(
   const input = body.input as ResponseItem[];
   for (const item of body.__lastOutput ?? []) {
     const sanitized = sanitizeResponsesContinuationItem(item);
-    if (!sanitized) {
-      continue;
-    }
+    if (!sanitized) continue;
+
     if (db.simplifiedToolUse && item?.type === "message") {
       input.push({ ...sanitized, content: [] });
-    } else {
-      input.push(sanitized);
-    }
+    } else input.push(sanitized);
   }
 
   const callCodes: string[] = [];
@@ -650,9 +632,8 @@ async function appendResponsesToolOutputs(
     try {
       const parsed = toolCall.arguments ? JSON.parse(toolCall.arguments) : {};
       const tool = arg.tools?.find((t) => t.name === toolCall.name);
-      if (!tool) {
-        output = "No tool found with name: " + toolCall.name;
-      } else {
+      if (!tool) output = "No tool found with name: " + toolCall.name;
+      else {
         const used = (
           await callTool(
             tool.name,
@@ -737,6 +718,7 @@ async function requestHTTPResponsesAPI(
       payload: { api: "responses" },
     };
   }
+
   const remoteTransport = nodeTransport
     ? await tryExecuteNodeProviderTransport(
         nodeTransport.format,
@@ -767,6 +749,7 @@ async function requestHTTPResponsesAPI(
   if (data?.status === "failed" || data?.error) {
     return { type: "fail", result: JSON.stringify(data.error ?? data) };
   }
+
   if (data?.status === "incomplete") {
     const result = extractResponsesText(data, arg);
     const reason = data?.incomplete_details?.reason
@@ -798,9 +781,7 @@ async function requestHTTPResponsesAPI(
         arg,
         networkOptions,
       );
-      if (resRec.type !== "fail") {
-        break;
-      }
+      if (resRec.type !== "fail") break;
     } while (attempt <= db.requestRetrys);
 
     if (resRec.type === "success") {
@@ -809,6 +790,7 @@ async function requestHTTPResponsesAPI(
         result: prefix ? prefix + "\n\n" + resRec.result : resRec.result,
       };
     }
+
     return resRec;
   }
 
@@ -835,15 +817,12 @@ function getResponsesTranStream(
   const calls: Record<string, ResponseFunctionCallItem> = {};
 
   const appendReasoning = (incoming?: string) => {
-    if (!incoming) {
-      return;
-    }
-    if (reasoning.endsWith(incoming)) {
-      return;
-    }
-    if (reasoning) {
-      reasoning += "\n\n";
-    }
+    if (!incoming) return;
+
+    if (reasoning.endsWith(incoming)) return;
+
+    if (reasoning) reasoning += "\n\n";
+
     reasoning += incoming;
   };
 
@@ -854,6 +833,7 @@ function getResponsesTranStream(
     if (reasoning) {
       result = `<Thoughts>\n\n${reasoning}\n\n</Thoughts>\n${result}`;
     }
+
     if (
       arg.extractJson &&
       (presetStore.state.jsonSchemaEnabled || arg.schema)
@@ -864,10 +844,12 @@ function getResponsesTranStream(
         resolveRequestParserContext(arg),
       );
     }
+
     const chunk: Record<string, string> = { "0": error || result };
     if (Object.keys(calls).length > 0) {
       chunk["__tool_calls"] = JSON.stringify(calls);
     }
+
     controller.enqueue(chunk);
   };
 
@@ -894,9 +876,7 @@ function getResponsesTranStream(
       type === "response.reasoning_summary_text.done" ||
       type === "response.reasoning_text.done"
     ) {
-      if (event.text && !reasoning.endsWith(event.text)) {
-        reasoning = event.text;
-      }
+      if (event.text && !reasoning.endsWith(event.text)) reasoning = event.text;
     } else if (type === "response.function_call_arguments.delta") {
       const key =
         event.call_id ?? event.item_id ?? event.output_index?.toString() ?? "0";
@@ -911,9 +891,8 @@ function getResponsesTranStream(
       type === "response.output_item.done" &&
       event.item?.type === "function_call"
     ) {
-      if (event.item.id) {
-        delete calls[event.item.id];
-      }
+      if (event.item.id) delete calls[event.item.id];
+
       calls[event.item.call_id] = {
         type: "function_call",
         call_id: event.item.call_id,
@@ -931,9 +910,7 @@ function getResponsesTranStream(
       const finalText = extractResponsesText(event.response, arg);
       if (finalText) {
         text = finalText;
-        if (finalText.startsWith("<Thoughts>")) {
-          reasoning = "";
-        }
+        if (finalText.startsWith("<Thoughts>")) reasoning = "";
       }
       for (const call of extractResponsesFunctionCalls(event.response)) {
         calls[call.call_id] = call;
@@ -958,9 +935,8 @@ function getResponsesTranStream(
         .split(/\r?\n/)
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.replace(/^data:\s?/, ""));
-      if (dataLines.length === 0) {
-        continue;
-      }
+      if (dataLines.length === 0) continue;
+
       const data = dataLines.join("\n");
       if (data === "[DONE]") {
         emit(controller);
@@ -983,9 +959,7 @@ function getResponsesTranStream(
     },
     flush(controller) {
       buffer += decoder.decode();
-      if (!processBufferedEvents(controller, true)) {
-        emit(controller);
-      }
+      if (!processBufferedEvents(controller, true)) emit(controller);
     },
   });
 }
@@ -1049,9 +1023,7 @@ function wrapResponsesToolStream(
         );
         delete body.__lastOutput;
         prefix += (prefix && callPrefix ? "\n\n" : "") + callPrefix;
-        if (prefix) {
-          controller.enqueue({ "0": prefix });
-        }
+        if (prefix) controller.enqueue({ "0": prefix });
 
         let resRec: Response;
         let attempt = 0;
@@ -1112,9 +1084,8 @@ export async function requestOpenAIResponseAPI(
       getAdditionalParameters(aiModel),
     );
   }
-  if (!arg.useStreaming) {
-    body.stream = false;
-  }
+
+  if (!arg.useStreaming) body.stream = false;
 
   const localNetworkOptions = getLocalNetworkRequestOptions(
     requestURL,
@@ -1157,6 +1128,7 @@ export async function requestOpenAIResponseAPI(
         result: await textifyReadableStream(response.body),
       };
     }
+
     if (!response.headers.get("Content-Type")?.includes("text/event-stream")) {
       return {
         type: "fail",

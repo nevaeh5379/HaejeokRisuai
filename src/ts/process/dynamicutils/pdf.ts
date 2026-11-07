@@ -62,9 +62,7 @@ export async function extractPdfText(
     const content = await page.getTextContent();
     const items = content.items as { str: string }[];
 
-    for (const item of items) {
-      texts.push(item.str);
-    }
+    for (const item of items) texts.push(item.str);
   }
 
   return texts;

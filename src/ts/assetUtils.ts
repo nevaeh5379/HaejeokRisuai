@@ -260,19 +260,16 @@ export function generateUniqueAssetName(
   desiredName: string,
   existingNames: Set<string>,
 ): string {
-  let name = desiredName.trim();
-  if (!existingNames.has(name)) {
-    return name;
-  }
+  const name = desiredName.trim();
+  if (!existingNames.has(name)) return name;
 
   const dotIndex = name.lastIndexOf(".");
   const baseName = dotIndex !== -1 ? name.substring(0, dotIndex) : name;
   const ext = dotIndex !== -1 ? name.substring(dotIndex) : "";
 
   let counter = 1;
-  while (existingNames.has(`${baseName}_${counter}${ext}`)) {
-    counter++;
-  }
+  while (existingNames.has(`${baseName}_${counter}${ext}`)) counter++;
+
   return `${baseName}_${counter}${ext}`;
 }
 
@@ -292,14 +289,11 @@ export async function processAssetUploads(
   const existingNames = new Set(result.map((a) => a[0]));
 
   for (const file of files) {
-    let name = file.name;
+    const name = file.name;
     let data: Uint8Array;
 
-    if (file instanceof File) {
-      data = new Uint8Array(await file.arrayBuffer());
-    } else {
-      data = file.data;
-    }
+    if (file instanceof File) data = new Uint8Array(await file.arrayBuffer());
+    else data = file.data;
 
     const dotIndex = name.lastIndexOf(".");
     const ext =

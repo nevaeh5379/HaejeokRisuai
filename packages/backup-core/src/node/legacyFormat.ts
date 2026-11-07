@@ -53,6 +53,7 @@ export function createLocalBackupEntryHeader(
       if (error.code === "invalid_name") {
         throw new Error(`Invalid local backup entry name: ${name}`);
       }
+
       throw new Error(`Local backup entry is too large: ${name}`);
     }
     throw error;
@@ -80,8 +81,9 @@ export function decodeLegacyBackupDatabase(
   data: Uint8Array,
   options: { maxOutputBytes?: number } = {},
 ): unknown {
-  if (isRisuSaveBlocks(data))
+  if (isRisuSaveBlocks(data)) {
     return decodeRisuSaveBlocks(data, options.maxOutputBytes);
+  }
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
   if (buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)) {
     return unpackr.decode(
@@ -91,9 +93,11 @@ export function decodeLegacyBackupDatabase(
       ),
     );
   }
+
   if (buffer.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {
     return unpackr.decode(buffer.subarray(RAW_HEADER.length));
   }
+
   return unpackr.decode(buffer);
 }
 

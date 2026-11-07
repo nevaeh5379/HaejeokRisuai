@@ -39,16 +39,15 @@ export function createOnboardingQuestion(): OnboardingQuestion {
 export function getActiveOnboarding(
   char: character | groupChat | undefined,
 ): CharacterOnboarding | null {
-  if (!char || char.type === "group") {
-    return null;
-  }
+  if (!char || char.type === "group") return null;
+
   const onboarding = char.onboarding;
-  if (!onboarding?.enabled) {
-    return null;
-  }
+  if (!onboarding?.enabled) return null;
+
   if (onboarding.mode === "html") {
     return onboarding.html?.trim() ? onboarding : null;
   }
+
   return onboarding.questions?.length > 0 ? onboarding : null;
 }
 
@@ -75,14 +74,11 @@ export function readOnboardingVar(
 
 /** Multiple-choice answers are stored as a JSON array, the same format CBS array functions use. */
 export function parseMultipleValue(value: string | undefined): string[] {
-  if (!value) {
-    return [];
-  }
+  if (!value) return [];
+
   try {
     const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.map((v) => String(v));
-    }
+    if (Array.isArray(parsed)) return parsed.map((v) => String(v));
   } catch {}
   return [value];
 }
@@ -104,13 +100,10 @@ export function readFormAnswers(
 ): Record<string, string> {
   const answers: Record<string, string> = {};
   for (const question of questions) {
-    if (!question.varName) {
-      continue;
-    }
+    if (!question.varName) continue;
+
     const value = readOnboardingVar(question.varName, target);
-    if (value !== undefined) {
-      answers[question.varName] = value;
-    }
+    if (value !== undefined) answers[question.varName] = value;
   }
   return answers;
 }
@@ -120,9 +113,8 @@ export function isQuestionAnswered(
   answers: Record<string, string>,
 ): boolean {
   const value = answers[question.varName];
-  if (question.type === "multiple") {
-    return parseMultipleValue(value).length > 0;
-  }
+  if (question.type === "multiple") return parseMultipleValue(value).length > 0;
+
   return !!value && value.trim() !== "";
 }
 
@@ -133,10 +125,9 @@ export function applyOnboardingAnswers(
   target?: ChatExecutionTarget,
 ) {
   for (const [varName, value] of Object.entries(answers)) {
-    if (varName) {
-      setChatVar(varName, value, target);
-    }
+    if (varName) setChatVar(varName, value, target);
   }
+
   chat.onboardingDone = true;
 }
 
@@ -144,9 +135,8 @@ export function applyOnboardingAnswers(
 export function normalizeOnboarding(
   raw: unknown,
 ): CharacterOnboarding | undefined {
-  if (!raw || typeof raw !== "object") {
-    return undefined;
-  }
+  if (!raw || typeof raw !== "object") return undefined;
+
   const data = raw as Partial<CharacterOnboarding>;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const questions = Array.isArray(data.questions) ? data.questions : [];

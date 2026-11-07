@@ -62,24 +62,27 @@ export function installMacOSHeaderDrag() {
       event.clientY >= headerHeight ||
       event.clientX < 80 ||
       event.clientX >= window.innerWidth
-    )
+    ) {
       return;
+    }
 
     // Tauri handles explicitly marked targets itself. Its attribute handler
     // does not handle unmarked children, so only exclude the actual target.
     if (
       event.target instanceof Element &&
       event.target.hasAttribute("data-tauri-drag-region")
-    )
+    ) {
       return;
+    }
     const interactive =
       'button, a, input, textarea, select, label, summary, [contenteditable], [draggable="true"], [role="button"], [role="tab"], [role="slider"], [role="menuitem"], [role="separator"], [role="checkbox"], [role="switch"], [tabindex]:not([tabindex="-1"])';
     if (
       event
         .composedPath()
         .some((node) => node instanceof Element && node.matches(interactive))
-    )
+    ) {
       return;
+    }
 
     event.preventDefault();
     const currentWindow = getCurrentWindow();
@@ -101,8 +104,9 @@ export function installMacOSHeaderDrag() {
 export function installLinuxCsdHeaderDrag() {
   if (!isTauriLinux) return;
   const onMouseDown = (event: MouseEvent) => {
-    if (!isLinuxCsdActive() || event.button !== 0 || event.defaultPrevented)
+    if (!isLinuxCsdActive() || event.button !== 0 || event.defaultPrevented) {
       return;
+    }
     const height = getActiveLinuxWindowCapabilities().csdHeader?.height ?? 40;
     // Leave the native resize gutter and every interactive web control alone.
     if (
@@ -110,8 +114,9 @@ export function installLinuxCsdHeaderDrag() {
       event.clientY >= height ||
       event.clientX < 6 ||
       event.clientX >= window.innerWidth - 6
-    )
+    ) {
       return;
+    }
     const interactive =
       'button, a, input, textarea, select, label, summary, [contenteditable], [draggable="true"], [role="button"], [role="tab"], [role="slider"], [role="menuitem"], [data-tauri-drag-region]';
     if (
@@ -120,8 +125,9 @@ export function installLinuxCsdHeaderDrag() {
         .some(
           (node) => node instanceof HTMLElement && node.matches(interactive),
         )
-    )
+    ) {
       return;
+    }
     event.preventDefault();
     const currentWindow = getCurrentWindow();
     void (
@@ -147,13 +153,14 @@ export function windowDragRegion(
     if (
       !options.windowsOnly &&
       (isTauriMacOS || (isTauriLinux && isLinuxCsdActive()))
-    )
+    ) {
       node.setAttribute("data-tauri-drag-region", "true");
-    else node.removeAttribute("data-tauri-drag-region");
+    } else node.removeAttribute("data-tauri-drag-region");
   };
   updateDragRegion();
-  if (isTauriLinux)
+  if (isTauriLinux) {
     window.addEventListener("risu-linux-csd-header-layout", updateDragRegion);
+  }
 
   const onPointerDown = (event: PointerEvent) => {
     if (!isTauriWindows || event.button !== 0 || !event.isPrimary) return;

@@ -93,9 +93,7 @@ export async function waitForTauriRuntimeReady(
 }
 
 function normalizeOSVersion(version?: string | null): string | null {
-  if (!version) {
-    return null;
-  }
+  if (!version) return null;
 
   const normalized = version.trim().replace(/_/g, ".");
   return normalized && normalized !== "0.0.0" ? normalized : null;
@@ -138,9 +136,7 @@ export function isIOS(): boolean {
 
 function getBrowserOSName(): string {
   const uaPlatform = browserNavigator.userAgentData?.platform;
-  if (uaPlatform) {
-    return formatOSName(uaPlatform);
-  }
+  if (uaPlatform) return formatOSName(uaPlatform);
 
   const ua = browserNavigator.userAgent || "";
   const platform = browserNavigator.platform || "";
@@ -191,17 +187,11 @@ async function getBrowserHighEntropyOSVersion(): Promise<string | null> {
 }
 
 export function getRisuEnvironmentLabel(): RisuEnvironmentLabel {
-  if (isTauri || isCapacitor) {
-    return "local";
-  }
+  if (isTauri || isCapacitor) return "local";
 
-  if (import.meta.env.DEV) {
-    return "web(dev)";
-  }
+  if (import.meta.env.DEV) return "web(dev)";
 
-  if (isNodeServer) {
-    return "node";
-  }
+  if (isNodeServer) return "node";
 
   return "web";
 }

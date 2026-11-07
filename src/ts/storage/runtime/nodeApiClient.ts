@@ -32,15 +32,17 @@ export function createCapacitorNodeApiFetch(
     if (!isStreamedNativeMethod(method)) {
       throw new TypeError(`Unsupported native Node API method: ${method}`);
     }
+
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     let body: Uint8Array | undefined;
 
     if (init?.body != null) {
       body = new Uint8Array(await new Response(init.body).arrayBuffer());
-    } else if (method !== "GET" && method !== "DELETE") {
-      // fetchNative requires a body for native mutation methods even when the
-      // HTTP endpoint intentionally has no payload (for example job creation
-      // and finalize actions). Preserve fetch semantics with a zero-byte body.
+    } else if (method !== "GET" && method !== "DELETE")
+    // fetchNative requires a body for native mutation methods even when the
+    // HTTP endpoint intentionally has no payload (for example job creation
+    // and finalize actions). Preserve fetch semantics with a zero-byte body.
+    {
       body = new Uint8Array();
     }
 
@@ -81,6 +83,7 @@ export async function createRemoteNodeApiClient(
   if (platform === "node" && profile.baseUrl === globalThis.location?.origin) {
     return createSameOriginNodeApiClient();
   }
+
   // Web clients intentionally use the browser transport so mixed-content and
   // certificate failures remain visible to the user.
   return new NodeApiClient(profile);

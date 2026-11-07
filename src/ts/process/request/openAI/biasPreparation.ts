@@ -21,9 +21,7 @@ export async function prepareOpenAILogitBias(
     }
 
     const tokens = await tokenizeNum(text);
-    for (let j = 0; j < tokens.length; j++) {
-      bias[tokens[j]] = value;
-    }
+    for (let j = 0; j < tokens.length; j++) bias[tokens[j]] = value;
   }
   return bias;
 }

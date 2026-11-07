@@ -15,5 +15,6 @@ it("preserves UTF-8 across chunks and yields every complete record in order", as
   for await (const line of readStreamLines(stream.getReader())) {
     lines.push(line);
   }
+
   expect(lines).toEqual(["한글", "", '{"type":"done"}']);
 });

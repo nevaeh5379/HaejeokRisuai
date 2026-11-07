@@ -154,6 +154,7 @@ export async function loadCustomStorage(
       storage[row.key] = row.value;
     }
   }
+
   return storage;
 }
 

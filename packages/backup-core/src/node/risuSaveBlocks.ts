@@ -19,13 +19,15 @@ export function decodeRisuSaveBlocks(
   let offset = RISU_SAVE_BLOCK_HEADER_BYTES.length;
   let decodedBytes = 0;
   while (offset < data.byteLength) {
-    if (offset + 3 > data.byteLength)
+    if (offset + 3 > data.byteLength) {
       throw new Error("Truncated RisuSave block header");
+    }
     const type = data[offset++];
     const compressed = data[offset++] === 1;
     const nameLength = data[offset++];
-    if (offset + nameLength + 4 > data.byteLength)
+    if (offset + nameLength + 4 > data.byteLength) {
       throw new Error("Truncated RisuSave block name");
+    }
     const name = decoder.decode(data.subarray(offset, offset + nameLength));
     offset += nameLength;
     const length = new DataView(
@@ -34,21 +36,24 @@ export function decodeRisuSaveBlocks(
       4,
     ).getUint32(0, true);
     offset += 4;
-    if (length > data.byteLength - offset)
+    if (length > data.byteLength - offset) {
       throw new Error("Truncated RisuSave block payload");
+    }
     let bytes = data.subarray(offset, offset + length);
     offset += length;
     if (type === 0) continue;
-    if (compressed)
+    if (compressed) {
       bytes = gunzipSync(
         bytes,
         maxOutputBytes === undefined
           ? undefined
           : { maxOutputLength: Math.max(1, maxOutputBytes - decodedBytes) },
       );
+    }
     decodedBytes += bytes.byteLength;
-    if (maxOutputBytes !== undefined && decodedBytes > maxOutputBytes)
+    if (maxOutputBytes !== undefined && decodedBytes > maxOutputBytes) {
       throw new Error("RisuSave exceeds decoded size limit");
+    }
     const value = JSON.parse(decoder.decode(bytes));
     switch (type) {
       case 1: {
@@ -57,8 +62,9 @@ export function decodeRisuSaveBlocks(
           if (
             !Array.isArray(entries) ||
             entries.some((entry) => typeof entry !== "string")
-          )
+          ) {
             throw new Error("Invalid RisuSave block directory");
+          }
           for (const entry of entries) directory.add(entry);
         }
         Object.assign(database, root);
@@ -109,10 +115,12 @@ export function decodeRisuSaveBlocks(
     loadedBlocks.add(name);
   }
   for (const name of directory) {
-    if (!loadedBlocks.has(name))
+    if (!loadedBlocks.has(name)) {
       throw new Error(
         `RisuSave is missing directory block "${name}"; export a local backup from the original device`,
       );
+    }
   }
+
   return database;
 }

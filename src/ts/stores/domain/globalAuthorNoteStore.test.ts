@@ -111,11 +111,9 @@ describe.each([
       const { started, finishRead } = blockMetadataRead(storage);
       const pending = store.get(note.id);
       await started;
-      if (operation === "rename") {
-        await other.rename(note.id, "after");
-      } else {
-        await other.remove(note.id);
-      }
+      if (operation === "rename") await other.rename(note.id, "after");
+      else await other.remove(note.id);
+
       const current = await store.get(note.id);
       finishRead();
       const late = await pending;
@@ -156,9 +154,8 @@ describe.each([
       if (transition === "reinitialization") {
         const next = makeHarness<ISqlStorage>(make, schema);
         await store.init(next.storage);
-      } else {
-        await store.dispose();
-      }
+      } else await store.dispose();
+
       finishRead();
       await pending;
       if (transition === "reinitialization") {
@@ -312,8 +309,9 @@ describe.each([
     );
     const target = await setup();
     expect(hasPortableDatabaseStreamRestore(target.storage)).toBe(true);
-    if (!hasPortableDatabaseStreamRestore(target.storage))
+    if (!hasPortableDatabaseStreamRestore(target.storage)) {
       throw new Error("Missing restore");
+    }
     const session = await target.storage.beginPortableDatabaseStreamRestore();
     for (const fragment of fragments) await session.writeFragment(fragment);
     await session.finish(manifest);

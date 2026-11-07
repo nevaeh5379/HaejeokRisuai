@@ -101,6 +101,7 @@ async function seed(page: Page, rules: boolean) {
             : [],
         });
       }
+
       await moduleStore.installModule({
         id: BACKEND,
         name: "Shared E2E Backend",

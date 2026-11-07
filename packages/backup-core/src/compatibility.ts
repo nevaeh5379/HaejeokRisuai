@@ -35,14 +35,14 @@ function materializeColdChat(source, values, options = {}) {
   const { cloneValue, coldStorageHeader } = resolveOptions(options);
   const chat = cloneValue(source);
   const pointer = chat.message?.[0]?.data;
-  if (typeof pointer !== "string" || !pointer.startsWith(coldStorageHeader))
+  if (typeof pointer !== "string" || !pointer.startsWith(coldStorageHeader)) {
     return chat;
+  }
 
   const key = pointer.slice(coldStorageHeader.length);
   const stored = coldStorageValue(values, key);
-  if (Array.isArray(stored)) {
-    chat.message = cloneValue(stored);
-  } else if (
+  if (Array.isArray(stored)) chat.message = cloneValue(stored);
+  else if (
     stored &&
     typeof stored === "object" &&
     Array.isArray(stored.message)
@@ -109,6 +109,7 @@ function getBranchMessages(chat, branch, cloneValue) {
   if (!state || branch.id === state.activeBranchId) {
     return cloneValue(chat.message || []);
   }
+
   const prefix = (chat.message || []).slice(0, state.baseMessageIndex + 1);
   return [...cloneValue(prefix), ...cloneValue(branch.messages || [])];
 }
@@ -117,6 +118,7 @@ function remapBookmarks(chat, idMap) {
   if (Array.isArray(chat.bookmarks)) {
     chat.bookmarks = chat.bookmarks.map((id) => idMap.get(id)).filter(Boolean);
   }
+
   if (chat.bookmarkNames && typeof chat.bookmarkNames === "object") {
     chat.bookmarkNames = Object.fromEntries(
       Object.entries(chat.bookmarkNames)
@@ -133,17 +135,20 @@ function applyBranchScriptState(chat, branch, cloneValue) {
     if (branch.scriptstate == null) delete chat.scriptstate;
     else chat.scriptstate = cloneValue(branch.scriptstate);
   }
+
   if (Object.prototype.hasOwnProperty.call(branch, "GLGlobalVariables")) {
     if (branch.GLGlobalVariables == null) delete chat.GLGlobalVariables;
     else chat.GLGlobalVariables = cloneValue(branch.GLGlobalVariables);
   }
+
   if (
     Object.prototype.hasOwnProperty.call(branch, "useLocallySetGlobalVariables")
   ) {
-    if (branch.useLocallySetGlobalVariables == null)
+    if (branch.useLocallySetGlobalVariables == null) {
       delete chat.useLocallySetGlobalVariables;
-    else
+    } else {
       chat.useLocallySetGlobalVariables = branch.useLocallySetGlobalVariables;
+    }
   }
 }
 
@@ -248,6 +253,7 @@ function expandCharacterBranchesForCompatibility(
     if (index === Number(materialized.chatPage || 0)) {
       nextChatPage = nextChats.length + expanded.activeIndex;
     }
+
     nextChats.push(...expanded.chats);
   }
   character.chats = nextChats;
@@ -294,6 +300,7 @@ function makeLegacyCompatibleDatabase(
       return character;
     });
   }
+
   delete portable.moduleFolders;
   return portable;
 }

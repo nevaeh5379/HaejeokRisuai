@@ -22,6 +22,7 @@ export function parseInlayServerKey(key: string): string | null {
   ) {
     return null;
   }
+
   return key.slice(
     INLAY_BACKUP_PREFIX.length,
     key.length - INLAY_BACKUP_SUFFIX.length,
@@ -46,9 +47,8 @@ function weighAsset(asset: InlayAsset): number {
 
 function touchMemoryCache(id: string, asset: InlayAsset) {
   const existing = memoryCache.get(id);
-  if (existing) {
-    memoryCacheWeight -= weighAsset(existing);
-  } else if (memoryCache.size >= 512) {
+  if (existing) memoryCacheWeight -= weighAsset(existing);
+  else if (memoryCache.size >= 512) {
     const oldest = memoryCache.keys().next().value;
     if (oldest !== undefined) {
       const evicted = memoryCache.get(oldest)!;
@@ -102,9 +102,8 @@ export function resetRemoteAvailability() {
 
 export async function putRemoteInlayAsset(id: string, asset: InlayAsset) {
   const storage = await getRemoteNodeStorage();
-  if (!storage) {
-    throw new Error("Remote inlay storage is unavailable");
-  }
+  if (!storage) throw new Error("Remote inlay storage is unavailable");
+
   const encoded = await encodeInlayAssetBackup(asset);
   await storage.setItem(getInlayServerKey(id), encoded);
 }
@@ -127,9 +126,8 @@ export async function fetchRemoteInlayAsset(
       if (!data || data.byteLength === 0) return null;
       const asset = decodeInlayAssetBackup(data);
       const memoryHit = memoryCache.get(id);
-      if (!memoryHit) {
-        rememberInCache(id, asset);
-      }
+      if (!memoryHit) rememberInCache(id, asset);
+
       return asset;
     } finally {
       remoteReadInflight.delete(id);
@@ -171,9 +169,8 @@ export async function readCachedInlay(id: string): Promise<InlayAsset | null> {
   const memory = memoryCache.get(id);
   if (memory) return memory;
   const cached = await cacheStorage.getItem<InlayAsset | null>(id);
-  if (cached) {
-    rememberInCache(id, cached);
-  }
+  if (cached) rememberInCache(id, cached);
+
   return cached;
 }
 
@@ -186,10 +183,16 @@ export async function readCachedInlay(id: string): Promise<InlayAsset | null> {
  * @param asset - Media content and metadata. / 미디어 내용·메타데이터.
  * @param durable - Propagates persistent-storage failure instead of keeping a memory-only result. / 메모리에만 보관하지 않고 영구 저장 실패를 전달할지 여부.
  */
-export async function writeCachedInlay(id: string, asset: InlayAsset, durable = false) {
+export async function writeCachedInlay(
+  id: string,
+  asset: InlayAsset,
+  durable = false,
+) {
   try {
     await cacheStorage.setItem(id, asset);
-  } catch (error) { if (durable) throw error; }
+  } catch (error) {
+    if (durable) throw error;
+  }
   rememberInCache(id, asset);
 }
 

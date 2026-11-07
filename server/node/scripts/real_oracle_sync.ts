@@ -34,6 +34,7 @@ function decodeRisuDb(data) {
       break;
     }
   }
+
   if (isCompressed) {
     const raw = data.slice(magicCompressedHeader.length);
     const decompressed = fflate.decompressSync(raw);
@@ -47,6 +48,7 @@ function decodeRisuDb(data) {
       break;
     }
   }
+
   if (isRaw) {
     const raw = data.slice(magicHeader.length);
     return unpackr.decode(raw);
@@ -104,6 +106,7 @@ function parseBackupArchive(filePath) {
       `database.risudat not found inside archive: ${resolvedPath}`,
     );
   }
+
   return { dbData, entryCount, fileSize: stat.size };
 }
 
@@ -111,11 +114,8 @@ function parseBackupArchive(filePath) {
  * Uploads a RisuAI backup .bin file to Oracle Database.
  */
 async function syncBackupToOracle(backupPath, options = {}) {
-  if (options.envPath) {
-    loadOracleEnvFile(options.envPath);
-  } else {
-    loadOracleEnvFile();
-  }
+  if (options.envPath) loadOracleEnvFile(options.envPath);
+  else loadOracleEnvFile();
 
   const config = readOracleConfigFromEnv();
   if (!config.user || !config.password || !config.tnsAlias) {
@@ -273,13 +273,10 @@ function parseCliArgs() {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--help" || arg === "-h") {
-      options.help = true;
-    } else if (arg === "--dry-run") {
-      options.dryRun = true;
-    } else if (arg === "--no-shallow") {
-      options.shallowVerify = false;
-    } else if (arg === "--env" && i + 1 < args.length) {
+    if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--no-shallow") options.shallowVerify = false;
+    else if (arg === "--env" && i + 1 < args.length) {
       options.envPath = args[++i];
     } else if ((arg === "--file" || arg === "-f") && i + 1 < args.length) {
       options.filePath = args[++i];

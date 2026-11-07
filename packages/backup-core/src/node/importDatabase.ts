@@ -39,6 +39,7 @@ function requireObject(value: unknown, label: string): Record<string, any> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
+
   return value as Record<string, any>;
 }
 
@@ -48,6 +49,7 @@ function decodeManifest(data: unknown): Manifest {
   if (!parsed || Array.isArray(parsed.counts)) {
     throw new Error("Portable database stream manifest is invalid");
   }
+
   return parsed;
 }
 
@@ -60,9 +62,8 @@ function decodeFragment(
   const parsed: Fragment | null = Fragment.read(fragment, {
     expectedIndex,
   });
-  if (!parsed) {
-    throw new Error(`Invalid portable database fragment: ${name}`);
-  }
+  if (!parsed) throw new Error(`Invalid portable database fragment: ${name}`);
+
   return parsed;
 }
 
@@ -270,6 +271,7 @@ async function prepareStreamDatabase(
             `Portable database fragment ${entry.name} contains an unsupported record`,
           );
         }
+
         await writeRecordLine(output, options.encodeRecord(record));
         counts[record.type] = (counts[record.type] ?? 0) + 1;
         recordCount++;
@@ -287,6 +289,7 @@ async function prepareStreamDatabase(
         `Portable database stream record count mismatch; expected ${manifest.totalRecords}, got ${recordCount}`,
       );
     }
+
     for (const type of LOCAL_BACKUP_DATABASE_RECORD_TYPES) {
       if ((manifest.counts[type] ?? 0) !== (counts[type] ?? 0)) {
         throw new Error(
@@ -294,6 +297,7 @@ async function prepareStreamDatabase(
         );
       }
     }
+
     for (const [type, count] of Object.entries(manifest.counts)) {
       if (
         !(LOCAL_BACKUP_DATABASE_RECORD_TYPES as readonly string[]).includes(

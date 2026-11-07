@@ -204,6 +204,7 @@ export class NodeStorage {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("risuauth", auth);
     }
+
     return auth;
   }
 
@@ -564,9 +565,7 @@ export async function getNodeServerProxyAuth() {
     const { getActiveStorageRuntime } =
       await import("../runtime/activeStorageRuntime");
     const storage = getActiveStorageRuntime().assets.realStorage;
-    if (storage instanceof NodeStorage) {
-      return await storage.getProxyAuth();
-    }
+    if (storage instanceof NodeStorage) return await storage.getProxyAuth();
   } catch {
     // Some early Node-only callers run before the active runtime is installed.
   }

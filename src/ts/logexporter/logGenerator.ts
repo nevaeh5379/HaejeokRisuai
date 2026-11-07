@@ -27,9 +27,7 @@ function applyRulesToText(text: string, settings: LogExporterSettings): string {
           new RegExp(rule.pattern, flags),
           rule.replacement,
         );
-      } else {
-        result = result.split(rule.pattern).join(rule.replacement);
-      }
+      } else result = result.split(rule.pattern).join(rule.replacement);
     } catch {
       // invalid pattern — skip
     }
@@ -74,6 +72,7 @@ export function resolveSimplePalette(
   if (settings.theme === "basic" || settings.theme === "custom") {
     return COLORS[settings.color] || COLORS.dark;
   }
+
   const theme: ThemeInfo | undefined =
     THEMES[settings.theme as keyof typeof THEMES];
   return theme?.color || COLORS.dark;

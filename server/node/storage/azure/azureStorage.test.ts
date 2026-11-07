@@ -32,11 +32,8 @@ describe("AzureStorage Driver & StorageDriver Integration", async () => {
       process.env.AZURE_HOST = "test.database.windows.net";
       expect(resolveVendor({})).toBe("azure");
     } finally {
-      if (prevHost !== undefined) {
-        process.env.AZURE_HOST = prevHost;
-      } else {
-        delete process.env.AZURE_HOST;
-      }
+      if (prevHost !== undefined) process.env.AZURE_HOST = prevHost;
+      else delete process.env.AZURE_HOST;
     }
   });
 
@@ -280,9 +277,11 @@ describe("AzureStorage.sync() entity deletion", async () => {
         ) {
           return { recordset: [{ revision: 5, initialized: true }] };
         }
+
         if (/INSERT INTO \[system\]\.\[revisions\]/i.test(q)) {
           return { recordset: [{ id: 1 }] };
         }
+
         return { recordset: [] };
       }
       async batch(q: string) {
@@ -495,12 +494,15 @@ describe("Azure storage sync finalize concurrency", async () => {
         ) {
           return { recordset: [{ revision, initialized: true }] };
         }
+
         if (sqlText.includes("SELECT TOP (1) id FROM [system].[revisions]")) {
           return { recordset: [{ id: 40 }] };
         }
+
         if (sqlText.includes("INSERT INTO [system].[revisions]")) {
           return { recordset: [{ id: 41 }] };
         }
+
         return { recordset: [] };
       }),
     });

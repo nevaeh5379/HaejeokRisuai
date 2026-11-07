@@ -80,8 +80,9 @@ function validCounts(value: unknown): value is Manifest["counts"] {
     if (
       !supportedRecordTypes.includes(type as BackupRecord["type"]) &&
       count !== 0
-    )
+    ) {
       return false;
+    }
   }
   return true;
 }
@@ -91,6 +92,7 @@ export const Fragment = {
     if (!positiveInteger(index)) {
       throw new TypeError("Database backup fragment index must be positive");
     }
+
     return `${PREFIX}${String(index).padStart(12, "0")}.risudat`;
   },
 
@@ -106,9 +108,11 @@ export const Fragment = {
     if (!positiveInteger(index)) {
       throw new TypeError("Database backup fragment index must be positive");
     }
+
     if (records.length === 0 || records.length > MAX_FRAGMENT_RECORDS) {
       throw new TypeError("Database backup fragment record count is invalid");
     }
+
     return { format: "haejeok-stream-fragment", index, records };
   },
 
@@ -124,20 +128,21 @@ export const Fragment = {
       if ("version" in batch) return null;
     } else if (batch.format === "risu-portable-database-fragment") {
       if (batch.version !== 1) return null;
-    } else {
-      return null;
-    }
+    } else return null;
+
     if (
       !positiveInteger(batch.index) ||
       (expectedIndex !== undefined && batch.index !== expectedIndex)
-    )
+    ) {
       return null;
+    }
     if (
       !Array.isArray(batch.records) ||
       batch.records.length === 0 ||
       batch.records.length > MAX_FRAGMENT_RECORDS
-    )
+    ) {
       return null;
+    }
     // Normalize legacy envelopes without duplicating the bounded record array.
     return Fragment.create(batch.index, batch.records);
   },
@@ -171,15 +176,15 @@ export const Manifest = {
       if ("complete" in summary && summary.complete !== true) return null;
     } else if (summary.format === "risu-portable-database-stream") {
       if (summary.version !== 1 || summary.complete !== true) return null;
-    } else {
-      return null;
-    }
+    } else return null;
+
     if (!nonNegativeInteger(summary.revision)) return null;
     if (
       !positiveInteger(summary.totalFragments) ||
       !positiveInteger(summary.totalRecords)
-    )
+    ) {
       return null;
+    }
     if (!validCounts(summary.counts)) return null;
     return Manifest.create({
       revision: summary.revision,

@@ -53,9 +53,8 @@ export async function list(
     normalizedLimit !== undefined ? [normalizedLimit] : [],
   );
   const result = new Array<NodePostgresRevision>(rows.length);
-  for (let i = 0; i < rows.length; i++) {
-    result[i] = mapRevision(rows[i]);
-  }
+  for (let i = 0; i < rows.length; i++) result[i] = mapRevision(rows[i]);
+
   return result;
 }
 

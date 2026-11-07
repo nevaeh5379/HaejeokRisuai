@@ -127,6 +127,7 @@ async function waitForAppium(child: ReturnType<typeof spawn>): Promise<void> {
         `Appium exited before it became ready (code ${child.exitCode})`,
       );
     }
+
     try {
       const response = await fetch(`${appiumUrl}/status`);
       if (response.ok) return;
@@ -235,6 +236,7 @@ async function waitForAndroidPackageManager(): Promise<void> {
       if (bootCompleted === "1" && packageManager.startsWith("package:")) {
         return;
       }
+
       lastError = `boot_completed=${bootCompleted || "<empty>"}, pm=${
         packageManager || "<empty>"
       }`;
@@ -253,6 +255,7 @@ function getUiAutomator2ServerApks(): string[] {
   if (!existsSync(appiumSettingsApk)) {
     throw new Error(`Appium Settings APK not found: ${appiumSettingsApk}`);
   }
+
   if (!existsSync(uiautomator2ServerApksDir)) {
     throw new Error(
       `UiAutomator2 server APK directory not found: ${uiautomator2ServerApksDir}`,
@@ -268,6 +271,7 @@ function getUiAutomator2ServerApks(): string[] {
       `No UiAutomator2 server APKs found in ${uiautomator2ServerApksDir}`,
     );
   }
+
   return serverApks;
 }
 
@@ -314,6 +318,7 @@ async function main(): Promise<void> {
       "Appium is not installed. Run `pnpm install --frozen-lockfile` first.",
     );
   }
+
   if (process.argv.includes("--doctor")) {
     await run(appiumBin, ["driver", "doctor", "uiautomator2"], {
       env: toolEnv,
@@ -341,6 +346,7 @@ async function main(): Promise<void> {
   if (!existsSync(apkPath)) {
     throw new Error(`Android debug APK not found: ${apkPath}`);
   }
+
   await installAndroidE2ePackages();
 
   mkdirSync(artifactsDir, { recursive: true });
@@ -376,8 +382,9 @@ async function main(): Promise<void> {
       .filter((name) => name.endsWith(".test.ts"))
       .filter((name) => !testFilter || name.includes(testFilter))
       .map((name) => resolve(projectRoot, "android-e2e", name));
-    if (tests.length === 0)
+    if (tests.length === 0) {
       throw new Error("No android-e2e/*.test.ts files were found.");
+    }
 
     const tsxBin = resolve(
       projectRoot,

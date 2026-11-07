@@ -15,8 +15,9 @@ export function createDatabaseSnapshotReceiver() {
   let result: Record<string, unknown> = {};
   const value = (encoded: SnapshotValue): unknown => {
     if (encoded[0] === 0) return encoded[1];
-    if (!nodes.has(encoded[1]))
+    if (!nodes.has(encoded[1])) {
       throw new Error("Missing database snapshot node");
+    }
     return nodes.get(encoded[1]);
   };
   const assign = (
@@ -48,8 +49,9 @@ export function createDatabaseSnapshotReceiver() {
             break;
           case "native":
             nodes.set(operation[1], operation[2]);
-            for (const slot of waiting.get(operation[1]) ?? [])
+            for (const slot of waiting.get(operation[1]) ?? []) {
               slot.target[slot.key] = operation[2];
+            }
             waiting.delete(operation[1]);
             break;
           case "set": {
@@ -69,8 +71,9 @@ export function createDatabaseSnapshotReceiver() {
       }
     },
     finish() {
-      if (waiting.size)
+      if (waiting.size) {
         throw new Error("Incomplete database snapshot transfer");
+      }
       const snapshot = result;
       result = {};
       nodes.clear();

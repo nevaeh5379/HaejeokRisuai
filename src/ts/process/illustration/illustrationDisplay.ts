@@ -14,8 +14,9 @@ export function illustrationDisplayLayout(
   for (const item of illustrations) {
     if (!/^[\w-]+$/.test(item.id) || !item.token) continue;
     const position = text.indexOf(item.token);
-    if (position >= 0)
+    if (position >= 0) {
       slots.push({ position, length: item.token.length, id: item.id });
+    }
   }
   slots.sort((a, b) => a.position - b.position);
   let display = text;

@@ -57,15 +57,15 @@ export function convertModuleToCharacter(m: RisuModule): character {
         .replace("@@indicator character_first_message", "")
         .trim();
       const fmMatch = firstMsgContent.match(/<FM>([\s\S]*?)<\/FM>/);
-      if (fmMatch) {
-        char.firstMessage = fmMatch[1].trim();
-      }
+      if (fmMatch) char.firstMessage = fmMatch[1].trim();
+
       altFmRegex.lastIndex = 0;
       let altMatch: RegExpExecArray | null;
       const alternateGreetings: string[] = [];
       while ((altMatch = altFmRegex.exec(firstMsgContent)) !== null) {
         alternateGreetings.push(altMatch[1].trim());
       }
+
       char.alternateGreetings = alternateGreetings;
       continue;
     }
@@ -155,9 +155,8 @@ export function convertCharacterToModule(c: character): RisuModule {
 export function convertPersonaToCharacter(p: RisuPersona): character {
   let char = createBlankChar();
 
-  if (p.embeddedModule) {
-    char = convertModuleToCharacter(p.embeddedModule);
-  }
+  if (p.embeddedModule) char = convertModuleToCharacter(p.embeddedModule);
+
   char.name = p.name;
   char.image = p.icon;
   char.largePortrait = p.largePortrait || false;
@@ -210,9 +209,7 @@ export function convertModuleToPersona(m: RisuModule): RisuPersona {
   for (const lore of m.lorebook || []) {
     if (lore.content?.startsWith("@@indicator persona")) {
       personaPrompt = lore.content.replace("@@indicator persona", "").trim();
-    } else {
-      remainingLores.push(lore);
-    }
+    } else remainingLores.push(lore);
   }
 
   const basePersona: RisuPersona = {

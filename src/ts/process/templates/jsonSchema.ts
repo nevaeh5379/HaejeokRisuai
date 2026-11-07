@@ -32,7 +32,7 @@ export function convertInterfaceToSchema(
   };
 
   const lines = int.split("\n");
-  let schema = {
+  const schema = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     additionalProperties: false,
@@ -41,17 +41,13 @@ export function convertInterfaceToSchema(
   };
   for (let i = 1; i < lines.length; i++) {
     let content = lines[i].trim();
-    if (content === "{") {
-      continue;
-    }
-    if (content === "}") {
-      continue;
-    }
-    if (content === "") {
-      continue;
-    }
+    if (content === "{") continue;
 
-    let placeHolders: string[] = [];
+    if (content === "}") continue;
+
+    if (content === "") continue;
+
+    const placeHolders: string[] = [];
 
     content = content
       .replace(/\\"/gu, "\uE9b4a")
@@ -74,13 +70,11 @@ export function convertInterfaceToSchema(
       content = content.slice(0, -1);
     }
 
-    let spData = content.replace(/ /g, "").split(":");
+    const spData = content.replace(/ /g, "").split(":");
 
-    if (spData.length !== 2) {
-      throw "SyntaxError Found";
-    }
+    if (spData.length !== 2) throw "SyntaxError Found";
 
-    let [property, typeData] = spData;
+    const [property, typeData] = spData;
 
     switch (typeData) {
       case "string":
@@ -108,9 +102,8 @@ export function convertInterfaceToSchema(
         const types = typeData.split("|");
         const strings: string[] = [];
         for (const t of types) {
-          if (!t.startsWith("\uE9b4d")) {
-            throw "Unsupported Type Detected";
-          }
+          if (!t.startsWith("\uE9b4d")) throw "Unsupported Type Detected";
+
           const textIndex = t.replace("\uE9b4d", "");
           const text = placeHolders[parseInt(textIndex)];
           const textParsed = JSON.parse(
@@ -162,12 +155,10 @@ export function getGeneralJSONSchema(
     if (!data || typeof data !== "object") return data;
     const keys = Object.keys(data);
     for (const key of keys) {
-      if (excludeSet?.has(key)) {
-        delete data[key];
-      } else if (typeof data[key] === "object") {
-        data[key] = process(data[key]);
-      }
+      if (excludeSet?.has(key)) delete data[key];
+      else if (typeof data[key] === "object") data[key] = process(data[key]);
     }
+
     return data;
   }
 

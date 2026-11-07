@@ -163,6 +163,7 @@ export class LocalBackupDatabaseStreamStore<
         "session_not_found",
       );
     }
+
     if (session.expiresAt <= Date.now()) {
       this.sessions.delete(id);
       void fs.rm(session.directoryPath, {
@@ -192,6 +193,7 @@ export class LocalBackupDatabaseStreamStore<
         "session_finalized",
       );
     }
+
     if (session.writeInProgress) {
       throw new LocalBackupDatabaseStreamError(
         "A database stream write is already in progress",
@@ -211,6 +213,7 @@ export class LocalBackupDatabaseStreamStore<
         "fragment_order_mismatch",
       );
     }
+
     if (
       !Array.isArray(encodedRecords) ||
       encodedRecords.length === 0 ||
@@ -221,6 +224,7 @@ export class LocalBackupDatabaseStreamStore<
         "invalid_record_batch",
       );
     }
+
     if (
       session.currentFragmentRecords + encodedRecords.length >
       LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
@@ -247,6 +251,7 @@ export class LocalBackupDatabaseStreamStore<
             "unsupported_record_type",
           );
         }
+
         this.adapter.validateRecord(record, recordIndex, candidateState);
         candidateCounts[record.type] = (candidateCounts[record.type] ?? 0) + 1;
         lines.push(`${JSON.stringify(this.adapter.encodeRecord(record))}\n`);
@@ -303,6 +308,7 @@ export class LocalBackupDatabaseStreamStore<
         "session_finalized",
       );
     }
+
     if (session.writeInProgress) {
       throw new LocalBackupDatabaseStreamError(
         "Database stream write is still in progress",
@@ -331,12 +337,14 @@ export class LocalBackupDatabaseStreamStore<
         "invalid_manifest",
       );
     }
+
     if (session.currentFragmentRecords !== 0) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream ended with an incomplete fragment",
         "incomplete_fragment",
       );
     }
+
     const completedFragments = session.nextFragmentIndex - 1;
     if (
       parsed.totalFragments !== completedFragments ||
@@ -347,6 +355,7 @@ export class LocalBackupDatabaseStreamStore<
         "incomplete_stream",
       );
     }
+
     if (
       parsed.revision !==
       this.adapter.getSourceRevision(session.validationState)
@@ -356,6 +365,7 @@ export class LocalBackupDatabaseStreamStore<
         "revision_mismatch",
       );
     }
+
     for (const type of LOCAL_BACKUP_DATABASE_RECORD_TYPES) {
       if ((parsed.counts[type] ?? 0) !== (session.counts[type] ?? 0)) {
         throw new LocalBackupDatabaseStreamError(
@@ -364,6 +374,7 @@ export class LocalBackupDatabaseStreamStore<
         );
       }
     }
+
     for (const type of Object.keys(parsed.counts)) {
       const count = parsed.counts[type];
       if (!isAllowedRecordType(type) && Number(count) !== 0) {
@@ -393,6 +404,7 @@ export class LocalBackupDatabaseStreamStore<
     for (const [id, session] of this.sessions) {
       if (session.expiresAt <= now) expired.push(id);
     }
+
     await Promise.all(expired.map((id) => this.cleanup(id)));
   }
 }

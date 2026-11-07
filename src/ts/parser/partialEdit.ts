@@ -47,15 +47,10 @@ export interface FindRangeOptions {
 
 function htmlToPlain(htmlOrFragment: string | HTMLElement): string {
   let html = "";
-  if (typeof htmlOrFragment === "string") {
-    html = htmlOrFragment;
-  } else if (htmlOrFragment?.outerHTML) {
-    html = htmlOrFragment.outerHTML;
-  } else if (htmlOrFragment?.innerHTML) {
-    html = htmlOrFragment.innerHTML;
-  } else {
-    return "";
-  }
+  if (typeof htmlOrFragment === "string") html = htmlOrFragment;
+  else if (htmlOrFragment?.outerHTML) html = htmlOrFragment.outerHTML;
+  else if (htmlOrFragment?.innerHTML) html = htmlOrFragment.innerHTML;
+  else return "";
 
   const div = document.createElement("div");
   div.innerHTML = html;
@@ -200,13 +195,10 @@ function normalizeText(
   }
 
   let startIdx = 0;
-  while (startIdx < out.length && out[startIdx] === " ") {
-    startIdx++;
-  }
+  while (startIdx < out.length && out[startIdx] === " ") startIdx++;
+
   let endIdx = out.length;
-  while (endIdx > startIdx && out[endIdx - 1] === " ") {
-    endIdx--;
-  }
+  while (endIdx > startIdx && out[endIdx - 1] === " ") endIdx--;
 
   const norm =
     startIdx === 0 && endIdx === out.length
@@ -298,8 +290,9 @@ function prefixSuffixScore(a: string, b: string): number {
   if (!minLen) return la === lb ? 1 : 0;
 
   let prefix = 0;
-  while (prefix < minLen && a.charCodeAt(prefix) === b.charCodeAt(prefix))
+  while (prefix < minLen && a.charCodeAt(prefix) === b.charCodeAt(prefix)) {
     prefix++;
+  }
 
   let suffix = 0;
   while (
@@ -417,9 +410,8 @@ export function findAllOriginalRangesFromText(
       }
     }
     const deduplicated: RangeResultWithContext[] = [];
-    for (const match of byLine.values()) {
-      deduplicated.push(match);
-    }
+    for (const match of byLine.values()) deduplicated.push(match);
+
     return deduplicated;
   }
 
@@ -441,6 +433,7 @@ export function findAllOriginalRangesFromText(
       if (Math.abs(a.confidence - b.confidence) > CONFIDENCE_EPSILON) {
         return b.confidence - a.confidence;
       }
+
       return a.start - b.start;
     });
     const deduplicated = deduplicateByLine(results);
@@ -482,6 +475,7 @@ export function findAllOriginalRangesFromText(
       if (Math.abs(a.confidence - b.confidence) > CONFIDENCE_EPSILON) {
         return b.confidence - a.confidence;
       }
+
       return a.start - b.start;
     });
     const deduplicated = deduplicateByLine(results);
@@ -501,9 +495,7 @@ export function findAllOriginalRangesFromText(
         uniqueCandidates.set(i, d);
 
         const confidence = 1 - d / threshold;
-        if (confidence >= 0.9 && uniqueCandidates.size >= MAX_RESULTS) {
-          break;
-        }
+        if (confidence >= 0.9 && uniqueCandidates.size >= MAX_RESULTS) break;
       }
     }
 
@@ -525,9 +517,7 @@ export function findAllOriginalRangesFromText(
         const d = fastEditDistance(plN, seg, CUTOFF);
         if (d <= threshold) {
           const existing = uniqueCandidates.get(i);
-          if (!existing || d < existing) {
-            uniqueCandidates.set(i, d);
-          }
+          if (!existing || d < existing) uniqueCandidates.set(i, d);
         }
       }
     }
@@ -564,6 +554,7 @@ export function findAllOriginalRangesFromText(
             if (SNAP_TRIM) {
               while (s < nStart && (mdN[s] === " " || mdN[s] === "\t")) s++;
             }
+
             if (s < nEnd) nStart = s;
           }
         }
@@ -579,9 +570,7 @@ export function findAllOriginalRangesFromText(
       const hasOverlap = results.some(
         (existing) => Math.abs(existing.start - range.start) < plN.length * 0.3,
       );
-      if (!hasOverlap) {
-        results.push(addContext(range));
-      }
+      if (!hasOverlap) results.push(addContext(range));
     }
   }
 
@@ -590,6 +579,7 @@ export function findAllOriginalRangesFromText(
       if (Math.abs(a.confidence - b.confidence) > CONFIDENCE_EPSILON) {
         return b.confidence - a.confidence;
       }
+
       return a.start - b.start;
     });
     const deduplicated = deduplicateByLine(results);
@@ -608,9 +598,7 @@ export function findAllOriginalRangesFromText(
       if (score >= BIGRAM_THRESHOLD) {
         uniqueCandidates.set(i, score);
 
-        if (score >= 0.9 && uniqueCandidates.size >= MAX_RESULTS) {
-          break;
-        }
+        if (score >= 0.9 && uniqueCandidates.size >= MAX_RESULTS) break;
       }
     }
 
@@ -632,19 +620,16 @@ export function findAllOriginalRangesFromText(
         const score = bigramSimilarityWithProfile(plN, plProfile, seg);
         if (score >= BIGRAM_THRESHOLD) {
           const existing = uniqueCandidates.get(i);
-          if (!existing || score > existing) {
-            uniqueCandidates.set(i, score);
-          }
+          if (!existing || score > existing) uniqueCandidates.set(i, score);
         }
       }
     }
 
     const sortedCandidates: Array<{ pos: number; score: number }> = [];
     for (const [pos, score] of uniqueCandidates) {
-      if (score >= MIN_CONFIDENCE) {
-        sortedCandidates.push({ pos, score });
-      }
+      if (score >= MIN_CONFIDENCE) sortedCandidates.push({ pos, score });
     }
+
     sortedCandidates.sort((a, b) => b.score - a.score);
     const topCandidates = sortedCandidates.slice(0, MAX_RESULTS);
 
@@ -666,6 +651,7 @@ export function findAllOriginalRangesFromText(
             if (SNAP_TRIM) {
               while (s < nStart && (mdN[s] === " " || mdN[s] === "\t")) s++;
             }
+
             if (s < nEnd) nStart = s;
           }
         }
@@ -676,9 +662,7 @@ export function findAllOriginalRangesFromText(
       const hasOverlap = results.some(
         (existing) => Math.abs(existing.start - range.start) < plN.length * 0.3,
       );
-      if (!hasOverlap) {
-        results.push(addContext(range));
-      }
+      if (!hasOverlap) results.push(addContext(range));
     }
   }
 
@@ -686,6 +670,7 @@ export function findAllOriginalRangesFromText(
     if (Math.abs(a.confidence - b.confidence) > CONFIDENCE_EPSILON) {
       return b.confidence - a.confidence;
     }
+
     return a.start - b.start;
   });
   const deduplicated = deduplicateByLine(results);
@@ -719,6 +704,7 @@ function calculateLineNumber(text: string, position: number): number {
   for (let i = 0; i < position && i < text.length; i++) {
     if (text[i] === "\n") line++;
   }
+
   return line;
 }
 
@@ -763,9 +749,7 @@ function extractContext(
   }
 
   let before = text.slice(beforeStart, start).trim();
-  if (before.length > maxChars) {
-    before = "..." + before.slice(-maxChars);
-  }
+  if (before.length > maxChars) before = "..." + before.slice(-maxChars);
 
   let afterEnd = end;
   contentLinesFound = 0;
@@ -778,12 +762,8 @@ function extractContext(
       if (!isEmptyLine(lineContent)) {
         contentLinesFound++;
         afterEnd = i;
-        if (contentLinesFound >= linesAfter) {
-          break;
-        }
-      } else {
-        afterEnd = i;
-      }
+        if (contentLinesFound >= linesAfter) break;
+      } else afterEnd = i;
 
       currentLineEnd = i + 1;
 
@@ -792,9 +772,7 @@ function extractContext(
   }
 
   let after = text.slice(end, afterEnd).trim();
-  if (after.length > maxChars) {
-    after = after.slice(0, maxChars) + "...";
-  }
+  if (after.length > maxChars) after = after.slice(0, maxChars) + "...";
 
   return { before, after };
 }

@@ -129,12 +129,12 @@ export async function loadLoreBookV3Prompt(
   const fullWordMatchingSetting = char.loreSettings?.fullWordMatching ?? false;
   const chatLength = currentChat.length + 1; //includes first message
   const recursiveScanning = char.loreSettings?.recursiveScanning ?? true;
-  let recursivePrompt: {
+  const recursivePrompt: {
     prompt: string;
     source: string;
     data: string;
   }[] = [];
-  let matchLog: {
+  const matchLog: {
     prompt: string;
     source: string;
     activated: string;
@@ -176,9 +176,7 @@ export async function loadLoreBookV3Prompt(
     const newKeys = [];
     for (const key of arg.keys) {
       const trimmed = key.trim();
-      if (trimmed.length > 0) {
-        newKeys.push(trimmed);
-      }
+      if (trimmed.length > 0) newKeys.push(trimmed);
     }
     arg.keys = newKeys;
     let mList: {
@@ -220,9 +218,8 @@ export async function loadLoreBookV3Prompt(
       const regexes: { regex: RegExp; source: string }[] = [];
       for (const regexString of arg.keys) {
         const parsed = regexString.match(/^\/([\s\S]*)\/([dgimsuvy]*)$/);
-        if (!parsed) {
-          return false;
-        }
+        if (!parsed) return false;
+
         const [, pattern, flags] = parsed;
 
         try {
@@ -247,6 +244,7 @@ export async function loadLoreBookV3Prompt(
           }
         }
       }
+
       return false;
     }
 
@@ -264,7 +262,7 @@ export async function loadLoreBookV3Prompt(
       };
     });
 
-    let allMode = arg.all ?? false;
+    const allMode = arg.all ?? false;
     let allModeMatched = true;
 
     for (const m of mList) {
@@ -278,12 +276,8 @@ export async function loadLoreBookV3Prompt(
               source: m.source,
               activated: key,
             });
-            if (!allMode) {
-              return true;
-            }
-          } else if (allMode) {
-            allModeMatched = false;
-          }
+            if (!allMode) return true;
+          } else if (allMode) allModeMatched = false;
         }
       } else {
         mText = mText.replace(/ /g, "");
@@ -295,18 +289,13 @@ export async function loadLoreBookV3Prompt(
               source: m.source,
               activated: key,
             });
-            if (!allMode) {
-              return true;
-            }
-          } else if (allMode) {
-            allModeMatched = false;
-          }
+            if (!allMode) return true;
+          } else if (allMode) allModeMatched = false;
         }
       }
     }
-    if (allMode && allModeMatched) {
-      return true;
-    }
+    if (allMode && allModeMatched) return true;
+
     return false;
   };
 
@@ -321,8 +310,9 @@ export async function loadLoreBookV3Prompt(
         if (!lore.alwaysActive && !lore.key) continue;
         if (
           lore.content.split("\n").some((line) => line.trim().startsWith("@@@"))
-        )
+        ) {
           return;
+        }
         let scanDepth = loreDepth;
         let fullWordMatching = fullWordMatchingSetting;
         let dontSearchWhenRecursive = false;
@@ -330,21 +320,17 @@ export async function loadLoreBookV3Prompt(
         const searchQueries: Array<{ keys: string[]; all?: boolean }> = [];
 
         CCardLib.decorator.parse(lore.content, (name, arg) => {
-          if (name === "scan_depth") {
-            scanDepth = parseInt(arg[0]);
-          } else if (name === "additional_keys" || name === "exclude_keys") {
+          if (name === "scan_depth") scanDepth = parseInt(arg[0]);
+          else if (name === "additional_keys" || name === "exclude_keys") {
             searchQueries.push({ keys: arg });
           } else if (name === "exclude_keys_all") {
             searchQueries.push({ keys: arg, all: true });
-          } else if (name === "match_full_word") {
-            fullWordMatching = true;
-          } else if (name === "match_partial_word") {
-            fullWordMatching = false;
-          } else if (name === "no_recursive_search") {
+          } else if (name === "match_full_word") fullWordMatching = true;
+          else if (name === "match_partial_word") fullWordMatching = false;
+          else if (name === "no_recursive_search") {
             dontSearchWhenRecursive = true;
-          } else if (name === "recursive") {
-            unsafeRecursiveOverride = true;
-          }
+          } else if (name === "recursive") unsafeRecursiveOverride = true;
+
           return;
         });
 
@@ -458,14 +444,12 @@ export async function loadLoreBookV3Prompt(
   }
 
   const serverRecursiveLore = await prepareServerRecursiveLore();
-  if (!serverRecursiveLore) {
-    await prepareServerLoreMatches();
-  }
+  if (!serverRecursiveLore) await prepareServerLoreMatches();
 
-  let selectedTokens = 0;
-  let selectedCount = 0;
-  let addedKeys: string[] = [];
-  let logs: {
+  const selectedTokens = 0;
+  const selectedCount = 0;
+  const addedKeys: string[] = [];
+  const logs: {
     key: string;
     content: string;
     comment: string;
@@ -473,7 +457,7 @@ export async function loadLoreBookV3Prompt(
     reason: string;
   }[] = [];
 
-  let loreOrder: {
+  const loreOrder: {
     order: number;
     type: "character" | "chat" | "module";
     lore: loreBook;
@@ -481,7 +465,7 @@ export async function loadLoreBookV3Prompt(
   }[] = [];
 
   let matching = !serverRecursiveLore;
-  let actives: {
+  const actives: {
     depth: number;
     pos: string;
     prompt: string;
@@ -497,10 +481,10 @@ export async function loadLoreBookV3Prompt(
       lore: boolean;
     } | null;
   }[] = [];
-  let activatedIndexes: number[] = [];
+  const activatedIndexes: number[] = [];
   const activeTokenTexts: string[] = [];
-  let disabledUIPrompts: string[] = [];
-  let matchTimes = 0;
+  const disabledUIPrompts: string[] = [];
+  const matchTimes = 0;
 
   if (serverRecursiveLore) {
     matchLog.push(...serverRecursiveLore.logs);
@@ -531,12 +515,10 @@ export async function loadLoreBookV3Prompt(
   while (matching) {
     matching = false;
     for (let i = 0; i < fullLore.length; i++) {
-      if (activatedIndexes.includes(i)) {
-        continue;
-      }
-      if (!fullLore[i].alwaysActive && !fullLore[i].key) {
-        continue;
-      }
+      if (activatedIndexes.includes(i)) continue;
+
+      if (!fullLore[i].alwaysActive && !fullLore[i].key) continue;
+
       let activated = true;
       let pos = "";
       let inject: {
@@ -547,11 +529,11 @@ export async function loadLoreBookV3Prompt(
       } = null;
       let depth = 0;
       let scanDepth = loreDepth;
-      let order = fullLore[i].insertorder;
+      const order = fullLore[i].insertorder;
       let priority = fullLore[i].insertorder;
       let forceState: string = "none";
       let role: "system" | "user" | "assistant" = "system";
-      let searchQueries: {
+      const searchQueries: {
         keys: string[];
         negative: boolean;
         all?: boolean;
@@ -587,22 +569,18 @@ export async function loadLoreBookV3Prompt(
             }
             case "activate_only_after": {
               const int = parseInt(arg[0]);
-              if (Number.isNaN(int)) {
-                return false;
-              }
-              if (chatLength < int) {
-                activated = false;
-              }
+              if (Number.isNaN(int)) return false;
+
+              if (chatLength < int) activated = false;
+
               return;
             }
             case "activate_only_every": {
               const int = parseInt(arg[0]);
-              if (Number.isNaN(int)) {
-                return false;
-              }
-              if (chatLength % int !== 0) {
-                activated = false;
-              }
+              if (Number.isNaN(int)) return false;
+
+              if (chatLength % int !== 0) activated = false;
+
               return;
             }
             case "keep_activate_after_match": {
@@ -612,11 +590,9 @@ export async function loadLoreBookV3Prompt(
                     pickHashRand(5555, fullLore[i].content).toString()),
                 chatVarTarget,
               );
-              if (vara === "true") {
-                forceState = "activate";
-              } else {
-                keepActivateAfterMatch = true;
-              }
+              if (vara === "true") forceState = "activate";
+              else keepActivateAfterMatch = true;
+
               return false;
             }
             case "dont_activate_after_match": {
@@ -626,19 +602,16 @@ export async function loadLoreBookV3Prompt(
                     pickHashRand(5555, fullLore[i].content).toString()),
                 chatVarTarget,
               );
-              if (vara === "true") {
-                forceState = "deactivate";
-              } else {
-                dontActivateAfterMatch = true;
-              }
+              if (vara === "true") forceState = "deactivate";
+              else dontActivateAfterMatch = true;
+
               return false;
             }
             case "depth":
             case "reverse_depth": {
               const int = parseInt(arg[0]);
-              if (Number.isNaN(int)) {
-                return false;
-              }
+              if (Number.isNaN(int)) return false;
+
               depth = int;
               pos = name === "depth" ? "depth" : "reverse_depth";
               return;
@@ -666,12 +639,10 @@ export async function loadLoreBookV3Prompt(
             }
             case "is_greeting": {
               const int = parseInt(arg[0]);
-              if (Number.isNaN(int)) {
-                return false;
-              }
-              if ((sourceChat.fmIndex ?? -1) + 1 !== int) {
-                activated = false;
-              }
+              if (Number.isNaN(int)) return false;
+
+              if ((sourceChat.fmIndex ?? -1) + 1 !== int) activated = false;
+
               return;
             }
             case "position": {
@@ -789,9 +760,8 @@ export async function loadLoreBookV3Prompt(
               return false;
             }
             case "probability": {
-              if (Math.random() * 100 > parseInt(arg[0])) {
-                activated = false;
-              }
+              if (Math.random() * 100 > parseInt(arg[0])) activated = false;
+
               return;
             }
             case "priority": {
@@ -847,20 +817,15 @@ export async function loadLoreBookV3Prompt(
               activated = false;
               break;
             }
-          } else {
-            if (!result) {
-              activated = false;
-              break;
-            }
+          } else if (!result) {
+            activated = false;
+            break;
           }
         }
       }
 
-      if (forceState === "activate") {
-        activated = true;
-      } else if (forceState === "deactivate") {
-        activated = false;
-      }
+      if (forceState === "activate") activated = true;
+      else if (forceState === "deactivate") activated = false;
 
       if (activated) {
         // Evaluate CBS now to preserve the original chat-variable timing, then batch only
@@ -890,6 +855,7 @@ export async function loadLoreBookV3Prompt(
             chatVarTarget,
           );
         }
+
         if (dontActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_da_" +
@@ -901,9 +867,7 @@ export async function loadLoreBookV3Prompt(
         }
 
         let recursive = recursiveScanning;
-        if (itemRecursive !== "global") {
-          recursive = itemRecursive;
-        }
+        if (itemRecursive !== "global") recursive = itemRecursive;
 
         if (recursive) {
           matching = true;
@@ -987,31 +951,25 @@ export async function importLoreBook(mode: "global" | "local" | "sglobal") {
   const selectedID = get(selectedCharID);
   const page =
     mode === "sglobal" ? -1 : characterStore.characters[selectedID].chatPage;
-  let lore =
+  const lore =
     mode === "global"
       ? characterStore.characters[selectedID].globalLore
       : characterStore.characters[selectedID].chats[page].localLore;
   const lorebook = (await selectSingleFile(["json", "lorebook"])).data;
-  if (!lorebook) {
-    return;
-  }
+  if (!lorebook) return;
 
   try {
     const importedlore = JSON.parse(Buffer.from(lorebook).toString("utf-8"));
     if (importedlore.type === "risu" && importedlore.data) {
       const datas: loreBook[] = importedlore.data;
-      for (const data of datas) {
-        lore.push(data);
-      }
+      for (const data of datas) lore.push(data);
     } else if (importedlore.entries) {
       const entries: { [key: string]: CCLorebook } = importedlore.entries;
       lore.push(...convertExternalLorebook(entries));
     }
     if (mode === "global") {
       characterStore.characters[selectedID].globalLore = lore;
-    } else {
-      characterStore.characters[selectedID].chats[page].localLore = lore;
-    }
+    } else characterStore.characters[selectedID].chats[page].localLore = lore;
   } catch (error) {
     alertError(error);
   }
@@ -1043,7 +1001,7 @@ export interface CCLorebook {
 export function convertExternalLorebook(entries: {
   [key: string]: CCLorebook;
 }) {
-  let lore: loreBook[] = [];
+  const lore: loreBook[] = [];
   for (const key in entries) {
     const currentLore = entries[key];
     lore.push({

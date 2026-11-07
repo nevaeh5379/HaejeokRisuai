@@ -38,6 +38,7 @@ function parseEnvFile(filename) {
     ) {
       value = value.slice(1, -1);
     }
+
     values[key] = value;
   }
   return values;
@@ -72,17 +73,18 @@ function parseInstallArgs(args, env = process.env) {
     else if (arg === "--no-start") options.start = false;
     else if (arg === "--skip-db-check") options.skipDbCheck = true;
     else if (arg === "--env-file") options.envFile = takeOption(args, i++);
-    else if (arg.startsWith("--"))
+    else if (arg.startsWith("--")) {
       explicit[arg.slice(2)] = takeOption(args, i++);
-    else fail(`Unknown native install argument: ${arg}`);
+    } else fail(`Unknown native install argument: ${arg}`);
   }
   const requestedVendor = (
     explicit["db-vendor"] ??
     env.DB_VENDOR ??
     "postgres"
   ).toLowerCase();
-  if (!["postgres", "oracle", "azure"].includes(requestedVendor))
+  if (!["postgres", "oracle", "azure"].includes(requestedVendor)) {
     fail(`Unsupported database vendor: ${requestedVendor}`);
+  }
   if (!options.envFile) {
     const candidate =
       requestedVendor === "postgres"
@@ -99,14 +101,16 @@ function parseInstallArgs(args, env = process.env) {
     env.DB_VENDOR ??
     requestedVendor
   ).toLowerCase();
-  if (!["postgres", "oracle", "azure"].includes(vendor))
+  if (!["postgres", "oracle", "azure"].includes(vendor)) {
     fail(`Unsupported database vendor: ${vendor}`);
+  }
   const port = Number.parseInt(
     explicit.port ?? fileEnv.PORT ?? env.PORT ?? "6001",
     10,
   );
-  if (!Number.isInteger(port) || port < 1 || port > 65535)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
     fail(`Invalid native port: ${port}`);
+  }
   const host =
     explicit.host ?? fileEnv.RISU_HOST ?? env.RISU_HOST ?? "127.0.0.1";
   const savePath = path.resolve(
@@ -123,8 +127,9 @@ function parseInstallArgs(args, env = process.env) {
     ),
   );
   const poolMax = Number.parseInt(explicit["pool-max"] ?? "10", 10);
-  if (!Number.isInteger(poolMax) || poolMax < 1)
+  if (!Number.isInteger(poolMax) || poolMax < 1) {
     fail(`Invalid pool size: ${poolMax}`);
+  }
 
   let params;
   if (vendor === "postgres") {
@@ -132,8 +137,9 @@ function parseInstallArgs(args, env = process.env) {
       connectionString: value("DATABASE_URL", "database-url"),
       poolMax,
     };
-    if (!params.connectionString)
+    if (!params.connectionString) {
       fail("PostgreSQL native mode requires --database-url or DATABASE_URL");
+    }
   } else if (vendor === "oracle") {
     params = {
       user: value("ORACLE_USER", "oracle-user"),
@@ -143,8 +149,9 @@ function parseInstallArgs(args, env = process.env) {
       walletPassword: value("ORACLE_WALLET_PASSWORD", "oracle-wallet-password"),
       poolMax,
     };
-    if (!params.user || !params.password || !params.tnsAlias)
+    if (!params.user || !params.password || !params.tnsAlias) {
       fail("Oracle native mode requires user, password, and TNS alias");
+    }
   } else {
     params = {
       server: value("AZURE_HOST", "azure-host"),
@@ -154,14 +161,21 @@ function parseInstallArgs(args, env = process.env) {
       port: Number.parseInt(value("AZURE_PORT", "azure-port", "1433"), 10),
       poolMax,
     };
-    if (!params.server || !params.database || !params.user || !params.password)
+    if (
+      !params.server ||
+      !params.database ||
+      !params.user ||
+      !params.password
+    ) {
       fail("Azure SQL native mode requires host, database, user, and password");
+    }
     if (
       !Number.isInteger(params.port) ||
       params.port < 1 ||
       params.port > 65535
-    )
+    ) {
       fail(`Invalid Azure SQL port: ${params.port}`);
+    }
   }
   return {
     options,
@@ -195,13 +209,15 @@ function writeConfig(config) {
 }
 
 function readConfig() {
-  if (!fs.existsSync(configPath))
+  if (!fs.existsSync(configPath)) {
     fail(
       `No native installation found. Run './risuai.sh native install ...' first.`,
     );
+  }
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  if (config.version !== CONFIG_VERSION)
+  if (config.version !== CONFIG_VERSION) {
     fail(`Unsupported native config version: ${config.version}`);
+  }
   return config;
 }
 
@@ -238,8 +254,9 @@ function databaseEnv(config) {
     result.ORACLE_USER_PASSWORD = params.password;
     result.ORACLE_TNS_ALIAS = params.tnsAlias;
     if (params.walletPath) result.ORACLE_WALLET_PATH = params.walletPath;
-    if (params.walletPassword)
+    if (params.walletPassword) {
       result.ORACLE_WALLET_PASSWORD = params.walletPassword;
+    }
     result.ORACLE_POOL_MAX = String(params.poolMax || 10);
   } else {
     result.AZURE_HOST = params.server;
@@ -273,9 +290,11 @@ function summarizeBuildOutput(outputDir = path.join(root, "dist")) {
   if (!fs.existsSync(indexPath) || !fs.statSync(indexPath).isFile()) {
     fail(`Native build did not produce ${indexPath}`);
   }
+
   if (!fs.existsSync(assetsDir) || !fs.statSync(assetsDir).isDirectory()) {
     fail(`Native build did not produce ${assetsDir}`);
   }
+
   let files = 0;
   let bytes = 0;
   const stack = [assetsDir];
@@ -290,8 +309,9 @@ function summarizeBuildOutput(outputDir = path.join(root, "dist")) {
       }
     }
   }
-  if (files === 0)
+  if (files === 0) {
     fail(`Native build produced an empty asset directory: ${assetsDir}`);
+  }
   return { files, bytes, outputDir, assetsDir, indexPath };
 }
 
@@ -300,6 +320,7 @@ function summarizeUserAssets(savePath) {
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     return { objects: 0, bytes: 0, savePath: resolved };
   }
+
   let objects = 0;
   let bytes = 0;
   for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {
@@ -331,8 +352,9 @@ function runBuild(config = null) {
     stdio: "inherit",
     env: process.env,
   });
-  if (result.status !== 0)
+  if (result.status !== 0) {
     fail(`Native build failed with exit code ${result.status ?? "unknown"}`);
+  }
   const output = summarizeBuildOutput();
   console.log(
     `OK: Frontend bundle ready (${output.files} files, ${(output.bytes / 1024 / 1024).toFixed(1)} MiB)`,
@@ -358,8 +380,9 @@ async function testDatabase(config) {
   );
   console.log(`==> Testing ${config.db.vendor} connection`);
   const result = await testConnection(config.db.vendor, config.db.params);
-  if (!result.success)
+  if (!result.success) {
     fail(`Database connection failed: ${result.error || "unknown error"}`);
+  }
   console.log(`OK: ${config.db.vendor} connection succeeded`);
 }
 
@@ -370,8 +393,9 @@ async function waitForHealth(config, childPid) {
       : config.host;
   const url = `http://${host.includes(":") ? `[${host}]` : host}:${config.port}/api/health`;
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (!processAlive(childPid))
+    if (!processAlive(childPid)) {
       fail(`Native server exited before becoming ready. See ${logPath}`);
+    }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
       if (!response.ok) {
@@ -379,6 +403,7 @@ async function waitForHealth(config, childPid) {
           `Warning: native server is reachable but health returned HTTP ${response.status}; recovery mode may be active.`,
         );
       }
+
       return;
     } catch {}
     await sleep(1000);
@@ -447,6 +472,7 @@ function maskedConfig(config) {
       clone.db.params.connectionString = "<configured>";
     }
   }
+
   if (clone.db.vendor === "oracle") {
     clone.db.params.password = "***";
     if (clone.db.params.walletPassword) clone.db.params.walletPassword = "***";
@@ -486,8 +512,9 @@ function usage() {
 async function main(argv) {
   const command = argv[0] || "help";
   const args = argv.slice(1);
-  if (command === "help" || command === "-h" || command === "--help")
+  if (command === "help" || command === "-h" || command === "--help") {
     return usage();
+  }
   if (command === "install") {
     const { options, config } = parseInstallArgs(args);
     if (!options.skipDbCheck) await testDatabase(config);
@@ -497,8 +524,9 @@ async function main(argv) {
     if (options.start) await startNative(config);
     return;
   }
-  if (args.length && !["logs"].includes(command))
+  if (args.length && !["logs"].includes(command)) {
     fail(`${command} does not accept arguments`);
+  }
   if (command === "build") return runBuild();
   if (command === "start") return startNative();
   if (command === "stop") return stopNative();
@@ -513,8 +541,9 @@ async function main(argv) {
     return startNative(config);
   }
   if (command === "status") return showStatus();
-  if (command === "config")
+  if (command === "config") {
     return console.log(JSON.stringify(maskedConfig(readConfig()), null, 2));
+  }
   if (command === "logs") return showLogs(args);
   fail(`Unknown native command: ${command}`);
 }

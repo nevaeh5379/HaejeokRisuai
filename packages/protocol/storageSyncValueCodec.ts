@@ -65,6 +65,7 @@ function decodeSpecial(value?: any): any {
   ) {
     return { matched: false, value };
   }
+
   switch (value[SPECIAL_TAG]) {
     case "undefined":
       return { matched: true, value: undefined };
@@ -102,6 +103,7 @@ function decodeStorageSyncValue(value?: any): any {
       ) {
         return decodeStorageSyncObject(value);
       }
+
       defineValue(decoded, entry[0], decodeStorageSyncValue(entry[1]));
     }
     return decoded;

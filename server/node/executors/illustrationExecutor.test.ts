@@ -413,6 +413,7 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
         executor.accept({ ...requests[2], version: 0 }),
       ).rejects.toThrow("Invalid illustration version");
     }
+
     await executor.accept(requests[2]);
     await vi.waitFor(() => expect(executor.has(requests[2])).toBe(false), {
       timeout: 5000,
@@ -511,6 +512,7 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
         ).status,
       ).toBe(401);
     }
+
     expect(f.counts()).toEqual({ images: 0, tags: 0 });
   });
 

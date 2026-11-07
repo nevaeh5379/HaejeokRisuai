@@ -29,6 +29,7 @@ function parseBackupArchive(filePath) {
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`Backup file not found at: ${resolvedPath}`);
   }
+
   const fd = fs.openSync(resolvedPath, "r");
   const stat = fs.fstatSync(fd);
   let offset = 0;
@@ -99,6 +100,7 @@ async function test() {
       }
     }
   }
+
   console.log(`Total Messages in archive: ${splitMessages.length}`);
 
   const conn = await storage.pool.getConnection();

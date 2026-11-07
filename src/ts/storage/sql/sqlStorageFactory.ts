@@ -45,20 +45,23 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
       if (prop === "commit") {
         return async (commit: SqlCommit): Promise<SqlCommitResult> => {
           const run = async (): Promise<SqlCommitResult> => {
-            if (commit.action !== "illustration")
+            if (commit.action !== "illustration") {
               commit.baseRevision = target.getRevision();
+            }
             return await target.commit(commit);
           };
           commitChain = commitChain.then(run, run);
           return commitChain as Promise<SqlCommitResult>;
         };
       }
+
       if (prop === "message") {
         return (message ??= {
           ...target.message,
           ...createSqlMessageMutations(receiver),
         });
       }
+
       if (prop === "branch") {
         if (!target.branch) return target.branch;
         return (branch ??= new Proxy(target.branch, {
@@ -77,6 +80,7 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
                 }
               };
             }
+
             return original;
           },
         }));
@@ -154,6 +158,7 @@ export async function getSqlBranchStorage(): Promise<SqlBranchStorage> {
       `Persistent chat branch storage is required; missing API: ${missing.join(", ")}`,
     );
   }
+
   return storage as SqlBranchStorage;
 }
 

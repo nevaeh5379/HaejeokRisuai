@@ -22,6 +22,7 @@ export function getAndroidWidgetBotCount(): number {
   if (typeof configured !== "number" || !Number.isFinite(configured)) {
     return DEFAULT_WIDGET_BOT_COUNT;
   }
+
   return Math.max(
     MIN_WIDGET_BOT_COUNT,
     Math.min(MAX_WIDGET_BOT_COUNT, Math.floor(configured)),
@@ -48,9 +49,8 @@ async function loadWidgetArtwork(
 ): Promise<string | null> {
   if (!imageLocation || typeof document === "undefined") return null;
   const cached = widgetArtworkCache.get(imageLocation);
-  if (cached !== undefined) {
-    return rememberWidgetArtwork(imageLocation, cached);
-  }
+  if (cached !== undefined) return rememberWidgetArtwork(imageLocation, cached);
+
   try {
     // Read the original character artwork. The old thumbnail path was visibly
     // soft once a widget card became larger than a tiny launcher avatar.

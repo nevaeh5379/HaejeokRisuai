@@ -96,16 +96,19 @@ function resolveServerTiktokenEncoding(
   ) {
     return nonTiktokenNamedRoutes.has(db.customTokenizer) ? null : "o200k_base";
   }
+
   if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
     if (pluginTokenizer === "custom") return null;
     if (pluginTokenizer === "cl100k_base") return "cl100k_base";
     if (pluginTokenizer === "o200k_base") return "o200k_base";
     return nonTiktokenNamedRoutes.has(pluginTokenizer) ? null : "o200k_base";
   }
-  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base)
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) {
     return "o200k_base";
-  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase)
+  }
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase) {
     return "cl100k_base";
+  }
   if (modelInfo.tokenizer === LLMTokenizer.Unknown) return "cl100k_base";
   return null;
 }
@@ -170,6 +173,7 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
         );
       }
     }
+
     if (!counts) {
       counts = new Array<number>(missingTexts.length);
       for (let i = 0; i < missingTexts.length; i++) {
@@ -230,9 +234,7 @@ export async function encode(
       pluginTokenizer,
     );
     const cachedResult = encodeCache.get(cacheKey);
-    if (cachedResult !== undefined) {
-      return cachedResult;
-    }
+    if (cachedResult !== undefined) return cachedResult;
   }
 
   let result: number[] | Uint32Array | Int32Array;
@@ -264,9 +266,8 @@ export async function encode(
       ),
     );
   }
-  if (db.useTokenizerCaching) {
-    encodeCache.set(cacheKey, result);
-  }
+
+  if (db.useTokenizerCaching) encodeCache.set(cacheKey, result);
 
   return result;
 }
@@ -286,9 +287,7 @@ async function tokenizeGoogleCloud(text: string) {
   const cacheKey = text + model.internalID;
 
   const cachedCount = googleCloudTokenizedCache.get(cacheKey);
-  if (cachedCount !== undefined) {
-    return new Uint32Array(cachedCount);
-  }
+  if (cachedCount !== undefined) return new Uint32Array(cachedCount);
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.internalID}:countTokens?key=${db.google?.accessToken}`,
@@ -311,9 +310,7 @@ async function tokenizeGoogleCloud(text: string) {
     },
   );
 
-  if (res.status !== 200) {
-    return await tokenizeWebTokenizers(text, "gemma");
-  }
+  if (res.status !== 200) return await tokenizeWebTokenizers(text, "gemma");
 
   const json = await res.json();
   googleCloudTokenizedCache.set(cacheKey, json.totalTokens as number);
@@ -394,8 +391,9 @@ async function geminiTokenizer(text: string) {
     },
   );
 
-  if (!fetchResult.ok) {
-    //fallback to tiktoken
+  if (!fetchResult.ok)
+  //fallback to tiktoken
+  {
     return await tikJS(text);
   }
 
@@ -483,9 +481,8 @@ export class ChatTokenizer {
   ) {
     const counts = await this.tokenizeChatsDetailed(data, args);
     let total = 0;
-    for (let i = 0; i < counts.length; i++) {
-      total += counts[i];
-    }
+    for (let i = 0; i < counts.length; i++) total += counts[i];
+
     return total;
   }
 
@@ -506,14 +503,13 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
   if (localStorage.getItem("strongBan_" + data)) {
     return JSON.parse(localStorage.getItem("strongBan_" + data)!);
   }
+
   const banChars = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~“”‘’«»「」…–―※";
   const unbanChars = new Set<number>();
 
   for (let i = 0; i < banChars.length; i++) {
     const encoded = await tokenizeNum(banChars[i]);
-    if (encoded.length > 0) {
-      unbanChars.add(encoded[0]);
-    }
+    if (encoded.length > 0) unbanChars.add(encoded[0]);
   }
 
   const charAlt = [
@@ -531,12 +527,14 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
     if (encoded.length > 0 && !unbanChars.has(encoded[0])) {
       bias[encoded[0]] = -100;
     }
+
     for (let j = 0; j < charAlt.length; j++) {
       const alt = charAlt[j];
       const encoded1 = await tokenizeNum(alt + char);
       if (encoded1.length > 0 && !unbanChars.has(encoded1[0])) {
         bias[encoded1[0]] = -100;
       }
+
       const encoded2 = await tokenizeNum(char + alt);
       if (encoded2.length > 0 && !unbanChars.has(encoded2[0])) {
         bias[encoded2[0]] = -100;
@@ -548,12 +546,9 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
 }
 
 export async function getCharToken(char?: character | groupChat | null) {
-  if (!char) {
-    char = characterStore.currentCharacter;
-  }
-  if (char.type === "group") {
-    return { persistant: 0, dynamic: 0 };
-  }
+  if (!char) char = characterStore.currentCharacter;
+
+  if (char.type === "group") return { persistant: 0, dynamic: 0 };
 
   const charName = char.name;
   const normalize = (data: string) =>
@@ -588,19 +583,20 @@ export async function getCharToken(char?: character | groupChat | null) {
   for (let i = 0; i < persistentTexts.length; i++) {
     allTexts[i] = persistentTexts[i];
   }
+
   for (let i = 0; i < dynamicTexts.length; i++) {
     allTexts[persistentTexts.length + i] = dynamicTexts[i];
   }
 
   const counts = await countTokenTexts(allTexts);
   let persistant = 0;
-  for (let i = 0; i < persistentTexts.length; i++) {
-    persistant += counts[i] ?? 0;
-  }
+  for (let i = 0; i < persistentTexts.length; i++) persistant += counts[i] ?? 0;
+
   let dynamic = 0;
   for (let i = persistentTexts.length; i < counts.length; i++) {
     dynamic += counts[i] ?? 0;
   }
+
   return { persistant, dynamic };
 }
 

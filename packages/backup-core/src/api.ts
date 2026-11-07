@@ -93,6 +93,7 @@ export function validateLocalBackupDatabaseStreamSession(
       "The backup API returned an invalid database stream session.",
     );
   }
+
   return session as LocalBackupDatabaseStreamSession;
 }
 
@@ -116,6 +117,7 @@ export function validateLocalBackupDatabaseStreamFinalizeResult(
       "The backup API returned an invalid database stream finalize result.",
     );
   }
+
   return result as LocalBackupDatabaseStreamFinalizeResult;
 }
 
@@ -128,6 +130,7 @@ export function validateLocalBackupExportJobCreated(
       "The backup API returned an invalid export job.",
     );
   }
+
   return result as LocalBackupExportJobCreated;
 }
 
@@ -149,6 +152,7 @@ export function validateLocalBackupExportJobProgress(
       "The backup API returned an invalid export progress response.",
     );
   }
+
   const progress = result.progress;
   if (progress !== undefined) {
     if (
@@ -166,6 +170,7 @@ export function validateLocalBackupExportJobProgress(
       );
     }
   }
+
   return result as LocalBackupExportJobProgress;
 }
 
@@ -192,6 +197,7 @@ export function validateLocalBackupExportJobCompletion(
       "The backup API returned an invalid export completion response.",
     );
   }
+
   return result as LocalBackupExportJobCompletion;
 }
 
@@ -264,6 +270,7 @@ export function validateLocalBackupImportJobCreated(
       "The backup API returned an invalid import job.",
     );
   }
+
   return result as LocalBackupImportJobCreated;
 }
 
@@ -283,6 +290,7 @@ export function validateLocalBackupImportUploadState(
       "The backup API returned an invalid import upload state.",
     );
   }
+
   return result as LocalBackupImportUploadState;
 }
 
@@ -319,6 +327,7 @@ export function validateLocalBackupImportJobProgress(
       );
     }
   }
+
   return result as LocalBackupImportJobProgress;
 }
 
@@ -348,5 +357,6 @@ export function validateLocalBackupImportJobCompletion(
       "The backup API returned an invalid import completion response.",
     );
   }
+
   return result as LocalBackupImportJobCompletion;
 }

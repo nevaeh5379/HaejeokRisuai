@@ -75,8 +75,9 @@ describe("RisuSave decode memory behavior", () => {
       ...args
     ) {
       const text = originalDecode.apply(this, args);
-      if (text.startsWith('{"chaId"'))
+      if (text.startsWith('{"chaId"')) {
         events.push(`decode:${originalParse(text).chaId}`);
+      }
       return text;
     });
     vi.spyOn(JSON, "parse").mockImplementation((text, reviver) => {

@@ -85,11 +85,13 @@ class MessageStore implements FlushableStore {
         } catch (error) {
           const attempts = (this.commitAttempts.get(commit) ?? 0) + 1;
           this.commitAttempts.set(commit, attempts);
-          if (attempts < MessageStore.MAX_COMMIT_ATTEMPTS) {
-            // Transient failure: retain the commit for the next drain so the
-            // write survives, matching the pre-existing retry behaviour.
+          if (attempts < MessageStore.MAX_COMMIT_ATTEMPTS)
+          // Transient failure: retain the commit for the next drain so the
+          // write survives, matching the pre-existing retry behaviour.
+          {
             throw error;
           }
+
           console.error(
             "[MessageStore] Stashing commit after repeated failures; will retry on next flush:",
             error,
@@ -119,8 +121,9 @@ class MessageStore implements FlushableStore {
     // not leave the commit pending, so hasPendingWrites() stays false and
     // the exit/backup paths are not re-blocked.
     await this.queue.enqueue(async () => {});
-    if (this.pendingCommits.length > 0 || this.droppedCommits.length > 0)
+    if (this.pendingCommits.length > 0 || this.droppedCommits.length > 0) {
       await this.drainPendingCommits();
+    }
   }
 
   hasPendingWrites(): boolean {
@@ -160,9 +163,8 @@ class MessageStore implements FlushableStore {
     // Messages reference their parent chat through a foreign key in every SQL
     // backend. Persist all parent chat rows and the manifest before inserting
     // any child messages, avoiding the debounced CharacterStore race.
-    for (const { chatId } of chats) {
-      characterStore.markChatDirty(chatId);
-    }
+    for (const { chatId } of chats) characterStore.markChatDirty(chatId);
+
     characterStore.markChatManifestDirty(characterId);
     await characterStore.flush();
 
@@ -177,9 +179,8 @@ class MessageStore implements FlushableStore {
       return messages.map((message, position) => {
         let messageId = message.chatId;
         if (!messageId || usedIds.has(messageId)) {
-          do {
-            messageId = uuidv4();
-          } while (usedIds.has(messageId));
+          do messageId = uuidv4();
+          while (usedIds.has(messageId));
           message.chatId = messageId;
         }
         usedIds.add(messageId);
@@ -215,11 +216,8 @@ class MessageStore implements FlushableStore {
       const existingIndex = chat.message.findIndex(
         (m) => m.chatId === message.chatId,
       );
-      if (existingIndex >= 0) {
-        chat.message[existingIndex] = message;
-      } else {
-        chat.message.push(message);
-      }
+      if (existingIndex >= 0) chat.message[existingIndex] = message;
+      else chat.message.push(message);
     }
     try {
       const messages = chat?.message ?? [message];
@@ -526,9 +524,7 @@ export function releaseInactiveChatMessages(
   const scheduleIdle = (callback: () => void) => {
     if ("requestIdleCallback" in globalThis) {
       globalThis.requestIdleCallback(callback, { timeout: 1500 });
-    } else {
-      globalThis.setTimeout(callback, 0);
-    }
+    } else globalThis.setTimeout(callback, 0);
   };
 
   // Character selection should become paintable before we traverse and mutate
@@ -578,8 +574,9 @@ export function compactChatMessages(chatId: string): void {
     !chat.id ||
     chat.preventMessageCompaction ||
     chat.messagesFullyLoaded === false
-  )
+  ) {
     return;
+  }
   const messages = chat.message;
   const retention = getActiveChatMessageRetention();
   if (!messages || messages.length <= retention) return;
@@ -589,9 +586,8 @@ export function compactChatMessages(chatId: string): void {
   chat.messageOffset = (chat.messageOffset ?? 0) + dropCount;
   if (typeof chat.messageTotal === "number") {
     chat.messageTotal = Math.max(chat.messageTotal, messages.length);
-  } else {
-    chat.messageTotal = messages.length;
-  }
+  } else chat.messageTotal = messages.length;
+
   chat.messagesFullyLoaded = false;
   chat.messagesLoaded = true;
 }

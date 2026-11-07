@@ -16,9 +16,7 @@ export function makeLoadout(options: { name: string }): Loadout {
   const preset = presetStore.activePreset;
   const icons = [];
 
-  if (character?.image) {
-    icons.push(character.image);
-  }
+  if (character?.image) icons.push(character.image);
 
   return safeStructuredClone({
     name: options.name,
@@ -47,31 +45,26 @@ export function applyLoadout(
 ) {
   loadout.lastUsed = Date.now();
   const char = characterStore.currentCharacter;
-  if (char) {
-    loadout.characterIds.push(char.chaId);
-  }
+  if (char) loadout.characterIds.push(char.chaId);
+
   if (apply.includes("persona")) {
-    let personaIndex = personaStore.list.findIndex(
+    const personaIndex = personaStore.list.findIndex(
       (p) => p.id === loadout.personaId,
     );
-    if (personaIndex !== -1) {
-      changeUserPersona(personaIndex);
-    }
+    if (personaIndex !== -1) changeUserPersona(personaIndex);
   }
   if (apply.includes("preset")) {
-    let presetIndex = presetStore.list.findIndex(
+    const presetIndex = presetStore.list.findIndex(
       (p) => p.name === loadout.presetName,
     );
-    if (presetIndex !== -1) {
-      changeToPreset(presetIndex);
-    }
+    if (presetIndex !== -1) changeToPreset(presetIndex);
   }
-  if (apply.includes("modules")) {
-    moduleStore.enabledModules = loadout.modules;
-  }
+  if (apply.includes("modules")) moduleStore.enabledModules = loadout.modules;
+
   if (apply.includes("globalVariables")) {
     settingsStore.state.globalChatVariables = loadout.globalVariables;
   }
+
   settingsStore.state.lastLoadedLoadoutName = loadout.name;
 }
 

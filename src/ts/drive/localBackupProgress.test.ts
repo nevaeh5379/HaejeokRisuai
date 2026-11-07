@@ -46,6 +46,7 @@ describe("Node local backup restore progress", () => {
         updates[index - 1].progress,
       );
     }
+
     expect(updates[1].stepState.bars?.[0].detail).toBe("80 B / 100 B");
     expect(updates[2].stepState.bars?.[1].detail).toBe("50 B / 100 B");
   });

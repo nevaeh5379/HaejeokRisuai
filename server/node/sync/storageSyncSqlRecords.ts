@@ -75,6 +75,7 @@ function requireString(
       index,
     );
   }
+
   if (Buffer.byteLength(value, "utf8") > 16 * 1024) {
     throw new StorageSyncSqlRecordError(
       `${label} is too long`,
@@ -118,6 +119,7 @@ function validateRecord(
         index,
       );
     }
+
     state.sourceRevision = record.revision;
     return;
   }
@@ -137,15 +139,15 @@ function validateRecord(
         index,
       );
     }
-  } else if (ENTITY_RECORD_TYPES.has(record.type)) {
-    state.entityPhase = true;
-  } else {
+  } else if (ENTITY_RECORD_TYPES.has(record.type)) state.entityPhase = true;
+  else {
     throw new StorageSyncSqlRecordError(
       `Unsupported storage sync SQL record type '${record.type}'`,
       "unsupported_sql_record",
       index,
     );
   }
+
   switch (record.type) {
     case "author-note":
       requireObject(record.data, index);
@@ -156,12 +158,14 @@ function validateRecord(
         typeof record.data.updatedAt !== "number" ||
         !Number.isSafeInteger(record.data.updatedAt) ||
         record.data.updatedAt < 0
-      )
+      ) {
         throw new StorageSyncSqlRecordError("Invalid author note row");
+      }
       break;
     case "author-note-settings":
-      if (typeof record.allowScriptWrite !== "boolean")
+      if (typeof record.allowScriptWrite !== "boolean") {
         throw new StorageSyncSqlRecordError("Invalid author note settings");
+      }
       break;
     case "setting":
     case "plugin-storage":
@@ -185,6 +189,7 @@ function validateRecord(
           index,
         );
       }
+
       break;
     case "chat":
       requireString(record.characterId, "chat.characterId", index);
@@ -208,6 +213,7 @@ function validateRecord(
       if (record.parentMessageId !== undefined) {
         requireString(record.parentMessageId, "message.parentMessageId", index);
       }
+
       break;
   }
 }
@@ -243,6 +249,7 @@ async function readStorageSyncSqlRecords(
         recordCount,
       );
     }
+
     const line =
       lineChunks.length === 1
         ? lineChunks[0]
@@ -300,6 +307,7 @@ async function readStorageSyncSqlRecords(
       recordCount,
     );
   }
+
   if (recordCount === 0) {
     throw new StorageSyncSqlRecordError(
       "Storage sync SQL stream is empty",
@@ -307,6 +315,7 @@ async function readStorageSyncSqlRecords(
       0,
     );
   }
+
   if (
     expectedRecordCount !== undefined &&
     recordCount !== expectedRecordCount
@@ -317,6 +326,7 @@ async function readStorageSyncSqlRecords(
       recordCount,
     );
   }
+
   if (
     options.expectedSourceRevision !== undefined &&
     state.sourceRevision !== options.expectedSourceRevision
@@ -327,6 +337,7 @@ async function readStorageSyncSqlRecords(
       0,
     );
   }
+
   return {
     recordCount,
     sourceRevision: state.sourceRevision,

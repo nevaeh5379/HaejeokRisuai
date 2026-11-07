@@ -119,6 +119,7 @@ export function collectStreamingInventoryRecord(
     for (const key of coldStoragedChats) {
       inventory.referencedColdStorageKeys.add(key);
     }
+
     inventory.coldStorageCharacters.set(record.id, {
       chaId: record.id,
       name: data?.name ?? "Unknown Character",
@@ -142,6 +143,7 @@ export function collectStreamingInventoryRecord(
   ) {
     return;
   }
+
   const key = firstMessage.data.slice(coldStorageHeader.length);
   if (!key) return;
   inventory.referencedColdStorageKeys.add(key);
@@ -191,6 +193,7 @@ function collectAssetRecord(
         );
       }
     }
+
     return;
   }
 
@@ -207,6 +210,7 @@ function collectAssetRecord(
         );
       }
     }
+
     return;
   }
 
@@ -235,13 +239,16 @@ function collectAssetRecord(
     for (const emotion of data?.emotionImages ?? []) {
       addAsset(emotion?.[1], characterName, emotion?.[0] ?? "Emotion");
     }
+
     if (data?.type === "group") return;
     for (const asset of data?.additionalAssets ?? []) {
       addAsset(asset?.[1], characterName, asset?.[0] ?? "Asset");
     }
+
     for (const [name, key] of Object.entries(data?.vits?.files ?? {})) {
       addAsset(key, characterName, name);
     }
+
     for (const asset of data?.ccAssets ?? []) {
       addAsset(asset?.uri, characterName, asset?.name ?? "Asset");
     }

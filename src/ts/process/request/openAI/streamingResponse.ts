@@ -111,9 +111,7 @@ export function getTranStream(
       }
     }
 
-    if (hasToolCalls) {
-      readed["__tool_calls"] = JSON.stringify(toolCallsMap);
-    }
+    if (hasToolCalls) readed["__tool_calls"] = JSON.stringify(toolCallsMap);
 
     if (
       arg.extractJson &&
@@ -128,21 +126,17 @@ export function getTranStream(
           resolveRequestParserContext(arg),
         );
       }
-      if (hasToolCalls) {
-        JSONreaded["__tool_calls"] = readed["__tool_calls"];
-      }
+      if (hasToolCalls) JSONreaded["__tool_calls"] = readed["__tool_calls"];
+
       control.enqueue(JSONreaded);
     } else if (currentReasoning) {
       const chunkObj: Record<string, string> = {
         "0": `<Thoughts>\n${currentReasoning}\n</Thoughts>\n${readed["0"] ?? ""}`,
       };
-      if (hasToolCalls) {
-        chunkObj["__tool_calls"] = readed["__tool_calls"];
-      }
+      if (hasToolCalls) chunkObj["__tool_calls"] = readed["__tool_calls"];
+
       control.enqueue(chunkObj);
-    } else {
-      control.enqueue(readed);
-    }
+    } else control.enqueue(readed);
   }
 
   return new TransformStream<Uint8Array, StreamResponseChunk>({
@@ -215,6 +209,7 @@ export function wrapToolStream(
               if (item) toolCalls.push(item);
             }
           }
+
           if (toolCalls && toolCalls.length > 0) {
             const messages = body.messages as OpenAIChatExtra[];
             let assistantContent = content;
@@ -258,6 +253,7 @@ export function wrapToolStream(
               ) {
                 continue;
               }
+
               try {
                 const functionArgs = JSON.parse(toolCall.function.arguments);
                 if (arg.tools && arg.tools.length > 0) {

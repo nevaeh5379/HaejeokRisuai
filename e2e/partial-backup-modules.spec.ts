@@ -93,9 +93,8 @@ test.describe("partial local backup module persistence", () => {
         };
       };
 
-      for (const mod of modulesToInstall) {
-        await moduleStore.installModule(mod);
-      }
+      for (const mod of modulesToInstall) await moduleStore.installModule(mod);
+
       await moduleStore.flush();
     }, testModules);
 
@@ -167,8 +166,9 @@ test.describe("partial local backup module persistence", () => {
         cursor += 4 + entry.name.length + 4 + entry.length;
       }
       const dbEntry = entries.find((e) => e.name === "database.risudat");
-      if (!dbEntry)
+      if (!dbEntry) {
         return { entries: entries.map((e) => e.name), modules: null };
+      }
       const dbDataStart = cursor + 4 + dbEntry.name.length + 4;
       const decodedDb = (await decodeRisuSave(
         data.subarray(dbDataStart, dbDataStart + dbEntry.length),

@@ -94,6 +94,7 @@ class AsyncByteReader {
     if (!(await this.ensureChunk())) {
       throw new Error("Unexpected end of MessagePack stream");
     }
+
     return this.current[this.offset++];
   }
 
@@ -101,12 +102,14 @@ class AsyncByteReader {
     if (!Number.isSafeInteger(length) || length < 0) {
       throw new TypeError("Invalid MessagePack read length");
     }
+
     const result = new Uint8Array(length);
     let written = 0;
     while (written < length) {
       if (!(await this.ensureChunk())) {
         throw new Error("Unexpected end of MessagePack stream");
       }
+
       const available = Math.min(
         length - written,
         this.current.length - this.offset,
@@ -127,6 +130,7 @@ class AsyncByteReader {
       if (!(await this.ensureChunk())) {
         throw new Error("Unexpected end of MessagePack stream");
       }
+
       const available = Math.min(remaining, this.current.length - this.offset);
       await sink(this.current.subarray(this.offset, this.offset + available));
       this.offset += available;
@@ -170,6 +174,7 @@ async function consumeValue(
   ) {
     return;
   }
+
   if (prefix >= 0xa0 && prefix <= 0xbf) {
     await reader.copyExact(prefix & 0x1f, sink);
     return;
@@ -360,6 +365,7 @@ async function readString(reader: AsyncByteReader): Promise<string> {
   if (typeof value !== "string") {
     throw new Error("Expected a MessagePack string key");
   }
+
   return value;
 }
 
@@ -501,6 +507,7 @@ class RecordTierWriter {
           await writeToStream(output, chunk);
         }
       }
+
       output.end();
       await outputDone;
     } catch (error) {
@@ -519,6 +526,7 @@ class RecordTierWriter {
     ]) {
       if (!stream.destroyed) stream.destroy();
     }
+
     await Promise.allSettled(this.done);
     await Promise.all(
       [this.rootPath, this.characterPath, this.chatPath, this.messagePath].map(
@@ -553,12 +561,14 @@ async function createMessagePackSource(
       highWaterMark: 256 * 1024,
     }).pipe(createUnzip());
   }
+
   if (header.equals(RAW_HEADER)) {
     return createReadStream(filePath, {
       start: RAW_HEADER.length,
       highWaterMark: 256 * 1024,
     });
   }
+
   throw new LegacyBackupStreamingUnsupportedError(
     "Legacy backup database format requires the compatibility decoder",
   );
@@ -599,6 +609,7 @@ async function parseMessagesFile(
       if (!message || typeof message !== "object" || Array.isArray(message)) {
         throw new Error("Legacy chat message must be an object");
       }
+
       let id = validId(message.chatId) ? message.chatId : context.idFactory();
       while (seen.has(id)) id = context.idFactory();
       seen.add(id);
@@ -628,6 +639,7 @@ async function parseMessagesFile(
     if (await reader.hasMore()) {
       throw new Error("Legacy message array contains trailing data");
     }
+
     temp.end();
     await tempDone;
 
@@ -688,6 +700,7 @@ async function parseChat(
     ) {
       continue;
     }
+
     data[key] = value;
   }
 
@@ -741,6 +754,7 @@ async function parseChatsFile(
   for (let position = 0; position < count; position++) {
     await parseChat(reader, characterId, position, context);
   }
+
   if (await reader.hasMore()) {
     throw new Error("Legacy chat array contains trailing data");
   }
@@ -899,6 +913,7 @@ async function parseLegacyRoot(
       for (let position = 0; position < count; position++) {
         presets.push(await decodeValue(reader));
       }
+
       continue;
     }
     if (key === "botPresetsId") {
@@ -924,6 +939,7 @@ async function parseLegacyRoot(
     ) {
       continue;
     }
+
     await context.tiers.write("root", {
       type: "setting",
       key,
@@ -1011,6 +1027,7 @@ export async function streamLegacyBackupDatabaseToSqlNdjson(
         "Legacy backup database contains trailing MessagePack data",
       );
     }
+
     options.onProgress?.({
       records: tiers.recordCount,
       phase: "finalizing",

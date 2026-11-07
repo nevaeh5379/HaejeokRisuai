@@ -71,10 +71,11 @@ function requestSize(options: unknown) {
           const descriptor = Object.getOwnPropertyDescriptor(value, key);
           if (descriptor?.enumerable) {
             if ("value" in descriptor) visit(descriptor.value, depth + 1);
-            else limited = true; // Don't execute a getter a second time for diagnostics.
-          }
+            else limited = true;
+          } // Don't execute a getter a second time for diagnostics.
         }
       }
+
       ancestors.delete(value);
     }
   };
@@ -121,11 +122,13 @@ function writeDomain(options: unknown): string {
     ]) {
       if (table.startsWith(prefix)) domain = prefix.slice(0, -1);
     }
+
     if (table === "system_settings") domain = "setting";
     if (table === "bot_presets") domain = "preset";
     if (table === "plugin_custom_storage") domain = "plugin-storage";
-    if (table === "plugin_records" || table === "plugin_scripts")
+    if (table === "plugin_records" || table === "plugin_scripts") {
       domain = "plugin";
+    }
   }
   return domain;
 }
@@ -144,6 +147,7 @@ export function installAndroidBridgeDiagnostics(bridge: DiagnosticBridge) {
     if (plugin === "CrashGuard") {
       return original.call(bridge, plugin, method, options);
     }
+
     let stage: string | undefined;
     try {
       const size = requestSize(options);
@@ -159,8 +163,9 @@ export function installAndroidBridgeDiagnostics(bridge: DiagnosticBridge) {
         const call = `${plugin}.${method}`;
         const name = calls.has(call) ? call : "other";
         stage = `bridge:req=${++request} ${name} strChars=${size.chars} maxStr=${size.max} maxArray=${size.array} limited=${Number(size.limited)}`;
-        if (call === "NativeSqlite.executeBatch")
+        if (call === "NativeSqlite.executeBatch") {
           stage += ` domain=${writeDomain(options)}`;
+        }
       }
     } catch {
       // Diagnostics must not change how the original bridge handles options.

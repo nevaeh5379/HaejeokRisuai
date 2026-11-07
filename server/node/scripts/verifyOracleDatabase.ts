@@ -8,11 +8,8 @@ import {
  * CLI utility to inspect and verify Oracle Database state and table records.
  */
 async function verifyOracleDatabase(options = {}) {
-  if (options.envPath) {
-    loadOracleEnvFile(options.envPath);
-  } else {
-    loadOracleEnvFile();
-  }
+  if (options.envPath) loadOracleEnvFile(options.envPath);
+  else loadOracleEnvFile();
 
   const config = readOracleConfigFromEnv();
   if (!config.user || !config.password || !config.tnsAlias) {
@@ -97,11 +94,9 @@ function parseCliArgs() {
   const options = { envPath: null, shallowVerify: true, help: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--help" || arg === "-h") {
-      options.help = true;
-    } else if (arg === "--no-shallow") {
-      options.shallowVerify = false;
-    } else if (arg === "--env" && i + 1 < args.length) {
+    if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg === "--no-shallow") options.shallowVerify = false;
+    else if (arg === "--env" && i + 1 < args.length) {
       options.envPath = args[++i];
     }
   }

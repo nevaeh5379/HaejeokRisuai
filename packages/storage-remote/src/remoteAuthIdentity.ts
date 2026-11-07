@@ -49,6 +49,7 @@ export class RemoteAuthIdentity {
         throw error;
       });
     }
+
     return await this.keyPairPromise;
   }
 

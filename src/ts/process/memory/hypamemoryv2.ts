@@ -70,9 +70,7 @@ export class HypaProcessorV2<TMetadata> {
   public async similaritySearchScoredBatch(
     queries: string[],
   ): Promise<[EmbeddingResult<TMetadata>, number][][]> {
-    if (queries.length === 0) {
-      return [];
-    }
+    if (queries.length === 0) return [];
 
     // Remove duplicate queries
     const uniqueQueries = Array.from(new Set(queries));
@@ -98,6 +96,7 @@ export class HypaProcessorV2<TMetadata> {
       for (let i = 0; i < uniqueQueries.length; i++) {
         serverResultMap.set(uniqueQueries[i], serverScoredResults[i]);
       }
+
       return queries.map((query) => serverResultMap.get(query));
     }
 
@@ -127,9 +126,7 @@ export class HypaProcessorV2<TMetadata> {
     ebdTexts: EmbeddingText<TMetadata>[],
     saveToMemory: boolean = true,
   ): Promise<EmbeddingResult<TMetadata>[]> {
-    if (ebdTexts.length === 0) {
-      return [];
-    }
+    if (ebdTexts.length === 0) return [];
 
     const resultMap: Map<string, EmbeddingResult<TMetadata>> = new Map();
     const toEmbed: EmbeddingText<TMetadata>[] = [];
@@ -147,9 +144,7 @@ export class HypaProcessorV2<TMetadata> {
       }
       for (const [, g] of groups) {
         const texts = g.map((item) => item.content);
-        for (const item of g) {
-          ctxGroups.set(item.id, texts);
-        }
+        for (const item of g) ctxGroups.set(item.id, texts);
       }
     }
 
@@ -179,14 +174,10 @@ export class HypaProcessorV2<TMetadata> {
           cached.metadata = metadata;
 
           // Save to memory
-          if (saveToMemory) {
-            this.vectors.set(id, cached);
-          }
+          if (saveToMemory) this.vectors.set(id, cached);
 
           resultMap.set(id, cached);
-        } else {
-          toEmbed.push(item);
-        }
+        } else toEmbed.push(item);
       } catch (error) {
         toEmbed.push(item);
       }
@@ -208,9 +199,7 @@ export class HypaProcessorV2<TMetadata> {
 
       for (const item of additionalItems) {
         resultMap.delete(item.id);
-        if (this.vectors.has(item.id)) {
-          this.vectors.delete(item.id);
-        }
+        if (this.vectors.has(item.id)) this.vectors.delete(item.id);
       }
 
       toEmbed.push(...additionalItems);
@@ -270,9 +259,7 @@ export class HypaProcessorV2<TMetadata> {
             },
           );
 
-          if (saveToMemory) {
-            this.vectors.set(id, ebdResult);
-          }
+          if (saveToMemory) this.vectors.set(id, ebdResult);
 
           resultMap.set(id, ebdResult);
         }
@@ -323,9 +310,7 @@ export class HypaProcessorV2<TMetadata> {
           });
 
           // Save to memory
-          if (saveToMemory) {
-            this.vectors.set(id, ebdResult);
-          }
+          if (saveToMemory) this.vectors.set(id, ebdResult);
 
           resultMap.set(id, ebdResult);
         });
@@ -351,10 +336,12 @@ export class HypaProcessorV2<TMetadata> {
   private async tryServerSimilaritySearch(
     queryResults: EmbeddingResult<TMetadata>[],
   ): Promise<[EmbeddingResult<TMetadata>, number][][] | null> {
-    if (!this.options.serverIndexId || isContextModel(this.options.model))
+    if (!this.options.serverIndexId || isContextModel(this.options.model)) {
       return null;
-    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage))
+    }
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
       return null;
+    }
 
     const db = settingsStore.state;
     const indexId = [
@@ -520,9 +507,7 @@ export class HypaProcessorV2<TMetadata> {
     } else if (isContextModel(this.options.model)) {
       const provider = getContextProvider(this.options.model);
       return await provider.embedQueries(contents);
-    } else {
-      throw new Error(`Unsupported model: ${this.options.model}`);
-    }
+    } else throw new Error(`Unsupported model: ${this.options.model}`);
 
     if (!response.ok || !response.data.data) {
       throw new Error(JSON.stringify(response.data));

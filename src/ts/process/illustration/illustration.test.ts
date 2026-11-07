@@ -272,8 +272,9 @@ function runtime(
       (i) => i.id === target.illustrationId,
     );
     const record: IllustrationRecord = { message, item, branchId };
-    if (deleted || !item || !canUpdateIllustration(record, version))
+    if (deleted || !item || !canUpdateIllustration(record, version)) {
       return null;
+    }
     change(record);
     return record;
   });

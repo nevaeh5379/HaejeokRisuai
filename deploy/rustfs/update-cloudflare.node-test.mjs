@@ -15,22 +15,42 @@ async function fixture(records = {}, options = {}) {
     const url = new URL(request.url, "http://localhost");
     if (url.pathname === "/ip4" || url.pathname === "/ip6") {
       if (options.hangAddressLookup) return;
-      response.end(url.pathname === "/ip4" ? (options.ipv4 ?? "203.0.113.4") : (options.ipv6 ?? "2001:db8::4"));
+      response.end(
+        url.pathname === "/ip4"
+          ? (options.ipv4 ?? "203.0.113.4")
+          : (options.ipv6 ?? "2001:db8::4"),
+      );
       return;
     }
     let body = "";
     for await (const chunk of request) body += chunk;
-    calls.push({ method: request.method, url, body: body ? JSON.parse(body) : undefined });
+    calls.push({
+      method: request.method,
+      url,
+      body: body ? JSON.parse(body) : undefined,
+    });
     if (options.authFailure) {
       response.writeHead(403, { "content-type": "application/json" });
-      response.end(JSON.stringify({ success: false, errors: [{ message: "authentication failed" }] }));
+      response.end(
+        JSON.stringify({
+          success: false,
+          errors: [{ message: "authentication failed" }],
+        }),
+      );
       return;
     }
     response.setHeader("content-type", "application/json");
     if (request.method === "GET") {
-      response.end(JSON.stringify({ success: true, result: records[url.searchParams.get("type")] ?? [] }));
+      response.end(
+        JSON.stringify({
+          success: true,
+          result: records[url.searchParams.get("type")] ?? [],
+        }),
+      );
     } else {
-      response.end(JSON.stringify({ success: true, result: { id: "changed" } }));
+      response.end(
+        JSON.stringify({ success: true, result: { id: "changed" } }),
+      );
     }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -73,24 +93,32 @@ function run(env, timeoutMs = 5000) {
 }
 
 test("patches only content and preserves an existing record's settings", async () => {
-  const f = await fixture({ A: [{ id: "a1", content: "192.0.2.1", ttl: 120, proxied: true }] });
+  const f = await fixture({
+    A: [{ id: "a1", content: "192.0.2.1", ttl: 120, proxied: true }],
+  });
   try {
     const result = await run(f.env);
     assert.equal(result.code, 0, result.stderr);
     const patch = f.calls.find((call) => call.method === "PATCH");
     assert.deepEqual(patch.body, { content: "203.0.113.4" });
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("can force an unchanged write to validate DNS Write permission", async () => {
-  const f = await fixture({ A: [{ id: "a1", content: "203.0.113.4", ttl: 120, proxied: true }] });
+  const f = await fixture({
+    A: [{ id: "a1", content: "203.0.113.4", ttl: 120, proxied: true }],
+  });
   try {
     const result = await run({ ...f.env, CLOUDFLARE_FORCE_WRITE: "true" });
     assert.equal(result.code, 0, result.stderr);
     const patch = f.calls.find((call) => call.method === "PATCH");
     assert.deepEqual(patch.body, { content: "203.0.113.4" });
     assert.match(result.stdout, /verified write access/);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("creates DNS-only automatic-TTL A and optional AAAA records", async () => {
@@ -98,22 +126,46 @@ test("creates DNS-only automatic-TTL A and optional AAAA records", async () => {
   try {
     const result = await run({ ...f.env, CLOUDFLARE_IPV6: "true" });
     assert.equal(result.code, 0, result.stderr);
-    const creates = f.calls.filter((call) => call.method === "POST").map((call) => call.body);
+    const creates = f.calls
+      .filter((call) => call.method === "POST")
+      .map((call) => call.body);
     assert.deepEqual(creates, [
-      { type: "A", name: "chat.example.com", content: "203.0.113.4", ttl: 1, proxied: false },
-      { type: "AAAA", name: "chat.example.com", content: "2001:db8::4", ttl: 1, proxied: false },
+      {
+        type: "A",
+        name: "chat.example.com",
+        content: "203.0.113.4",
+        ttl: 1,
+        proxied: false,
+      },
+      {
+        type: "AAAA",
+        name: "chat.example.com",
+        content: "2001:db8::4",
+        ttl: 1,
+        proxied: false,
+      },
     ]);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("warns about an existing AAAA record when IPv6 updates are disabled", async () => {
-  const f = await fixture({ A: [{ id: "a1", content: "203.0.113.4" }], AAAA: [{ id: "v6", content: "2001:db8::9" }] });
+  const f = await fixture({
+    A: [{ id: "a1", content: "203.0.113.4" }],
+    AAAA: [{ id: "v6", content: "2001:db8::9" }],
+  });
   try {
     const result = await run(f.env);
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stderr, /AAAA record.*left unchanged/);
-    assert.equal(f.calls.some((call) => call.method === "PATCH"), false);
-  } finally { await f.close(); }
+    assert.equal(
+      f.calls.some((call) => call.method === "PATCH"),
+      false,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
 test("validates every requested public address before reading or writing DNS", async () => {
@@ -123,7 +175,9 @@ test("validates every requested public address before reading or writing DNS", a
     assert.equal(result.code, 1);
     assert.match(result.stderr, /invalid address/);
     assert.equal(f.calls.length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("refuses duplicate records and CNAME conflicts before writing", async (t) => {
@@ -137,8 +191,13 @@ test("refuses duplicate records and CNAME conflicts before writing", async (t) =
         const result = await run(f.env);
         assert.equal(result.code, 1);
         assert.match(result.stderr, message);
-        assert.equal(f.calls.some((call) => call.method !== "GET"), false);
-      } finally { await f.close(); }
+        assert.equal(
+          f.calls.some((call) => call.method !== "GET"),
+          false,
+        );
+      } finally {
+        await f.close();
+      }
     });
   }
 });
@@ -149,18 +208,26 @@ test("reports Cloudflare authentication failures", async () => {
     const result = await run(f.env);
     assert.equal(result.code, 1);
     assert.match(result.stderr, /authentication failed/);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("rejects permanent configuration errors before entering the retry loop", async () => {
   const f = await fixture();
   try {
-    const result = await run({ ...f.env, CLOUDFLARE_ONCE: "false", CLOUDFLARE_UPDATE_INTERVAL: "invalid" });
+    const result = await run({
+      ...f.env,
+      CLOUDFLARE_ONCE: "false",
+      CLOUDFLARE_UPDATE_INTERVAL: "invalid",
+    });
     assert.equal(result.code, 1);
     assert.equal(result.signal, null);
     assert.match(result.stderr, /UPDATE_INTERVAL must be an integer/);
     assert.equal(f.calls.length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("rejects invalid booleans and endpoint schemes", async (t) => {
@@ -168,8 +235,16 @@ test("rejects invalid booleans and endpoint schemes", async (t) => {
   try {
     for (const [name, env, message] of [
       ["boolean", { CLOUDFLARE_IPV6: "yes" }, /IPV6 must be true or false/],
-      ["force-write boolean", { CLOUDFLARE_FORCE_WRITE: "yes" }, /FORCE_WRITE must be true or false/],
-      ["URL", { PUBLIC_IPV4_URL: "file:///etc/passwd" }, /must use HTTP or HTTPS/],
+      [
+        "force-write boolean",
+        { CLOUDFLARE_FORCE_WRITE: "yes" },
+        /FORCE_WRITE must be true or false/,
+      ],
+      [
+        "URL",
+        { PUBLIC_IPV4_URL: "file:///etc/passwd" },
+        /must use HTTP or HTTPS/,
+      ],
     ]) {
       await t.test(name, async () => {
         const result = await run({ ...f.env, ...env });
@@ -177,16 +252,23 @@ test("rejects invalid booleans and endpoint schemes", async (t) => {
         assert.match(result.stderr, message);
       });
     }
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });
 
 test("aborts a stalled address lookup at the configured deadline", async () => {
   const f = await fixture({}, { hangAddressLookup: true });
   try {
-    const result = await run({ ...f.env, CLOUDFLARE_REQUEST_TIMEOUT: "1" }, 3000);
+    const result = await run(
+      { ...f.env, CLOUDFLARE_REQUEST_TIMEOUT: "1" },
+      3000,
+    );
     assert.equal(result.code, 1);
     assert.equal(result.signal, null);
     assert.match(result.stderr, /timed out after 1 seconds/);
     assert.equal(f.calls.length, 0);
-  } finally { await f.close(); }
+  } finally {
+    await f.close();
+  }
 });

@@ -108,6 +108,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       if (!this._enabled && !(await this.init())) {
         throw new Error(`${this.backendName} is not available`);
       }
+
       return await sqliteAdmin.getTableData(
         this.selectRows.bind(this) as SqliteSelectRows,
         this.selectRowSets.bind(this) as SqliteSelectRowSets,
@@ -461,6 +462,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       ) {
         return this.chat.load(chatId, options);
       }
+
       if (!activeBranch) {
         await this.ensureBranchGraph(chatId);
         return this.chat.load(chatId, options);
@@ -675,6 +677,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       ) {
         throw new Error("Chat branch does not exist");
       }
+
       await this.writeQueue.run(() =>
         this.executeNativeTransaction(null, [
           sqliteBranch.buildActivateStatement(chatId, branchId),
@@ -715,6 +718,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     for (const query of queries) {
       results.push(await this.selectRows(query.sql, query.bind ?? []));
     }
+
     return results;
   }
 
@@ -740,6 +744,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
         this.initPromise = null;
       });
     }
+
     return this.initPromise;
   }
 
@@ -807,6 +812,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
         meta?.schema_layout,
       );
     }
+
     return { revision: Number(meta.revision) || 0 };
   }
 
@@ -859,6 +865,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
         "SQLite last_message_time trigger was not installed by the schema",
       );
     }
+
     if (!existedBeforeSchemaApply) {
       await this.executeNativeTransaction(null, [
         { sql: lastMessageTime.BACKFILL_SQL, bind: [] },
@@ -924,6 +931,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     if (!this._enabled || !this.isStorageReady()) {
       throw new Error("SQLite storage is not enabled");
     }
+
     // Read 1 of 2: fail fast on a stale base revision before building the
     // statement list. The authoritative check happens inside the native
     // transaction (see executeNativeTransaction), which re-reads the revision
@@ -941,6 +949,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
+
     await this.prepareModuleCommit(commit);
     await this.validatePresetCommit(commit);
 
@@ -1142,6 +1151,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     ) {
       return false;
     }
+
     return this.writeQueue.run(async () => {
       const currentCount = await sqliteBranch.count(
         this.selectRows.bind(this) as SqliteSelectRows,

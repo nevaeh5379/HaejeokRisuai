@@ -15,9 +15,8 @@ async function drive(executor, response, scope = "test-scope") {
       value = { ok: true, text: "summary" };
     } else if (response.action.type === "distilbart") {
       value = { ok: true, text: "summary" };
-    } else {
-      throw new Error(`Unexpected action: ${response.action.type}`);
-    }
+    } else throw new Error(`Unexpected action: ${response.action.type}`);
+
     response = await executor.resume(
       response.sessionId,
       response.action.id,

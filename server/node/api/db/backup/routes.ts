@@ -332,6 +332,7 @@ export function registerBackupRoutes(
         // Keep status available when the backup database is unavailable.
       }
     }
+
     return {
       configured,
       enabled: active,
@@ -369,9 +370,8 @@ export function registerBackupRoutes(
     "/api/db-backup",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       try {
         res.send(await getBackupConfigResponse());
       } catch (error) {
@@ -384,9 +384,8 @@ export function registerBackupRoutes(
     "/api/db-backup/test",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       if (!isSecurePostgresConfigRequest(req)) {
         res.status(403).send({
           error:
@@ -420,9 +419,8 @@ export function registerBackupRoutes(
     "/api/db-backup",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       if (!isSecurePostgresConfigRequest(req)) {
         res.status(403).send({
           error:
@@ -438,12 +436,14 @@ export function registerBackupRoutes(
         if (!isSupportedVendor(vendor)) {
           throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
         }
+
         const normalized: BackupParams = normalizeVendorParams(vendor, params);
         if (!isVendorConfigComplete(vendor, normalized)) {
           throw new StoragePayloadError(
             "Required backup connection parameters are missing",
           );
         }
+
         const mirroringInput: RawBackupParams = asRecord(body.mirroring);
         const snapshotInput: RawBackupParams = asRecord(body.snapshot);
         const mirroring: BackupConfigurationInput["mirroring"] = {
@@ -461,6 +461,7 @@ export function registerBackupRoutes(
             await previousStorage.close();
           } catch (e) {}
         }
+
         deps.setBackupStorage(null);
         backupRuntime.initialized = false;
 
@@ -549,11 +550,8 @@ export function registerBackupRoutes(
         error: errorMessage(error, fallbackError),
         code: errorCode,
       };
-      if (!res.headersSent) {
-        res.status(502).send(payload);
-      } else {
-        stream.sendLine({ type: "error", ...payload });
-      }
+      if (!res.headersSent) res.status(502).send(payload);
+      else stream.sendLine({ type: "error", ...payload });
     } finally {
       stream.end();
     }
@@ -574,9 +572,8 @@ export function registerBackupRoutes(
     "/api/db-backup/resync",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       if (!deps.getBackupStorage()?.enabled) {
         res.status(404).send({
           error: "Backup database is not configured",
@@ -617,9 +614,8 @@ export function registerBackupRoutes(
     "/api/db-backup/restore",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       if (!deps.getBackupStorage()?.enabled) {
         res.status(404).send({
           error: "Backup database is not configured",
@@ -644,9 +640,8 @@ export function registerBackupRoutes(
     "/api/db-backup",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       if (!isSecurePostgresConfigRequest(req)) {
         res.status(403).send({
           error:

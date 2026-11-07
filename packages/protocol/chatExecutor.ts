@@ -53,6 +53,7 @@ function finiteInteger(
   if (!Number.isInteger(value) || value < min || value > max) {
     return { error: `${name} must be an integer from ${min} to ${max}` };
   }
+
   return { value };
 }
 
@@ -60,12 +61,15 @@ function normalizeChatMessage(message?: any, index?: any): any {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     return { error: `formated[${index}] must be an object` };
   }
+
   if (!VALID_ROLES.has(message.role) || typeof message.content !== "string") {
     return { error: `formated[${index}] has an invalid role or content` };
   }
+
   if (message.name != null && typeof message.name !== "string") {
     return { error: `formated[${index}].name must be a string` };
   }
+
   if (
     message.thoughts != null &&
     (!Array.isArray(message.thoughts) ||
@@ -73,9 +77,11 @@ function normalizeChatMessage(message?: any, index?: any): any {
   ) {
     return { error: `formated[${index}].thoughts must be an array of strings` };
   }
+
   if (message.multimodals != null && !Array.isArray(message.multimodals)) {
     return { error: `formated[${index}].multimodals must be an array` };
   }
+
   return { value: message };
 }
 
@@ -83,12 +89,15 @@ function normalizeChatPlanRequest(
   input: unknown,
 ): { value: NodeChatPlanRequest } | { error: string };
 function normalizeChatPlanRequest(input?: any): any {
-  if (!input || typeof input !== "object" || Array.isArray(input))
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { error: "Request body must be an object" };
-  if (!Array.isArray(input.formated))
+  }
+  if (!Array.isArray(input.formated)) {
     return { error: "formated must be an array" };
-  if (input.formated.length > 4096)
+  }
+  if (input.formated.length > 4096) {
     return { error: "formated may contain at most 4096 messages" };
+  }
 
   const messages: any = [];
   for (let index: any = 0; index < input.formated.length; index++) {
@@ -118,8 +127,9 @@ function normalizeChatPlanRequest(input?: any): any {
     { min: 0, max: 1024 },
   );
   if (additional.error) return additional;
-  if (!VALID_ENCODINGS.has(input.encoding))
+  if (!VALID_ENCODINGS.has(input.encoding)) {
     return { error: "encoding is not supported" };
+  }
 
   return {
     value: {
@@ -142,12 +152,15 @@ function normalizeChatContinuationRequest(
   input: unknown,
 ): { value: NodeChatContinuationRequest } | { error: string };
 function normalizeChatContinuationRequest(input?: any): any {
-  if (!input || typeof input !== "object" || Array.isArray(input))
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { error: "Request body must be an object" };
-  if (typeof input.result !== "string")
+  }
+  if (typeof input.result !== "string") {
     return { error: "result must be a string" };
-  if (!VALID_ENCODINGS.has(input.encoding))
+  }
+  if (!VALID_ENCODINGS.has(input.encoding)) {
     return { error: "encoding is not supported" };
+  }
   const used: any = finiteInteger(
     input.usedContinueTokens,
     "usedContinueTokens",

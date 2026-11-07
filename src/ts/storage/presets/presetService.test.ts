@@ -84,8 +84,9 @@ describe("preset documents and file boundaries", () => {
       getRevision: () => 0,
 
       commit: vi.fn(async (commit: SqlCommit) => {
-        for (const entry of commit.presets?.upserts ?? [])
+        for (const entry of commit.presets?.upserts ?? []) {
           documents.set(entry.id, { ...entry.data, id: entry.id });
+        }
         return { revision: 1 };
       }),
     } as unknown as ISqlStorage;

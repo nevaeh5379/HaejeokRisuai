@@ -51,17 +51,21 @@ export class Mutex {
    * such as after lock acquire request or lock release.
    */
   private _dispatch() {
-    if (this._isLocked) {
-      // The resource is still locked.
-      // Wait until next time.
+    if (this._isLocked)
+    // The resource is still locked.
+    // Wait until next time.
+    {
       return;
     }
+
     const nextEntry = this._queue.shift();
-    if (!nextEntry) {
-      // There is nothing in the queue.
-      // Do nothing until next dispatch.
+    if (!nextEntry)
+    // There is nothing in the queue.
+    // Do nothing until next dispatch.
+    {
       return;
     }
+
     // The resource is available.
     this._isLocked = true;
     // and give access to the next operation

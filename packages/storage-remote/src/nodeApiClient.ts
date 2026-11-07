@@ -659,12 +659,14 @@ function validateCapabilities(value: unknown): NodeClientCapabilities {
       "The storage server returned invalid capabilities.",
     );
   }
+
   const capabilities = value as Partial<NodeClientCapabilities>;
   if (capabilities.apiVersion !== CLIENT_STORAGE_API_VERSION) {
     throw new NodeApiCompatibilityError(
       `The storage server API is incompatible (server ${String(capabilities.apiVersion ?? "unknown")}, client ${CLIENT_STORAGE_API_VERSION}). Upgrade the server before connecting.`,
     );
   }
+
   if (
     !capabilities.features ||
     capabilities.features.sqlStorage !== true ||
@@ -675,6 +677,7 @@ function validateCapabilities(value: unknown): NodeClientCapabilities {
       "The storage server does not provide the required SQL, asset, and data-change features.",
     );
   }
+
   return capabilities as NodeClientCapabilities;
 }
 
@@ -705,6 +708,7 @@ function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
       "The storage server returned an invalid storage sync summary.",
     );
   }
+
   return summary as NodeStorageSyncSummary;
 }
 
@@ -744,10 +748,12 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
       "The storage server returned an invalid storage sync session.",
     );
   }
+
   validateStorageSyncSummary(session.summary);
   if (session.status === "finalized") {
     validateStorageSyncFinalizeResult(session.finalizedResult);
   }
+
   return session as NodeStorageSyncSession;
 }
 
@@ -774,6 +780,7 @@ function validateStorageSyncAssetPlan(
       "The storage server returned an invalid storage sync asset plan.",
     );
   }
+
   for (const asset of plan.assets) {
     if (
       typeof asset?.id !== "string" ||
@@ -792,6 +799,7 @@ function validateStorageSyncAssetPlan(
       );
     }
   }
+
   return plan as NodeStorageSyncAssetPlan;
 }
 
@@ -813,6 +821,7 @@ function validateStorageSyncAssetChunkResult(
       "The storage server returned an invalid storage sync chunk result.",
     );
   }
+
   return result as NodeStorageSyncAssetChunkResult;
 }
 
@@ -834,6 +843,7 @@ function validateStorageSyncSqlPlan(value: unknown): NodeStorageSyncSqlPlan {
       "The storage server returned an invalid storage sync SQL plan.",
     );
   }
+
   return plan as NodeStorageSyncSqlPlan;
 }
 
@@ -841,6 +851,7 @@ function hasInvalidStorageSyncCounts(counts: Record<string, unknown>): boolean {
   for (const key in counts) {
     if (!isNonNegativeSafeInteger(counts[key])) return true;
   }
+
   return false;
 }
 
@@ -861,6 +872,7 @@ function validateStorageSyncSqlValidation(
       "The storage server returned an invalid storage sync SQL validation result.",
     );
   }
+
   return result as NodeStorageSyncSqlValidation;
 }
 
@@ -880,6 +892,7 @@ function validateStorageSyncFinalizePreflight(
       "The storage server returned an invalid finalize preflight result.",
     );
   }
+
   return result as NodeStorageSyncFinalizePreflight;
 }
 
@@ -916,6 +929,7 @@ function validateStorageSyncFinalizeResult(
       "The storage server returned an invalid finalize result.",
     );
   }
+
   return result as NodeStorageSyncFinalizeResult;
 }
 
@@ -1045,10 +1059,12 @@ export class NodeApiClient {
     if (!path.startsWith("/")) {
       throw new TypeError("Node API paths must start with '/'.");
     }
+
     const url = new URL(path, `${this.baseUrl}/`);
     if (url.origin !== this.baseUrl) {
       throw new TypeError("Node API paths must stay on the configured server.");
     }
+
     return url.toString();
   }
 
@@ -1109,6 +1125,7 @@ export class NodeApiClient {
           `The storage API endpoint was not found (HTTP 404): ${endpoint}. Check the server URL and reverse proxy route, or upgrade the server.`,
         );
       }
+
       const body = await response.json().catch(() => null);
       if (response.status === 403 && body?.code === "cors_denied") {
         const origin = globalThis.location?.origin;
@@ -1166,6 +1183,7 @@ export class NodeApiClient {
         `Could not read storage sync summary (HTTP ${response.status}).`,
       );
     }
+
     return validateStorageSyncSummary(await response.json());
   }
 
@@ -1234,6 +1252,7 @@ export class NodeApiClient {
         `Could not create storage sync session (HTTP ${response.status}).`,
       );
     }
+
     return validateStorageSyncSession(await response.json());
   }
 
@@ -1269,6 +1288,7 @@ export class NodeApiClient {
         `Could not read storage sync session (HTTP ${response.status}).`,
       );
     }
+
     return validateStorageSyncSession(await response.json());
   }
 

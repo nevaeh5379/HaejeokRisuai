@@ -115,6 +115,7 @@ function characterRecency(character: TauriMenuCharacterSource): number {
   for (const chat of character.chats ?? []) {
     recent = Math.max(recent, chat.lastDate ?? chat.message?.at(-1)?.time ?? 0);
   }
+
   return recent;
 }
 
@@ -134,6 +135,7 @@ export function buildTauriNavigationMenuModel(
       duplicateTargets.set(key, (duplicateTargets.get(key) ?? 0) + 1);
     }
   }
+
   const auxiliaryIds = workspace.windows
     .filter((window) => window.id !== MAIN_CHAT_WORKSPACE_WINDOW_ID)
     .map((window) => window.id);
@@ -275,10 +277,12 @@ export async function openTauriAppMenuCommand(
   command: string,
 ): Promise<boolean> {
   const navigation = parseTauriNavigationCommand(command);
-  if (navigation?.kind === "tab")
+  if (navigation?.kind === "tab") {
     return activateWorkspaceTab(navigation.windowId, navigation.tabId);
-  if (navigation?.kind === "chat")
+  }
+  if (navigation?.kind === "chat") {
     return openRecentChat(navigation.characterId, navigation.chatId);
+  }
   if (navigation?.kind === "bot") return openRecentBot(navigation.characterId);
   return openSettingsMenuCommand(command);
 }
@@ -339,8 +343,9 @@ export async function refreshTauriNavigationMenu(): Promise<void> {
   if (
     !isTauri ||
     getCurrentChatWorkspaceWindowId() !== MAIN_CHAT_WORKSPACE_WINDOW_ID
-  )
+  ) {
     return;
+  }
   const sequence = ++navigationRefreshSequence;
   const recentChats = await loadRecentChats(RECENT_MENU_LIMIT);
   if (sequence !== navigationRefreshSequence) return;
@@ -360,8 +365,9 @@ export function scheduleTauriNavigationMenuRefresh(delayMs = 80): void {
   if (
     !isTauri ||
     getCurrentChatWorkspaceWindowId() !== MAIN_CHAT_WORKSPACE_WINDOW_ID
-  )
+  ) {
     return;
+  }
   if (navigationRefreshTimer) clearTimeout(navigationRefreshTimer);
   navigationRefreshTimer = setTimeout(() => {
     navigationRefreshTimer = null;
@@ -392,19 +398,22 @@ export async function initializeTauriAppMenu(): Promise<void> {
     );
   }
 
-  if (getCurrentChatWorkspaceWindowId() !== MAIN_CHAT_WORKSPACE_WINDOW_ID)
+  if (getCurrentChatWorkspaceWindowId() !== MAIN_CHAT_WORKSPACE_WINDOW_ID) {
     return;
+  }
   if (!mainAppMenuCleanup) {
     mainAppMenuCleanup = await current.listen<string>(
       TAURI_APP_MENU_EVENT,
       (event) => {
         void openTauriAppMenuCommand(event.payload).then((handled) => {
-          if (!handled)
+          if (!handled) {
             console.warn("[TauriAppMenu] Unknown menu command", event.payload);
+          }
         });
       },
     );
   }
+
   if (!mainRefreshSubscriptionsReady) {
     mainRefreshSubscriptionsReady = true;
     ReloadGUIPointer.subscribe(() => scheduleTauriNavigationMenuRefresh());

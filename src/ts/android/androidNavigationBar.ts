@@ -12,8 +12,7 @@ export function shouldHideAndroidNavigationBar(
   state: AndroidNavigationBarState,
 ): boolean {
   if (state.settingsOpen) return false;
-  if (state.sidebarOpen || state.mobileSidebar > 0) {
-    return state.sidebarEnabled;
-  }
+  if (state.sidebarOpen || state.mobileSidebar > 0) return state.sidebarEnabled;
+
   return state.chatEnabled && state.selectedCharacterId >= 0;
 }

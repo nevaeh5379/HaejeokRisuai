@@ -69,6 +69,7 @@ export async function streamBackupResponse(
       "Streaming backup download is unavailable on this platform",
     );
   }
+
   const reader: ReadableStreamDefaultReader<Uint8Array> =
     response.body.getReader();
   try {
@@ -114,6 +115,7 @@ export function createEncodedBackupSource(
   if (!Number.isSafeInteger(options.chunkSize) || options.chunkSize <= 0) {
     throw new RangeError("Backup import chunk size must be a positive integer");
   }
+
   const normalizedSize: number = Math.max(0, Math.floor(size));
   const importerLabel: string = options.importerLabel ?? "Backup importer";
 
@@ -130,15 +132,18 @@ export function createEncodedBackupSource(
     if (chunk.bytesRead < 0 || chunk.bytesRead > requested) {
       throw new Error(`${importerLabel} returned an invalid chunk size`);
     }
+
     if (chunk.bytesRead === 0 && !chunk.eof) {
       throw new Error(`${importerLabel} stopped before reaching the end`);
     }
+
     const decoded: Uint8Array = chunk.data
       ? options.decode(chunk.data)
       : new Uint8Array();
     if (decoded.byteLength !== chunk.bytesRead) {
       throw new Error(`${importerLabel} returned an incomplete chunk`);
     }
+
     return { ...chunk, decoded };
   };
 
@@ -157,9 +162,8 @@ export function createEncodedBackupSource(
           try {
             const chunk: DecodedBackupChunk = await readChunk(offset);
             offset += chunk.bytesRead;
-            if (chunk.decoded.byteLength > 0) {
-              controller.enqueue(chunk.decoded);
-            }
+            if (chunk.decoded.byteLength > 0) controller.enqueue(chunk.decoded);
+
             if (chunk.eof || offset >= normalizedSize) controller.close();
           } catch (error: unknown) {
             controller.error(error);
@@ -179,6 +183,7 @@ export function createEncodedBackupSource(
       if (offset !== normalizedSize) {
         throw new Error(`${importerLabel} ended before the declared size`);
       }
+
       return output.buffer;
     },
   };
@@ -197,6 +202,7 @@ export function createSequentialFileBackupSource(
   if (!Number.isSafeInteger(options.chunkSize) || options.chunkSize <= 0) {
     throw new RangeError("Backup import chunk size must be a positive integer");
   }
+
   const normalizedSize: number = Math.max(0, Math.floor(size));
   const importerLabel: string = options.importerLabel ?? "Backup importer";
 
@@ -229,6 +235,7 @@ export function createSequentialFileBackupSource(
             if (bytesRead <= 0 || bytesRead > buffer.byteLength) {
               throw new Error(`${importerLabel} stopped before EOF`);
             }
+
             controller.enqueue(buffer.subarray(0, bytesRead));
           } catch (error: unknown) {
             await close();
@@ -255,6 +262,7 @@ export function createSequentialFileBackupSource(
           if (bytesRead <= 0 || bytesRead > target.byteLength) {
             throw new Error(`${importerLabel} stopped before EOF`);
           }
+
           offset += bytesRead;
         }
       } finally {
@@ -263,6 +271,7 @@ export function createSequentialFileBackupSource(
       if (offset !== normalizedSize) {
         throw new Error(`${importerLabel} ended before the declared size`);
       }
+
       return output.buffer;
     },
   };

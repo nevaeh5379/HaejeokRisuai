@@ -12,9 +12,8 @@ export const snapshotEqual = isEqual;
 
 function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+
   return true;
 }
 
@@ -24,9 +23,7 @@ export function diffSnapshotIds(ids: string[], oldIds: string[]) {
   const removed: string[] = [];
   for (let i = 0; i < oldIds.length; i++) {
     const id = oldIds[i];
-    if (!retained.has(id)) {
-      removed.push(id);
-    }
+    if (!retained.has(id)) removed.push(id);
   }
   return { ids, removed };
 }
@@ -69,15 +66,14 @@ export function appendChatSnapshotChanges(
     for (let i = 0; i < oldMessages.length; i++) {
       oldIds[i] = oldMessages[i].chatId!;
     }
-  } else {
-    oldIds = [];
-  }
+  } else oldIds = [];
 
   const changes = diffSnapshotIds(ids, oldIds);
   if (changes) {
     commit.messageManifests.push({ chatId: next.id!, ids: changes.ids });
-    if (changes.removed.length)
+    if (changes.removed.length) {
       commit.messageDeletes!.push({ chatId: next.id!, ids: changes.removed });
+    }
   }
 }
 
@@ -86,8 +82,9 @@ export function keepResidentWindow(next: Chat, previous?: Chat): Chat {
     !previous ||
     (previous.messagesLoaded !== false &&
       previous.messagesFullyLoaded !== false)
-  )
+  ) {
     return next;
+  }
   const total = next.message.length;
   if (previous.messagesLoaded === false) {
     return {
@@ -98,6 +95,7 @@ export function keepResidentWindow(next: Chat, previous?: Chat): Chat {
       messageTotal: total,
     };
   }
+
   const count = previous.message.length;
   const atEnd =
     (previous.messageOffset ?? 0) + count >= (previous.messageTotal ?? 0);

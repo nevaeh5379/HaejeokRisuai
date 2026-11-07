@@ -64,27 +64,23 @@ export async function requestHorde(
     models: [realModel, realModel.trim(), " " + realModel, realModel + " "],
   };
 
-  if (realModel === "auto") {
-    delete argument.models;
-  }
+  if (realModel === "auto") delete argument.models;
 
   let apiKey = "0000000000";
-  if (db.hordeConfig.apiKey.length > 2) {
-    apiKey = db.hordeConfig.apiKey;
-  }
+  if (db.hordeConfig.apiKey.length > 2) apiKey = db.hordeConfig.apiKey;
 
-  let headers: Record<string, string> = {
+  const headers: Record<string, string> = {
     "content-type": "application/json",
     apikey: apiKey,
   };
 
-  let finalBody = applyAdditionalParameters(
+  const finalBody = applyAdditionalParameters(
     argument,
     headers,
     getAdditionalParameters(arg.aiModel),
   );
 
-  if (arg.previewBody)
+  if (arg.previewBody) {
     return {
       type: "success",
       result: JSON.stringify({
@@ -93,6 +89,7 @@ export async function requestHorde(
         headers,
       }),
     };
+  }
 
   const remote = await tryExecuteNodeProvider(
     LLMFormat.Horde,
@@ -136,9 +133,8 @@ export async function requestHorde(
   } = await da.json();
 
   let warnMessage = "";
-  if (json.message) {
-    warnMessage = "with " + json.message;
-  }
+  if (json.message) warnMessage = "with " + json.message;
+
   const statusUrl = buildStableHordeStatusUrl(json.id);
   if (!statusUrl) {
     return {
@@ -182,6 +178,7 @@ export async function requestHorde(
             ),
           };
         }
+
         return {
           type: "fail",
           result: "No Generations when done",
@@ -195,6 +192,7 @@ export async function requestHorde(
         await fetch(statusUrl, { method: "DELETE" });
       } catch {}
     }
+
     throw error;
   }
 }

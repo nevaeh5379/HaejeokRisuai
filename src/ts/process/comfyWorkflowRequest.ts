@@ -13,8 +13,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function responseShape(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return `array(${value.length})`;
-  if (isRecord(value))
+  if (isRecord(value)) {
     return `object keys: ${Object.keys(value).slice(0, 8).join(", ") || "(empty)"}`;
+  }
   return typeof value;
 }
 
@@ -36,16 +37,18 @@ export async function fetchComfyWorkflowObjectInfo(
       : undefined;
     if (!Array.isArray(defs)) return;
     for (const def of defs) {
-      if (isRecord(def) && typeof def.id === "string")
+      if (isRecord(def) && typeof def.id === "string") {
         definitions.set(def.id, def);
+      }
       indexDefinitions(def);
     }
   }
   indexDefinitions(workflow);
   seen.clear();
   function collect(graph: unknown) {
-    if (!isRecord(graph) || seen.has(graph) || !Array.isArray(graph.nodes))
+    if (!isRecord(graph) || seen.has(graph) || !Array.isArray(graph.nodes)) {
       return;
+    }
     seen.add(graph);
     for (const node of graph.nodes) {
       if (
@@ -53,12 +56,14 @@ export async function fetchComfyWorkflowObjectInfo(
         typeof node.type !== "string" ||
         node.mode === 2 ||
         node.mode === 4
-      )
+      ) {
         continue;
+      }
       if (
         ["PrimitiveNode", "Reroute", "Note", "MarkdownNote"].includes(node.type)
-      )
+      ) {
         continue;
+      }
       const subgraph = definitions.get(node.type);
       if (subgraph) collect(subgraph);
       else required.set(node.type, String(node.id));
@@ -87,6 +92,7 @@ export async function fetchComfyWorkflowObjectInfo(
             `Node ${id} (${type}) has no valid definition in ComfyUI.\n${createUrl(path)}\nReceived ${responseShape(single)}`,
           );
         }
+
         if (failed) return;
         info[type] = entry;
         onProgress?.(++completed, required.size);
@@ -116,9 +122,8 @@ export function parseComfyWorkflowList(value: unknown, url: string): string[] {
   const files: string[] = [];
   for (const [index, entry] of value.entries()) {
     let path: string;
-    if (typeof entry === "string") {
-      path = entry;
-    } else if (
+    if (typeof entry === "string") path = entry;
+    else if (
       Array.isArray(entry) &&
       entry.length > 0 &&
       entry.every((part) => typeof part === "string")
@@ -132,9 +137,8 @@ export function parseComfyWorkflowList(value: unknown, url: string): string[] {
       typeof entry.path === "string"
     ) {
       path = entry.path;
-    } else {
-      return invalid(entry, index);
-    }
+    } else return invalid(entry, index);
+
     path = path.replace(/\\/g, "/");
     if (/\.json$/i.test(path)) files.push(path);
   }
@@ -193,6 +197,7 @@ export async function fetchComfyWorkflowJson(
         throw new Error(`ComfyUI returned invalid JSON: ${url}`);
       }
     }
+
     return response.data;
   }, `${timeoutMessage}\n${url}`);
 }

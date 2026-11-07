@@ -123,9 +123,7 @@ describe("streaming asset reads", () => {
 
     const result = await storage.openReadStream(keyToHex("assets/large.bin"));
     const chunks: Buffer[] = [];
-    for await (const chunk of result.stream) {
-      chunks.push(Buffer.from(chunk));
-    }
+    for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
 
     expect(transformed).toBe(false);
     expect(Buffer.concat(chunks).toString()).toBe("large-asset");
@@ -210,9 +208,8 @@ describe("LocalFsStorage", () => {
       expect(result.stream).toBe(stream);
       expect(createReadStream).toHaveBeenCalledTimes(1);
       const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(Buffer.from(chunk));
-      }
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+
       expect(Buffer.concat(chunks)).toEqual(payload);
     } finally {
       createReadStream.mockRestore();
@@ -489,17 +486,16 @@ function makeMockClientForMgr(s3Store: Map<string, Buffer>) {
       if (cmdName.includes("PutObject")) {
         const body = command.input.Body;
         let data: Buffer;
-        if (Buffer.isBuffer(body)) {
-          data = body;
-        } else if (body && typeof body[Symbol.asyncIterator] === "function") {
+        if (Buffer.isBuffer(body)) data = body;
+        else if (body && typeof body[Symbol.asyncIterator] === "function") {
           const chunks: Buffer[] = [];
           for await (const chunk of body) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+
           data = Buffer.concat(chunks);
-        } else {
-          data = Buffer.from(body || "");
-        }
+        } else data = Buffer.from(body || "");
+
         s3Store.set(cmdKey, data);
         return {};
       }
@@ -627,9 +623,7 @@ describe("S3AssetStorage readThumbnail", () => {
     expect(res2.filePath || res2.buffer).toBeDefined();
     if (res2.buffer) {
       expect(res2.buffer.length).toBe(s3Store.get(thumbKey)!.length);
-    } else if (res2.filePath) {
-      expect(fs.existsSync(res2.filePath)).toBe(true);
-    }
+    } else if (res2.filePath) expect(fs.existsSync(res2.filePath)).toBe(true);
 
     // 3. Requesting non-existent key returns exists: false
     const missingHex = keyToHex("assets/does_not_exist.png");
@@ -704,6 +698,7 @@ describe("writeFromPath support", () => {
           for await (const chunk of command.input.Body) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+
           s3Store.set(cmdKey, Buffer.concat(chunks));
           expect(command.input.ContentType).toBe("image/png");
           expect(command.input.ContentLength).toBe(fileContent.length);
@@ -790,17 +785,16 @@ describe("createWriteStream streaming support", () => {
       if (cmdName === "PutObjectCommand" || cmdName.includes("PutObject")) {
         const body = command.input.Body;
         let data: Buffer;
-        if (Buffer.isBuffer(body)) {
-          data = body;
-        } else if (body && typeof body[Symbol.asyncIterator] === "function") {
+        if (Buffer.isBuffer(body)) data = body;
+        else if (body && typeof body[Symbol.asyncIterator] === "function") {
           const chunks: Buffer[] = [];
           for await (const chunk of body) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+
           data = Buffer.concat(chunks);
-        } else {
-          data = Buffer.from(body || "");
-        }
+        } else data = Buffer.from(body || "");
+
         s3Store.set(cmdKey, data);
         return {};
       }
@@ -810,9 +804,11 @@ describe("createWriteStream streaming support", () => {
       ) {
         return { UploadId: "mock-upload-id" };
       }
+
       if (cmdName === "UploadPartCommand" || cmdName.includes("UploadPart")) {
         return { ETag: "mock-etag" };
       }
+
       if (
         cmdName === "CompleteMultipartUploadCommand" ||
         cmdName.includes("CompleteMultipartUpload")
@@ -823,6 +819,7 @@ describe("createWriteStream streaming support", () => {
           Key: command.input.Key,
         };
       }
+
       return {};
     }) as any;
 
@@ -914,12 +911,14 @@ describe("createWriteStream streaming support", () => {
               if (!content || content.length !== Number(params.size)) {
                 throw new Error("stream size mismatch");
               }
+
               stored.delete(String(params.key));
               stored.delete(temporaryKey);
               stored.set(String(params.key), content);
             } else if (sql.includes("DELETE FROM asset_files")) {
               stored.delete(String(params.temporary_key));
             }
+
             return { recordset: [] };
           },
         };
@@ -1144,10 +1143,12 @@ describe("S3AssetStorage parallel migrate / rollback", () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(tmpDir))
+    if (fs.existsSync(tmpDir)) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (fs.existsSync(localDir))
+    }
+    if (fs.existsSync(localDir)) {
       fs.rmSync(localDir, { recursive: true, force: true });
+    }
   });
 
   const makeMockClient = (s3Store: Map<string, Buffer>) => ({
@@ -1157,17 +1158,16 @@ describe("S3AssetStorage parallel migrate / rollback", () => {
       if (cmdName.includes("PutObject")) {
         const body = command.input.Body;
         let data: Buffer;
-        if (Buffer.isBuffer(body)) {
-          data = body;
-        } else if (body && typeof body[Symbol.asyncIterator] === "function") {
+        if (Buffer.isBuffer(body)) data = body;
+        else if (body && typeof body[Symbol.asyncIterator] === "function") {
           const chunks: Buffer[] = [];
           for await (const chunk of body) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+
           data = Buffer.concat(chunks);
-        } else {
-          data = Buffer.from(body || "");
-        }
+        } else data = Buffer.from(body || "");
+
         s3Store.set(cmdKey, data);
         return {};
       }
@@ -1231,9 +1231,8 @@ describe("S3AssetStorage parallel migrate / rollback", () => {
     expect(result.migrated).toBe(fileCount);
     expect(result.skipped).toBe(0);
     expect(result.errors).toEqual([]);
-    for (const key of expectedKeys) {
-      expect(s3Store.has(key)).toBe(true);
-    }
+    for (const key of expectedKeys) expect(s3Store.has(key)).toBe(true);
+
     // Progress is throttled but at least one event should fire.
     expect(progressEvents.length).toBeGreaterThan(0);
     // Final progress should reach 100%.
@@ -1364,9 +1363,9 @@ describe("S3AssetStorage parallel migrate / rollback", () => {
         Buffer.from("new-assets/fresh.bin"),
       );
     } finally {
-      if (prev === undefined)
+      if (prev === undefined) {
         delete process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK;
-      else process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK = prev;
+      } else process.env.RISUAI_MIGRATE_SKIP_EXISTS_CHECK = prev;
     }
   });
 });

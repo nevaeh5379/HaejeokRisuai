@@ -106,9 +106,7 @@ function mergeLoadedChatVariables(
       : loaded.useLocallySetGlobalVariables;
   if (localGlobalVariableMode === undefined) {
     delete target.useLocallySetGlobalVariables;
-  } else {
-    target.useLocallySetGlobalVariables = localGlobalVariableMode;
-  }
+  } else target.useLocallySetGlobalVariables = localGlobalVariableMode;
 }
 
 function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
@@ -136,6 +134,7 @@ function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
   for (const chat of loaded) {
     if (chat.id && !currentIds.has(chat.id)) merged.push(chat);
   }
+
   return merged;
 }
 
@@ -161,6 +160,7 @@ function mergeLoadedMessages(
   for (const message of current) {
     if (message.chatId && !loadedIds.has(message.chatId)) merged.push(message);
   }
+
   return merged;
 }
 
@@ -290,9 +290,7 @@ class CharacterStore
     for (const char of characters) {
       char.chaId ||= uuidv4();
       if (char.detailsLoaded !== false) this.touchHydratedCharacter(char.chaId);
-      for (const chat of char.chats ?? []) {
-        chat.id ||= uuidv4();
-      }
+      for (const chat of char.chats ?? []) chat.id ||= uuidv4();
     }
     this.charIdsSnapshot = characters.map((c) => c.chaId).join(",");
     this.characters = characters;
@@ -328,6 +326,7 @@ class CharacterStore
         for (const id of previousCharIds) {
           if (!currentCharIds.has(id)) this.dirtyCharacterDeletes.add(id);
         }
+
         for (const id of currentCharIds) this.dirtyCharacterDeletes.delete(id);
         previousCharIds = currentCharIds;
         const currentIds = chars.map((c) => c.chaId).join(",");
@@ -351,9 +350,7 @@ class CharacterStore
 
     // Preserve the legacy invariant: every chat must have a stable id
     // (the old observe loop assigned these during traversal).
-    for (const c of char.chats ?? []) {
-      if (c && !c.id) c.id = uuidv4();
-    }
+    for (const c of char.chats ?? []) if (c && !c.id) c.id = uuidv4();
 
     // Track only data that is actually persisted. Message bodies live in the
     // message store and must not cause character/chat metadata commits while
@@ -452,6 +449,7 @@ class CharacterStore
         for (const id of previousChatIds) {
           if (!currentChatIds.has(id)) this.dirtyChatDeletes.add(id);
         }
+
         for (const id of currentChatIds) this.dirtyChatDeletes.delete(id);
         previousChatIds = currentChatIds;
         if (manifestKey === lastManifestKey && !added) return;
@@ -477,6 +475,7 @@ class CharacterStore
     if (!this.dirtyCharacters.has(char.chaId)) {
       this.dirtyCharacterTouches.set(char.chaId, timestamp);
     }
+
     this.scheduleTouchCommit();
   }
 
@@ -507,6 +506,7 @@ class CharacterStore
       if ("cancelIdleCallback" in globalThis) {
         globalThis.cancelIdleCallback(this.touchIdleHandle);
       }
+
       this.touchIdleHandle = null;
     }
   }
@@ -523,17 +523,14 @@ class CharacterStore
         this.touchIdleHandle = globalThis.requestIdleCallback(flushTouches, {
           timeout: 3000,
         });
-      } else {
-        this.touchDebounceTimer = setTimeout(flushTouches, 0);
-      }
+      } else this.touchDebounceTimer = setTimeout(flushTouches, 0);
     }, 750);
   }
 
   private scheduleCommit(): void {
     this.cancelScheduledTouchCommit();
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+
     this.debounceTimer = setTimeout(() => {
       void this.flush();
     }, 300);
@@ -600,8 +597,9 @@ class CharacterStore
           if (
             chat.globalAuthorNoteId !== undefined &&
             !(await globalAuthorNoteStore.get(chat.globalAuthorNoteId))
-          )
+          ) {
             chat.globalAuthorNoteId = "__none__";
+          }
           chats.push({
             id: chatId,
             characterId: char.chaId,
@@ -638,15 +636,10 @@ class CharacterStore
       : undefined;
 
     let action = "character";
-    if (characters.length > 0) {
-      action = "character";
-    } else if (chats.length > 0 || chatManifests.length > 0) {
-      action = "chat";
-    } else if (characterTouches.length > 0) {
-      action = "character-touch";
-    } else if (characterIds !== undefined) {
-      action = "order";
-    }
+    if (characters.length > 0) action = "character";
+    else if (chats.length > 0 || chatManifests.length > 0) action = "chat";
+    else if (characterTouches.length > 0) action = "character-touch";
+    else if (characterIds !== undefined) action = "order";
 
     const committedCharacterIds = new Set(this.dirtyCharacters);
     const committedCharacterDeletes = new Set(characterDeletes);
@@ -656,8 +649,9 @@ class CharacterStore
     const committedManifestIds = new Set(this.dirtyChatManifests);
     const committedCharacterOrder = this.dirtyCharacterIds;
     this.dirtyCharacters.clear();
-    for (const id of committedCharacterDeletes)
+    for (const id of committedCharacterDeletes) {
       this.dirtyCharacterDeletes.delete(id);
+    }
     this.dirtyCharacterTouches.clear();
     this.dirtyChats.clear();
     for (const id of committedChatDeletes) this.dirtyChatDeletes.delete(id);
@@ -685,15 +679,18 @@ class CharacterStore
         this.dirtyCharacters.add(id);
       }
       for (const id of committedCharacterDeletes) {
-        if (!this.characters.some((character) => character.chaId === id))
+        if (!this.characters.some((character) => character.chaId === id)) {
           this.dirtyCharacterDeletes.add(id);
+        }
       }
+
       for (const [id, timestamp] of committedTouches) {
         if (!this.dirtyCharacters.has(id)) {
           const current = this.dirtyCharacterTouches.get(id);
           this.dirtyCharacterTouches.set(id, Math.max(current ?? 0, timestamp));
         }
       }
+
       for (const id of committedChatIds) this.dirtyChats.add(id);
       for (const id of committedChatDeletes) {
         const stillAbsent = !this.characters.some((character) =>
@@ -736,8 +733,9 @@ class CharacterStore
       await this.flushSnapshotPredecessors();
       const storage = this.storage || (await getSqlStorage());
       const snapshots: SnapshotCharacter[] = [];
-      for (const id of ids)
+      for (const id of ids) {
         snapshots.push(await this.loadCharacterSnapshot(storage, id));
+      }
       return snapshots;
     },
     save: async (
@@ -751,13 +749,15 @@ class CharacterStore
       this.identifySnapshotInputs([incoming]);
       await this.enqueueCharacterSnapshotWrite([incoming], async (storage) => {
         const current = await storage.character.document(id);
-        if (!current || current.detailsLoaded === false)
+        if (!current || current.detailsLoaded === false) {
           throw new Error(`Cannot load complete character: ${id}`);
+        }
         const position = this.characters.findIndex(
           (character) => character.chaId === id,
         );
-        if (position < 0)
+        if (position < 0) {
           throw new Error(`Character changed while saving snapshot: ${id}`);
+        }
         await this.commitSnapshot(storage, "snapshot-character", (commit) =>
           this.prepareCharacterSnapshot(
             storage,
@@ -770,9 +770,11 @@ class CharacterStore
         for (const chat of current.chats) {
           if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
         }
+
         for (const chat of incoming.chats) {
           if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
         }
+
         await this.refreshRemoteCharacters([id]);
       });
     },
@@ -847,17 +849,19 @@ class CharacterStore
           if (!resolved) return;
           incoming.id = resolved.chatId;
           const current = await storage.character.document(target.characterId);
-          if (!current || current.detailsLoaded === false)
+          if (!current || current.detailsLoaded === false) {
             throw new Error(
               `Cannot load complete character: ${target.characterId}`,
             );
+          }
           const position = current.chats.findIndex(
             (chat) => chat.id === resolved.chatId,
           );
-          if (position < 0)
+          if (position < 0) {
             throw new Error(
               `Chat changed while saving snapshot: ${resolved.chatId}`,
             );
+          }
           const old = await this.loadStoredChatSnapshot(
             storage,
             resolved.chatId,
@@ -901,8 +905,9 @@ class CharacterStore
     },
   ) {
     const current = await storage.character.document(target.characterId);
-    if (!current || current.detailsLoaded === false)
+    if (!current || current.detailsLoaded === false) {
       throw new Error(`Cannot load complete character: ${target.characterId}`);
+    }
     const chatId =
       target.chatId ??
       (typeof target.chat === "number"
@@ -923,8 +928,9 @@ class CharacterStore
       chat.detailsLoaded === false ||
       chat.messagesLoaded === false ||
       chat.messagesFullyLoaded === false
-    )
+    ) {
       throw new Error(`Cannot load complete chat: ${chatId}`);
+    }
     return safeStructuredClone(chat);
   }
 
@@ -933,8 +939,9 @@ class CharacterStore
     id: string,
   ): Promise<SnapshotCharacter> {
     const stored = await storage.character.document(id);
-    if (!stored || stored.detailsLoaded === false)
+    if (!stored || stored.detailsLoaded === false) {
       throw new Error(`Cannot load complete character: ${id}`);
+    }
 
     const snapshot = safeStructuredClone(stored);
     snapshot.chatPage = Math.min(
@@ -953,24 +960,28 @@ class CharacterStore
   }
 
   private identifySnapshotInputs(values: SnapshotCharacter[]): void {
-    if (!Array.isArray(values))
+    if (!Array.isArray(values)) {
       throw new TypeError("Character snapshots must be an array");
+    }
     const characterIds = new Set<string>();
     const chatIds = new Set<string>();
     for (const character of values) {
       character.chaId ||= uuidv4();
       //TODO 플러그인 측에서 전달받은 캐릭터 객체는 detailsLoaded가 없을 수 있음 (detailsLoaded는 해적리스의 고유 변수)
-      if (character.detailsLoaded === false)
+      if (character.detailsLoaded === false) {
         throw new Error(
           `Character ${character.chaId} requires a complete snapshot`,
         );
-      if (characterIds.has(character.chaId))
+      }
+      if (characterIds.has(character.chaId)) {
         throw new Error(`Duplicate character ID: ${character.chaId}`);
+      }
       characterIds.add(character.chaId);
       for (const chat of character.chats ?? []) {
         chat.id ||= uuidv4();
-        if (chatIds.has(chat.id))
+        if (chatIds.has(chat.id)) {
           throw new Error(`Duplicate chat ID: ${chat.id}`);
+        }
         chatIds.add(chat.id);
       }
     }
@@ -990,27 +1001,33 @@ class CharacterStore
     const owners = new Map<string, string>();
     for (const character of this.characters) {
       for (const chat of character.chats ?? []) {
-        if (chat.id && needed.has(chat.id))
+        if (chat.id && needed.has(chat.id)) {
           owners.set(chat.id, character.chaId);
+        }
       }
     }
+
     if ([...needed].some((id) => !owners.has(id))) {
       for (const character of this.characters) {
         if (character.detailsLoaded !== false) continue;
         const current = await storage.character.document(character.chaId);
-        if (!current || current.detailsLoaded === false)
+        if (!current || current.detailsLoaded === false) {
           throw new Error(`Cannot load complete character: ${character.chaId}`);
+        }
         for (const chat of current.chats ?? []) {
-          if (chat.id && needed.has(chat.id))
+          if (chat.id && needed.has(chat.id)) {
             owners.set(chat.id, character.chaId);
+          }
         }
       }
     }
+
     for (const character of values) {
       for (const chat of character.chats ?? []) {
         const owner = owners.get(chat.id!);
-        if (owner && owner !== character.chaId)
+        if (owner && owner !== character.chaId) {
           throw new Error(`Chat ID belongs to another character: ${chat.id}`);
+        }
         if (
           !owner &&
           (chat.detailsLoaded === false ||
@@ -1073,6 +1090,7 @@ class CharacterStore
           incoming.scriptstate,
         );
       }
+
       if (old.GLGlobalVariables || incoming.GLGlobalVariables) {
         next.GLGlobalVariables = mergeVariableRecord(
           old.GLGlobalVariables,
@@ -1230,9 +1248,7 @@ class CharacterStore
       this.dirtyCharacterTouches.delete(char.chaId);
       this.dirtyCharacters.add(char.chaId);
       this.scheduleCommit();
-      if (index === this.selectedId) {
-        this.observeActive();
-      }
+      if (index === this.selectedId) this.observeActive();
     }
   }
 
@@ -1242,9 +1258,7 @@ class CharacterStore
 
   setCurrentChat(chat: Chat): void {
     const char = this.currentCharacter;
-    if (char && char.chats) {
-      char.chats[char.chatPage ?? 0] = chat;
-    }
+    if (char && char.chats) char.chats[char.chatPage ?? 0] = chat;
   }
 
   select(index: number): void {
@@ -1253,6 +1267,7 @@ class CharacterStore
     if (char?.chaId && char.detailsLoaded !== false) {
       this.touchHydratedCharacter(char.chaId);
     }
+
     // Re-observe the new active character
     this.observeActive();
   }
@@ -1277,6 +1292,7 @@ class CharacterStore
       if (this.selectedId >= this.characters.length) {
         this.selectedId = this.characters.length - 1;
       }
+
       this.observeActive();
     }
   }
@@ -1294,6 +1310,7 @@ class CharacterStore
     ) {
       return true;
     }
+
     return (char.chats ?? []).some((chat) =>
       Boolean(
         chat.id &&
@@ -1319,9 +1336,7 @@ class CharacterStore
     const scheduleIdle = (callback: () => void) => {
       if ("requestIdleCallback" in globalThis) {
         globalThis.requestIdleCallback(callback, { timeout: 2000 });
-      } else {
-        globalThis.setTimeout(callback, 0);
-      }
+      } else globalThis.setTimeout(callback, 0);
     };
 
     scheduleIdle(() => {
@@ -1368,13 +1383,15 @@ class CharacterStore
             !char ||
             index === this.selectedId ||
             char.detailsLoaded === false
-          )
+          ) {
             continue;
+          }
           if (this.hasProtectedCharacterDetails(char, protectedNow)) continue;
 
           for (const chat of char.chats ?? []) {
             if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
           }
+
           this.characters[index] = toCharacterSummary(char);
           this.hydratedCharacterLru = this.hydratedCharacterLru.filter(
             (id) => id !== chaId,
@@ -1400,9 +1417,8 @@ class CharacterStore
       );
     }
 
-    for (const id of changedIds) {
-      await this.characterDetailPromises.get(id);
-    }
+    for (const id of changedIds) await this.characterDetailPromises.get(id);
+
     const startup = await storage.loadStartupData();
     if (!startup || startup.status !== "ready") {
       throw new Error(
@@ -1479,6 +1495,7 @@ class CharacterStore
     if (this.characterDetailPromises.has(chaId)) {
       return this.characterDetailPromises.get(chaId);
     }
+
     const storage = this.storage || (await getSqlStorage());
     const promise = (async () => {
       try {
@@ -1512,9 +1529,7 @@ class CharacterStore
               detailsLoaded: true,
             });
             this.touchHydratedCharacter(chaId);
-            if (idx === this.selectedId) {
-              this.observeActive();
-            }
+            if (idx === this.selectedId) this.observeActive();
           }
         }
       } catch (error) {
@@ -1605,6 +1620,7 @@ class CharacterStore
       ) {
         await this.ensureChatMessages(chatId, options);
       }
+
       return;
     }
 
@@ -1625,11 +1641,9 @@ class CharacterStore
           chat.messageTotal = chat.message.length;
           chat.messagesFullyLoaded = true;
           chat.messagesLoaded = true;
-          if (options.generation) {
-            this.generationOnlyMetadataChats.add(chatId);
-          } else {
-            this.generationOnlyMetadataChats.delete(chatId);
-          }
+          if (options.generation) this.generationOnlyMetadataChats.add(chatId);
+          else this.generationOnlyMetadataChats.delete(chatId);
+
           return;
         }
 
@@ -1663,6 +1677,7 @@ class CharacterStore
           if (char && this.characters[this.selectedId] === char) {
             this.observeActive();
           }
+
           if (deferredVariableEdit) {
             this.dirtyChats.add(chatId);
             this.scheduleCommit();
@@ -1689,8 +1704,9 @@ class CharacterStore
         c.chats?.some((ch) => ch.id === chatId),
       );
       const chat = char?.chats?.find((ch) => ch.id === chatId);
-      if (!chat || chat.messagesFullyLoaded !== false || !chat.messageOffset)
+      if (!chat || chat.messagesFullyLoaded !== false || !chat.messageOffset) {
         return 0;
+      }
 
       const before = chat.messageOffset;
       const page = await storage.message.page(chatId, before, limit);

@@ -41,9 +41,7 @@ vi.mock("./pngchunk", () => ({
       ) {}
       async init() {}
       async write(key: string, data: string) {
-        if (key === "chara") {
-          this.writer.data = data;
-        }
+        if (key === "chara") this.writer.data = data;
       }
     },
   },
@@ -133,6 +131,7 @@ describe("character export with shallow details", () => {
               detailsLoaded: true,
             } as unknown as character;
           }
+
           return null;
         }),
       },

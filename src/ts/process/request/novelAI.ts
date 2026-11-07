@@ -47,7 +47,7 @@ export async function requestNovelAI(
     arg.continue,
   );
   const abortSignal = arg.abortSignal;
-  let logit_bias_exp: {
+  const logit_bias_exp: {
     sequence: number[];
     bias: number;
     ensure_sequence_finish: false;
@@ -60,9 +60,8 @@ export async function requestNovelAI(
 
     const tokensInNumberArray: number[] = [];
 
-    for (const token of tokens) {
-      tokensInNumberArray.push(token);
-    }
+    for (const token of tokens) tokensInNumberArray.push(token);
+
     logit_bias_exp.push({
       sequence: tokensInNumberArray,
       bias: bia[1],
@@ -82,7 +81,7 @@ export async function requestNovelAI(
   });
   let body = requestBody;
 
-  let headers = {
+  const headers = {
     Authorization: "Bearer " + (arg.key ?? db.novelai.token),
   };
 
@@ -99,11 +98,13 @@ export async function requestNovelAI(
       result: "Unsupported NovelAI transport variant",
     };
   }
-  if (arg.previewBody)
+
+  if (arg.previewBody) {
     return {
       type: "success",
       result: JSON.stringify({ url: novelAIUrl, body, headers }),
     };
+  }
 
   const remoteTransport = await tryExecuteNodeProviderTransport(
     LLMFormat.NovelAI,
@@ -125,6 +126,7 @@ export async function requestNovelAI(
       result: language.errors.httpError + `${JSON.stringify(da.data)}`,
     };
   }
+
   return {
     type: "success",
     result: unstringlizeChat(

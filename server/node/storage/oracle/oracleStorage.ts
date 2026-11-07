@@ -359,6 +359,7 @@ function mapTableName(qualifiedName: string): string {
       return replacement + qualifiedName.slice(prefix.length);
     }
   }
+
   return qualifiedName;
 }
 
@@ -467,6 +468,7 @@ function assertSqlIdentifier(value: unknown): string {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
+
   // 점 표기 → 접두어 변환
   const mapped = mapTableName(value);
   const parts = mapped.split(".");
@@ -476,6 +478,7 @@ function assertSqlIdentifier(value: unknown): string {
   if (parts.length === 1 && /^[a-z][a-z0-9_]*$/i.test(parts[0])) {
     return parts[0].toUpperCase();
   }
+
   if (
     parts.length === 2 &&
     /^[a-z][a-z0-9_]*$/i.test(parts[0]) &&
@@ -483,6 +486,7 @@ function assertSqlIdentifier(value: unknown): string {
   ) {
     return `${parts[0].toUpperCase()}.${parts[1].toUpperCase()}`;
   }
+
   throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
@@ -492,9 +496,8 @@ function assertSqlIdentifier(value: unknown): string {
 function lowercaseRowKeys(row: unknown): SqlStorageRow {
   if (!isSqlRow(row)) return {};
   const result: SqlStorageRow = {};
-  for (const key of Object.keys(row)) {
-    result[key.toLowerCase()] = row[key];
-  }
+  for (const key of Object.keys(row)) result[key.toLowerCase()] = row[key];
+
   return result;
 }
 
@@ -586,6 +589,7 @@ function normalizeEmptyStringBinds(binds: unknown): unknown {
       for (const [k, v] of Object.entries(binds)) {
         obj[k] = normalizeEmptyStringBind(v);
       }
+
       return obj;
     }
     return normalizeEmptyStringBind(binds);
@@ -597,6 +601,7 @@ function normalizeEmptyStringBinds(binds: unknown): unknown {
       for (const [k, v] of Object.entries(entry)) {
         obj[k] = normalizeEmptyStringBind(v);
       }
+
       return obj;
     }
     return normalizeEmptyStringBind(entry);
@@ -609,6 +614,7 @@ function restoreEmptyStringInRow<TRow>(row: TRow): TRow {
   for (const key of Object.keys(mutable)) {
     if (mutable[key] === ORACLE_EMPTY_STRING_SENTINEL) mutable[key] = "";
   }
+
   return row;
 }
 
@@ -719,6 +725,7 @@ async function clobToString(value: unknown): Promise<unknown> {
         lob.on?.("error", reject);
       });
     }
+
     // 이미 파싱된 JSON 객체/배열인 경우 "[object Object]"로 강제 변환하지 않고 그대로 유지
     return value;
   }
@@ -749,6 +756,7 @@ async function hydrateLobs(
     ) {
       result[key] = await clobToString(result[key]);
     }
+
     if (
       lowerBlobCols.has(lowerKey) &&
       result[key] !== null &&
@@ -782,6 +790,7 @@ async function fetchRows<TRow = SqlStorageRow>(
       fetchInfo[col.toUpperCase()] = { type: oracledb.BUFFER };
     }
   }
+
   const result = await connection.execute(sql, binds, {
     outFormat: oracledb.OUT_FORMAT_OBJECT,
     fetchInfo: Object.keys(fetchInfo).length > 0 ? fetchInfo : undefined,
@@ -796,6 +805,7 @@ async function fetchRows<TRow = SqlStorageRow>(
       ),
     );
   }
+
   // 컬럼명 소문자 변환 + 예약어 역매핑 + Oracle sentinel → '' 복원
   return rows.map((row) =>
     restoreEmptyStringInRow(remapRowColumns(row)),
@@ -828,9 +838,8 @@ async function fetchRequiredRow<TRow extends SqlStorageRow>(
   options: FetchRowOptions = {},
 ): Promise<TRow> {
   const row = await fetchOne<TRow>(connection, sql, binds, options);
-  if (!row) {
-    throw new StoragePayloadError(`Expected a row from: ${sql}`);
-  }
+  if (!row) throw new StoragePayloadError(`Expected a row from: ${sql}`);
+
   return row;
 }
 
@@ -846,13 +855,15 @@ function convertSql(sql: string): string {
   // ::type 캐스트 제거 (Oracle은 CAST() 사용)
   converted = converted.replace(/::\w+/g, "");
   // 점 표기 테이블명 → 접두어 (따옴표 안의 것은 제외)
-  for (const [prefix, replacement] of Object.entries(SCHEMA_PREFIX_MAP)) {
-    // 시스템 함수/컨텍스트는 제외 (current_setting 등은 이미 변환됨)
+  for (const [prefix, replacement] of Object.entries(SCHEMA_PREFIX_MAP))
+  // 시스템 함수/컨텍스트는 제외 (current_setting 등은 이미 변환됨)
+  {
     converted = converted.replace(
       new RegExp(prefix.replace(".", "\\."), "g"),
       replacement,
     );
   }
+
   // current_setting('risu.revision_id', TRUE) → SYS_CONTEXT('RISU_AUDIT_CTX', 'revision_id')
   converted = converted.replace(
     /current_setting\(['"]risu\.revision_id['"]\s*,\s*(?:TRUE|true)\)/g,
@@ -1133,8 +1144,9 @@ class OracleStorage extends SqlStorageBase {
               String(error?.message || "").startsWith(
                 "Unsupported Oracle schema",
               )
-            )
+            ) {
               throw error;
+            }
             console.log(
               `[Oracle startup] Storage metadata is not available yet; schema setup will run ` +
                 `(${sanitizeSensitiveText(error?.code || error?.message || "metadata table missing")}).`,
@@ -1157,6 +1169,7 @@ class OracleStorage extends SqlStorageBase {
           "[Oracle startup] 5/8 and 6/8 existing storage schema is current; schema apply skipped.",
         );
       }
+
       await this.runStartupStep(
         "6b/8 ensure persistent chat branch schema",
         () => this.ensureBranchSchema(testConn),
@@ -1212,6 +1225,7 @@ class OracleStorage extends SqlStorageBase {
             `expected ${ORACLE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}`,
         );
       }
+
       return pool;
     } catch (error) {
       try {
@@ -1241,6 +1255,7 @@ class OracleStorage extends SqlStorageBase {
                    ), updated_at = SYSTIMESTAMP
             `);
     }
+
     const triggerSql = await fs.readFile(
       path.join(__dirname, "oracle-last-message-time.sql"),
       "utf8",
@@ -1282,6 +1297,7 @@ class OracleStorage extends SqlStorageBase {
         if (!String(error?.message || "").includes("ORA-00955")) throw error;
       }
     }
+
     await connection.commit();
   }
 
@@ -1329,6 +1345,7 @@ class OracleStorage extends SqlStorageBase {
         if (!String(error?.message || "").includes("ORA-00955")) throw error;
       }
     }
+
     await connection.commit();
   }
 
@@ -1354,6 +1371,7 @@ class OracleStorage extends SqlStorageBase {
         if (!String(error?.message || "").includes("ORA-00955")) throw error;
       }
     }
+
     try {
       await connection.execute(
         `ALTER TABLE system_asset_catalog_state ADD source_id VARCHAR2(2048)`,
@@ -1398,11 +1416,10 @@ class OracleStorage extends SqlStorageBase {
             msg.includes("ORA-00054")
           ) {
             // 무시
-          } else {
-            throw err;
-          }
+          } else throw err;
         }
       }
+
       buf = [];
       plsqlBlock = false;
     };
@@ -1423,9 +1440,8 @@ class OracleStorage extends SqlStorageBase {
       ) {
         plsqlBlock = true;
       }
-      if (!plsqlBlock && trimmed.endsWith(";")) {
-        await flush();
-      }
+
+      if (!plsqlBlock && trimmed.endsWith(";")) await flush();
     }
     await flush();
 
@@ -1505,6 +1521,7 @@ class OracleStorage extends SqlStorageBase {
           await previousPool.close(0);
         } catch (e) {}
       }
+
       return;
     }
     this.user = options.user;
@@ -1523,6 +1540,7 @@ class OracleStorage extends SqlStorageBase {
         await previousPool.close(0);
       } catch (e) {}
     }
+
     console.log("[Oracle] Storage connection was reconfigured.");
   }
 
@@ -1723,9 +1741,8 @@ class OracleStorage extends SqlStorageBase {
           `DELETE FROM system_asset_catalog WHERE SUBSTR(asset_key, 1, :1) = :2`,
           [prefix.length, prefix],
         );
-      } else {
-        await conn.execute(`DELETE FROM system_asset_catalog`);
-      }
+      } else await conn.execute(`DELETE FROM system_asset_catalog`);
+
       if (entries.length > 0) {
         await conn.executeMany(
           `INSERT INTO system_asset_catalog (asset_key, size_bytes, etag)
@@ -1744,6 +1761,7 @@ class OracleStorage extends SqlStorageBase {
           },
         );
       }
+
       await conn.execute(
         `UPDATE system_asset_catalog_state
                  SET initialized = 1, synced_at = SYSTIMESTAMP WHERE singleton = 1`,
@@ -1933,6 +1951,7 @@ class OracleStorage extends SqlStorageBase {
           rebuiltSettings[row.key] = mapColumnsToSettingValue(row);
         }
       }
+
       const characterRows = await fetchRows<CharacterCoreRow>(
         conn,
         `SELECT id, kind, name, image, trash_time, creation_time, ` +
@@ -2231,17 +2250,20 @@ class OracleStorage extends SqlStorageBase {
         ),
       ]);
       const fields: Record<string, unknown> = {};
-      if (charRow.image !== null && charRow.image !== undefined)
+      if (charRow.image !== null && charRow.image !== undefined) {
         fields.image = charRow.image;
+      }
       for (const row of attributes) {
         fields[row.key] = decodeJsonValue(row.value);
       }
+
       if (emotions.length) {
         fields.emotionImages = emotions.map((item) => [
           item.emotion,
           item.asset,
         ]);
       }
+
       const additionalAssets = assets
         .filter((item) => item.asset_source === "additional")
         .map((item) => [item.name, item.uri, item.extension]);
@@ -2658,8 +2680,9 @@ class OracleStorage extends SqlStorageBase {
         : Math.max(1, Math.floor(Number(options.limit) || 1));
     const offset = Math.max(0, end - requestedLimit);
     const pageSize = Math.max(0, end - offset);
-    if (pageSize === 0)
+    if (pageSize === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
     const messages = await fetchRows<MessageCoreRow>(
       conn,
       `
@@ -2687,8 +2710,9 @@ class OracleStorage extends SqlStorageBase {
       },
     );
     const ids = messages.map((row) => row.id);
-    if (ids.length === 0)
+    if (ids.length === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
+    }
     const idsJson = JSON.stringify(ids);
     const relationJoin = `JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids ON ids.id = source.message_id`;
     let attributes: MessageAttributeRow[] = [];
@@ -3175,8 +3199,9 @@ class OracleStorage extends SqlStorageBase {
     const parentInput = input.parentBranchId ?? null;
     const forkMessageId = input.forkMessageId ?? null;
     const reason = input?.reason;
-    if (!reason || !["root", "manual", "reroll"].includes(reason))
+    if (!reason || !["root", "manual", "reroll"].includes(reason)) {
       throw new StoragePayloadError("Invalid chat branch reason");
+    }
     const createdAt = Number.isFinite(Number(input?.createdAt))
       ? Math.trunc(Number(input.createdAt))
       : Date.now();
@@ -3185,15 +3210,17 @@ class OracleStorage extends SqlStorageBase {
       await this.ensureChatBranchGraph(conn, chatId);
       const activeId = await this._activeBranchId(conn, chatId);
       const parentBranchId = parentInput ?? activeId;
-      if (!parentBranchId)
+      if (!parentBranchId) {
         throw new StoragePayloadError("Chat branch root does not exist");
+      }
       const parent = await fetchOne<BranchRow>(
         conn,
         `SELECT 1 AS ok FROM chat_branches WHERE chat_id = :1 AND id = :2`,
         [chatId, parentBranchId],
       );
-      if (!parent)
+      if (!parent) {
         throw new StoragePayloadError("Parent chat branch does not exist");
+      }
       await conn.execute(
         `
                 INSERT INTO chat_branches
@@ -3267,9 +3294,7 @@ class OracleStorage extends SqlStorageBase {
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
     if (pluginId) assertId(pluginId, "pluginId");
-    if (!pluginId && this.pluginsCache) {
-      return this.pluginsCache;
-    }
+    if (!pluginId && this.pluginsCache) return this.pluginsCache;
 
     const conn = await this.pool.getConnection();
     try {
@@ -3335,9 +3360,8 @@ class OracleStorage extends SqlStorageBase {
 
   async loadPluginCustomStorage() {
     this.assertEnabled();
-    if (this.pluginCustomStorageCache) {
-      return this.pluginCustomStorageCache;
-    }
+    if (this.pluginCustomStorageCache) return this.pluginCustomStorageCache;
+
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET TRANSACTION READ ONLY");
@@ -3408,6 +3432,7 @@ class OracleStorage extends SqlStorageBase {
       if (rows.length === 0) {
         return { key: storageKey, exists: false, value: null, hash: "null" };
       }
+
       const value: unknown = JSON.parse(String(rows[0].value));
       const serialized = JSON.stringify(value);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
@@ -3586,11 +3611,13 @@ class OracleStorage extends SqlStorageBase {
         "Storage sync finalize revision must be a non-negative integer",
       );
     }
+
     if (typeof callback !== "function") {
       throw new StoragePayloadError(
         "Storage sync finalize callback is required",
       );
     }
+
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET CONSTRAINTS ALL DEFERRED");
@@ -3605,6 +3632,7 @@ class OracleStorage extends SqlStorageBase {
           `Oracle data changed in another session (server revision ${currentRevision}). Refresh the sync preview before finalizing.`,
         );
       }
+
       const previousRevision = await fetchOne<RevisionRow>(
         conn,
         "SELECT id FROM system_revisions WHERE storage_revision = :1 ORDER BY id DESC FETCH FIRST 1 ROW ONLY",
@@ -3708,6 +3736,7 @@ class OracleStorage extends SqlStorageBase {
           `Oracle data changed in another session (server revision ${currentRevision}). Reload before saving again.`,
         );
       }
+
       const affectedMessageChatIds = collectAffectedMessageChatIds(payload);
       if (!external) {
         await beginAuditRevision(conn, {
@@ -3767,6 +3796,7 @@ class OracleStorage extends SqlStorageBase {
             [id],
           );
         }
+
         if (payload.plugins.order) {
           await conn.execute(
             "UPDATE system_plugin_records SET position = position + 1000000000",
@@ -3796,6 +3826,7 @@ class OracleStorage extends SqlStorageBase {
               `Plugin ${entry.id} must have a non-empty name`,
             );
           }
+
           await conn.execute(mergePlugin, {
             plugin_id: entry.id,
             position:
@@ -3892,8 +3923,9 @@ class OracleStorage extends SqlStorageBase {
         const ids = new Set<string>(existing.map((row) => row.preset_id));
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
-        if (!ids.size)
+        if (!ids.size) {
           throw new StoragePayloadError("At least one bot preset must remain");
+        }
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
@@ -3904,16 +3936,19 @@ class OracleStorage extends SqlStorageBase {
             "Preset order must contain every preset ID exactly once",
           );
         }
+
         if (
           payload.presets.activeId !== undefined &&
           !ids.has(payload.presets.activeId)
-        )
+        ) {
           throw new StoragePayloadError("Active bot preset does not exist");
-        for (const id of payload.presets.deletes)
+        }
+        for (const id of payload.presets.deletes) {
           await conn.execute(
             "DELETE FROM system_bot_presets WHERE preset_id = :1",
             [id],
           );
+        }
         let nextPosition =
           existing.reduce(
             (max, row) => Math.max(max, Number(row.position)),
@@ -3950,11 +3985,12 @@ class OracleStorage extends SqlStorageBase {
           await conn.execute(
             "UPDATE system_bot_presets SET position = position + 1000000000",
           );
-          for (const [position, id] of payload.presets.order.entries())
+          for (const [position, id] of payload.presets.order.entries()) {
             await conn.execute(
               "UPDATE system_bot_presets SET position = :1 WHERE preset_id = :2",
               [position, id],
             );
+          }
         }
         let activeId: string | undefined = payload.presets.activeId;
         if (activeId === undefined && !external?.storageSyncImport) {
@@ -3971,11 +4007,13 @@ class OracleStorage extends SqlStorageBase {
               (payload.presets.order || Array.from(ids))[0];
           }
         }
-        if (activeId !== undefined)
+
+        if (activeId !== undefined) {
           payload.rootUpserts.push({
             key: "activeBotPresetId",
             value: activeId,
           });
+        }
       }
 
       // 설정 upsert (MERGE INTO system_settings)
@@ -4075,15 +4113,18 @@ class OracleStorage extends SqlStorageBase {
           payload.rootDeletes.map((key) => [key]),
         );
       }
+
       if (payload.pluginStorageClear) {
         await conn.execute("DELETE FROM system_plugin_custom_storage");
       }
+
       if (payload.pluginStorageDeletes?.length) {
         await conn.executeMany(
           "DELETE FROM system_plugin_custom_storage WHERE key = :1",
           payload.pluginStorageDeletes.map((key) => [key]),
         );
       }
+
       if (payload.pluginStorageUpserts?.length) {
         const pluginSql = `MERGE INTO system_plugin_custom_storage target
                     USING (SELECT :1 AS key, JSON(:2) AS value FROM dual) source
@@ -4426,6 +4467,7 @@ class OracleStorage extends SqlStorageBase {
           );
         }
       }
+
       const chatRows = (name: ChatRelationName): SqlStorageRow[] =>
         splitChats.flatMap((item) => [...item[name]]);
       await this._bulkInsertRows(
@@ -4648,12 +4690,14 @@ class OracleStorage extends SqlStorageBase {
           payload.characterDeletes.map((id) => [id]),
         );
       }
+
       if (payload.chatDeletes?.length) {
         await conn.executeMany(
           `DELETE FROM chat_chats WHERE id = :1`,
           payload.chatDeletes.map((id) => [id]),
         );
       }
+
       if (payload.messageDeletes) {
         await this.detachMessagesFromBranchGraph(conn, payload.messageDeletes);
         for (const del of payload.messageDeletes) {
@@ -4718,6 +4762,7 @@ class OracleStorage extends SqlStorageBase {
           await conn.rollback();
         } catch (e) {}
       }
+
       throw error;
     } finally {
       if (ownsTransaction) {
@@ -4736,9 +4781,8 @@ class OracleStorage extends SqlStorageBase {
         name.toLowerCase(),
       ),
     );
-    if (jsonCols.has(col)) {
-      return oracledb.DB_TYPE_CLOB;
-    }
+    if (jsonCols.has(col)) return oracledb.DB_TYPE_CLOB;
+
     const lobCols = new Set<string>(
       this._getLobColumnsForTable(mappedTable).map((name) =>
         name.toLowerCase(),
@@ -4748,6 +4792,7 @@ class OracleStorage extends SqlStorageBase {
       if (col === "content_binary" || col === "data") {
         return oracledb.DB_TYPE_BLOB;
       }
+
       return oracledb.DB_TYPE_CLOB;
     }
 
@@ -4827,6 +4872,7 @@ class OracleStorage extends SqlStorageBase {
     ) {
       return oracledb.DB_TYPE_NUMBER;
     }
+
     return oracledb.DB_TYPE_VARCHAR;
   }
 
@@ -4841,6 +4887,7 @@ class OracleStorage extends SqlStorageBase {
           return JSON.stringify(v);
         }
       }
+
       return JSON.stringify(v);
     }
     if (v === null || v === undefined) return null;
@@ -4976,6 +5023,7 @@ class OracleStorage extends SqlStorageBase {
       ) {
         await flush();
       }
+
       if (chunkBinds.length === 0) {
         chunkTypes = types;
         chunkSizes = sizes.map((size) => Math.max(1, size));
@@ -4984,6 +5032,7 @@ class OracleStorage extends SqlStorageBase {
           chunkSizes[index] = Math.max(chunkSizes[index], sizes[index]);
         }
       }
+
       chunkBinds.push(binds);
     }
     await flush();
@@ -5171,12 +5220,14 @@ class OracleStorage extends SqlStorageBase {
   async searchMessages(rawQuery: unknown, rawScope = "all", rawLimit = 50) {
     this.assertEnabled();
     const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
-    if (!query)
+    if (!query) {
       throw new StoragePayloadError("search query must be a non-empty string");
-    if (query.length > 1024)
+    }
+    if (query.length > 1024) {
       throw new StoragePayloadError(
         "search query must be at most 1024 characters",
       );
+    }
     const scope =
       rawScope === "active" || rawScope === "cold" ? rawScope : "all";
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
@@ -5333,8 +5384,9 @@ class OracleStorage extends SqlStorageBase {
     this.assertEnabled();
     const tag = typeof rawTag === "string" ? rawTag.trim() : "";
     if (!tag) throw new StoragePayloadError("tag must be a non-empty string");
-    if (tag.length > 256)
+    if (tag.length > 256) {
       throw new StoragePayloadError("tag must be at most 256 characters");
+    }
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
@@ -5369,8 +5421,9 @@ class OracleStorage extends SqlStorageBase {
     this.assertEnabled();
     const name = typeof rawName === "string" ? rawName.trim() : "";
     if (!name) throw new StoragePayloadError("name must be a non-empty string");
-    if (name.length > 256)
+    if (name.length > 256) {
       throw new StoragePayloadError("name must be at most 256 characters");
+    }
     const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
@@ -5422,8 +5475,9 @@ class OracleStorage extends SqlStorageBase {
         .map((r) => {
           const name = r.table_name.toLowerCase();
           if (name.startsWith("system_")) return "system." + name.slice(7);
-          if (name.startsWith("character_"))
+          if (name.startsWith("character_")) {
             return "character." + name.slice(10);
+          }
           if (name.startsWith("chat_")) return "chat." + name.slice(5);
           if (name.startsWith("cold_")) return "cold." + name.slice(5);
           return name;
@@ -5525,22 +5579,26 @@ class OracleStorage extends SqlStorageBase {
     const mappedTable = mapTableName(validated);
     const quotedTable = assertSqlIdentifier(mappedTable);
     const columns = await this.getDbExplorerTableColumns(table);
-    if (columns.length === 0)
+    if (columns.length === 0) {
       throw new StoragePayloadError("table has no columns");
+    }
 
     let visibleColumns = columns;
     if (rawColumns !== null && rawColumns !== undefined) {
       if (!Array.isArray(rawColumns) || rawColumns.length === 0) {
         throw new StoragePayloadError("column list must not be empty");
       }
+
       const visibleNames: string[] = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
         const match = columns.find((column) => column.name === validatedCol);
-        if (!match)
+        if (!match) {
           throw new StoragePayloadError("column was not found in the table");
-        if (!visibleNames.includes(validatedCol))
+        }
+        if (!visibleNames.includes(validatedCol)) {
           visibleNames.push(validatedCol);
+        }
       }
       visibleColumns = columns.filter((column) =>
         visibleNames.includes(column.name),
@@ -5562,8 +5620,9 @@ class OracleStorage extends SqlStorageBase {
     let sortColumn = columns[0].name;
     if (typeof rawSortColumn === "string" && rawSortColumn.length > 0) {
       const match = columns.find((column) => column.name === rawSortColumn);
-      if (!match)
+      if (!match) {
         throw new StoragePayloadError("sort column was not found in the table");
+      }
       sortColumn = match.name;
     }
     const sortOrder = rawSortOrder === "desc" ? "DESC" : "ASC";
@@ -5630,6 +5689,7 @@ class OracleStorage extends SqlStorageBase {
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
       throw new StoragePayloadError("revisionId must be a positive integer");
     }
+
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET CONSTRAINTS ALL DEFERRED");
@@ -5639,8 +5699,9 @@ class OracleStorage extends SqlStorageBase {
         `SELECT id FROM system_revisions WHERE id = :1`,
         [targetRevisionId],
       );
-      if (!targetRow)
+      if (!targetRow) {
         throw new StoragePayloadError("The requested revision does not exist");
+      }
 
       const metaRow = await fetchRequiredRow<StorageMetaRow>(
         conn,
@@ -5808,10 +5869,12 @@ class OracleStorage extends SqlStorageBase {
     };
     if (character) {
       for (const [column, value] of Object.entries(character.core)) {
-        if (!["id", "position"].includes(column))
+        if (!["id", "position"].includes(column)) {
           archive[`character_${column}`] = value;
+        }
       }
     }
+
     // cold_archives upsert
     const updateArchiveCols = archiveColumns.slice(1);
     const upsertSql = `BEGIN
@@ -5886,10 +5949,11 @@ class OracleStorage extends SqlStorageBase {
     let exported = 0;
     for (const item of items) {
       const loaded = await this.loadColdStorage(item.key);
-      if (!loaded)
+      if (!loaded) {
         throw new Error(
           `Cold storage item disappeared during export: ${item.key}`,
         );
+      }
       const logicalPath = `coldstorage/${item.key}`;
       const filename = Buffer.from(logicalPath, "utf8").toString("hex");
       const compressed = await deflateAsync(

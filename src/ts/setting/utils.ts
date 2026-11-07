@@ -37,25 +37,23 @@ export function getLabel(item: SettingItem): string {
   if (item.labelKey && (language as any)[item.labelKey]) {
     return (language as any)[item.labelKey];
   }
+
   return item.fallbackLabel ?? "";
 }
 
 export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
-  if (item.getValue) {
-    return item.getValue(ctx);
-  }
+  if (item.getValue) return item.getValue(ctx);
+
   if (item.bindPath) {
     const parts = item.bindPath.split(".");
     // SettingPath checks the root and nested key when the item is defined.
     let value: any = getSetting(parts.shift() as SettingKey);
-    for (const part of parts) {
-      value = value?.[part];
-    }
+    for (const part of parts) value = value?.[part];
+
     return value;
   }
-  if (item.bindKey) {
-    return getSetting(item.bindKey);
-  }
+  if (item.bindKey) return getSetting(item.bindKey);
+
   return undefined;
 }
 
@@ -72,18 +70,13 @@ export function setSettingValue(
     const root = parts.shift() as SettingKey;
     const state: any = getSetting(root) ?? {};
     let obj: any = state;
-    for (let i = 0; i < parts.length - 1; i++) {
-      obj = obj[parts[i]] ??= {};
-    }
+    for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]] ??= {};
+
     obj[parts[parts.length - 1]] = newValue;
     setSetting(root, state);
-  } else if (item.bindKey) {
-    setSetting(item.bindKey, newValue);
-  }
+  } else if (item.bindKey) setSetting(item.bindKey, newValue);
 
-  if (item.onChange) {
-    item.onChange(newValue, ctx);
-  }
+  if (item.onChange) item.onChange(newValue, ctx);
 }
 
 /**

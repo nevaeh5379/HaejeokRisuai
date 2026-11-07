@@ -31,9 +31,7 @@ export const PROMPT_ROLE_TO_OPENAI = {
 
 export function applyPromptBlockRole(chats: OpenAIChat[], role?: PromptRole) {
   if (!role) return;
-  for (const chat of chats) {
-    chat.role = PROMPT_ROLE_TO_OPENAI[role];
-  }
+  for (const chat of chats) chat.role = PROMPT_ROLE_TO_OPENAI[role];
 }
 
 function createPromptSections(): PromptSections {
@@ -95,6 +93,7 @@ function resolvePromptTemplate(
   ) {
     promptTemplate = getUtilityBotTemplate();
   }
+
   return { promptTemplate, usingPromptTemplate };
 }
 
@@ -108,6 +107,7 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
       content: parts[i + 1]?.trim() || "",
     });
   }
+
   return chats;
 }
 
@@ -266,18 +266,21 @@ async function buildDescriptionText(
       chatTarget: target,
     })}`;
   }
+
   if (currentChar.personality) {
     description += risuChatParser(
       `\n\nDescription of {{char}}: ${currentChar.personality}`,
       { chara: currentChar, chatTarget: target },
     );
   }
+
   if (currentChar.scenario) {
     description += risuChatParser(
       `\n\nCircumstances and context of the dialogue: ${currentChar.scenario}`,
       { chara: currentChar, chatTarget: target },
     );
   }
+
   return description;
 }
 
@@ -463,6 +466,7 @@ function createPositionParser(
           break;
       }
     }
+
     return resolvePosition(text);
   };
 }

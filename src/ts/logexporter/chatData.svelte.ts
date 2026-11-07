@@ -29,9 +29,8 @@ function isGroup(char: character | groupChat | undefined): char is groupChat {
 
 /** Resolves the display name of a message's author. */
 function resolveSpeakerName(msg: Message, char: character | groupChat): string {
-  if (msg.role === "user") {
-    return msg.name || getUserName();
-  }
+  if (msg.role === "user") return msg.name || getUserName();
+
   if (msg.saying) {
     try {
       return findCharacterbyId(msg.saying)?.name || char.name;
@@ -39,6 +38,7 @@ function resolveSpeakerName(msg: Message, char: character | groupChat): string {
       return char.name;
     }
   }
+
   return char.name;
 }
 
@@ -144,16 +144,13 @@ export async function collectLogData(
         (item) =>
           !item.isFirstMessage && item.chatIndex === options.singleMessage,
       );
-      if (matched.length > 0) {
-        rawItems = matched;
-      } else if (
+      if (matched.length > 0) rawItems = matched;
+      else if (
         options.singleMessage >= 0 &&
         options.singleMessage < allRawItems.length
       ) {
         rawItems = [allRawItems[options.singleMessage]];
-      } else {
-        rawItems = [];
-      }
+      } else rawItems = [];
     }
   } else if (
     options.startIndex !== undefined ||
@@ -171,13 +168,15 @@ export async function collectLogData(
           if (item.chatIndex < startChatIdx) return false;
         }
       }
+
       if (endChatIdx !== undefined) {
         if (endChatIdx === -1) {
           if (!item.isFirstMessage) return false;
-        } else {
-          if (!item.isFirstMessage && item.chatIndex > endChatIdx) return false;
+        } else if (!item.isFirstMessage && item.chatIndex > endChatIdx) {
+          return false;
         }
       }
+
       return true;
     });
   }
@@ -201,9 +200,8 @@ export async function collectLogData(
 
     // Avatar resolution (per speaker)
     let avatarUrl = "";
-    if (msg.role === "user") {
-      avatarUrl = userIconUrl;
-    } else {
+    if (msg.role === "user") avatarUrl = userIconUrl;
+    else {
       const sayingId = msg.saying;
       if (sayingId && avatarCache.has(sayingId)) {
         avatarUrl = avatarCache.get(sayingId)!;
@@ -211,11 +209,8 @@ export async function collectLogData(
         const said = findCharacterbyId(sayingId);
         avatarUrl = await resolveAvatar(said?.image);
         avatarCache.set(sayingId, avatarUrl);
-      } else if (isGroup(char)) {
-        avatarUrl = await resolveAvatar(char.image);
-      } else {
-        avatarUrl = charAvatarUrl;
-      }
+      } else if (isGroup(char)) avatarUrl = await resolveAvatar(char.image);
+      else avatarUrl = charAvatarUrl;
     }
 
     // Render through the native parser pipeline ('notrim' keeps full HTML)
@@ -283,18 +278,13 @@ export function htmlToText(html: string): string {
       if (insideTag) {
         if (quote) {
           if (char === quote) quote = null;
-        } else if (char === '"' || char === "'") {
-          quote = char;
-        } else if (char === ">") {
-          insideTag = false;
-        }
+        } else if (char === '"' || char === "'") quote = char;
+        else if (char === ">") insideTag = false;
+
         continue;
       }
-      if (char === "<") {
-        insideTag = true;
-      } else {
-        text += char;
-      }
+      if (char === "<") insideTag = true;
+      else text += char;
     }
     return text.trim();
   }

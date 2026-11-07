@@ -108,6 +108,7 @@ async function runCurrentChatVariables(
       chatTarget: targetWithNote,
     });
   }
+
   return targetWithNote;
 }
 
@@ -120,11 +121,8 @@ async function applyPresetChain(chatProcessIndex: number) {
   const presetIndex = presetStore.summaries.findIndex(
     (summary) => summary.name === name,
   );
-  if (presetIndex === -1) {
-    alertToast(`Cannot find preset: ${name}`);
-  } else {
-    await changeToPreset(presetIndex);
-  }
+  if (presetIndex === -1) alertToast(`Cannot find preset: ${name}`);
+  else await changeToPreset(presetIndex);
 }
 
 async function synchronizePeer(
@@ -153,6 +151,7 @@ function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
     if (toggle.type === "select" || toggle.type === "text") {
       return [{ key: toggle.value, value: toggle.options[raw] }];
     }
+
     return raw === "1" ? [{ key: toggle.value, value: "ON" }] : [];
   });
   return {
@@ -209,6 +208,7 @@ async function loadSelectedChat(options: PrepareChatSessionOptions) {
   for (const message of nowChatroom.chats[selectedChat].message) {
     message.chatId ??= v4();
   }
+
   return { selectedChar, selectedChat, nowChatroom };
 }
 
@@ -238,6 +238,7 @@ async function resolveCurrentCharacter(
   if (room.type !== "group") {
     return { status: "ready" as const, currentChar: room };
   }
+
   if (options.chatProcessIndex === -1) {
     return {
       status: "done" as const,
@@ -306,6 +307,7 @@ export async function prepareChatSession(
   if (!(await initializeGeneration(options))) {
     return { status: "done", result: false };
   }
+
   const selection = await loadSelectedChat(options);
   if (!selection) return { status: "done", result: false };
 

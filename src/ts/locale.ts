@@ -6,27 +6,25 @@
  */
 
 function isUsableLocaleTag(tag: string): boolean {
-    try {
-        new Intl.Locale(tag);
-        return true;
-    } catch {
-        return false;
-    }
+  try {
+    new Intl.Locale(tag);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getSafeNavigatorLanguage(): string {
-    const lang = navigator.language;
-    if (lang && isUsableLocaleTag(lang)) {
-        return lang;
-    }
-    return 'en';
+  const lang = navigator.language;
+  if (lang && isUsableLocaleTag(lang)) return lang;
+
+  return "en";
 }
 
 export function getSafeNavigatorLanguages(): string[] {
-    const languages = navigator.languages;
-    if (!languages || languages.length === 0) {
-        return ['en'];
-    }
-    const safe = languages.filter(isUsableLocaleTag);
-    return safe.length > 0 ? safe : ['en'];
+  const languages = navigator.languages;
+  if (!languages || languages.length === 0) return ["en"];
+
+  const safe = languages.filter(isUsableLocaleTag);
+  return safe.length > 0 ? safe : ["en"];
 }

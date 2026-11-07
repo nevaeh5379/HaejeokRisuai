@@ -79,6 +79,7 @@ describe("SQL row commits", () => {
     for (const key of ["username", "userIcon", "userNote", "personaPrompt"]) {
       expect(rootKeys).not.toContain(key);
     }
+
     expect(commit.characters).toHaveLength(1);
     expect(commit.characters[0].data).not.toHaveProperty("chats");
     expect(commit.chats).toHaveLength(1);

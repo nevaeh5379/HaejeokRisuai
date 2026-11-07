@@ -19,8 +19,7 @@ export function createShellRevealer(forceDeferred = false): () => void {
     startupPhase.set("shell-ready");
     performance.mark("shell-ready");
   };
-  if (!deferShellUntilRuntimeReady) {
-    revealShell();
-  }
+  if (!deferShellUntilRuntimeReady) revealShell();
+
   return revealShell;
 }

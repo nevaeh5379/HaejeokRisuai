@@ -269,6 +269,7 @@ export class ChatTabsStore {
     if (!chatId) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
+
     return this.removeTabsMatching((tab) => tab.chatId === chatId);
   }
 
@@ -280,6 +281,7 @@ export class ChatTabsStore {
     if (!characterId) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
+
     return this.removeTabsMatching((tab) => tab.characterId === characterId);
   }
 
@@ -299,9 +301,7 @@ export class ChatTabsStore {
     );
   }
 
-  private removeTabsMatching(
-    matches: (tab: ChatTab) => boolean,
-  ): {
+  private removeTabsMatching(matches: (tab: ChatTab) => boolean): {
     activeChanged: boolean;
     activeTab: ChatTab | null;
   } {
@@ -309,6 +309,7 @@ export class ChatTabsStore {
     if (removed.length === 0) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
+
     const removedIds = new Set(removed.map((tab) => tab.id));
     this.tabs = this.tabs.filter((tab) => !removedIds.has(tab.id));
 
@@ -318,9 +319,7 @@ export class ChatTabsStore {
     } = { activeChanged: false, activeTab: this.activeTab ?? null };
 
     for (const groupId of new Set(removed.map((tab) => tab.groupId))) {
-      const groupIndex = this.groups.findIndex(
-        (group) => group.id === groupId,
-      );
+      const groupIndex = this.groups.findIndex((group) => group.id === groupId);
       if (groupIndex < 0) continue;
       const group = this.groups[groupIndex];
       const wasFocused = this.focusedGroupId === group.id;
@@ -356,12 +355,11 @@ export class ChatTabsStore {
       ) {
         continue;
       }
+
       const next = remaining[0] ?? null;
       group.activeTabId = next?.id ?? null;
       if (next) next.unread = false;
-      if (wasFocused) {
-        focusedResult = { activeChanged: true, activeTab: next };
-      }
+      if (wasFocused) focusedResult = { activeChanged: true, activeTab: next };
     }
 
     return focusedResult;
@@ -398,12 +396,15 @@ export class ChatTabsStore {
     if (this.tabs.length <= 1) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
+
     const tab = this.tabs.find((item) => item.id === tabId);
-    if (!tab)
+    if (!tab) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
+    }
     const group = this.getGroup(tab.groupId);
-    if (!group)
+    if (!group) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
+    }
     const groupTabs = this.tabsForGroup(group.id);
     const groupIndex = groupTabs.findIndex((item) => item.id === tabId);
     const wasGroupActive = group.activeTabId === tabId;
@@ -568,9 +569,7 @@ export class ChatTabsStore {
 
   markUnread(chatId: string): void {
     if (!chatId || this.isActiveChat(chatId)) return;
-    for (const tab of this.tabs) {
-      if (tab.chatId === chatId) tab.unread = true;
-    }
+    for (const tab of this.tabs) if (tab.chatId === chatId) tab.unread = true;
   }
 
   isActiveChat(chatId: string): boolean {
@@ -641,8 +640,12 @@ export async function navigateToChatTab(tabId: string): Promise<boolean> {
       const { changeChar } = await import("./characters");
       await changeChar(characterIndex, { chatId: tab.chatId });
     }
-    if (sequence !== navigationSequence || chatTabsStore.activeTabId !== tabId)
+    if (
+      sequence !== navigationSequence ||
+      chatTabsStore.activeTabId !== tabId
+    ) {
       return false;
+    }
     // Re-verify after changeChar: realtime sync may have removed the chat
     // while the character was hydrating.
     const freshChatIndex =
@@ -650,9 +653,8 @@ export async function navigateToChatTab(tabId: string): Promise<boolean> {
         (chat) => chat.id === tab.chatId,
       ) ?? -1;
     if (freshChatIndex < 0) {
-      if (sequence === navigationSequence) {
-        chatTabsStore.pruneChat(tab.chatId);
-      }
+      if (sequence === navigationSequence) chatTabsStore.pruneChat(tab.chatId);
+
       return false;
     }
     if (characterStore.characters[characterIndex].chatPage !== freshChatIndex) {

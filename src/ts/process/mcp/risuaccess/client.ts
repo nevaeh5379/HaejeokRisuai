@@ -83,6 +83,7 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
     for (const handler of this.handlers) {
       tools = tools.concat(handler.getTools());
     }
+
     return tools;
   }
 
@@ -98,9 +99,7 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
           : args;
       for (const handler of this.handlers) {
         const result = await handler.handle(toolName, effectiveArgs, context);
-        if (result) {
-          return result;
-        }
+        if (result) return result;
       }
     } catch (error) {
       return [

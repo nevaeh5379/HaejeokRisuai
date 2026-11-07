@@ -13,14 +13,12 @@ type HighLightRange = [number, number];
 type HighlightInt = [HighLightRange, HighlightType];
 type HighlightIntRanged = [Range, HighlightType];
 
-let highLights = new Map<number, HighlightIntRanged[]>();
+const highLights = new Map<number, HighlightIntRanged[]>();
 
 export const highlighter = (highlightDom: HTMLElement, id: number) => {
   try {
     if (highlightDom) {
-      if (!CSS.highlights) {
-        return;
-      }
+      if (!CSS.highlights) return;
 
       const walker = document.createTreeWalker(
         highlightDom,
@@ -53,9 +51,7 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
           (pointer) => pointer >= end,
         );
 
-        if (startNodeIndex === -1 || endNodeIndex === -1) {
-          return [];
-        }
+        if (startNodeIndex === -1 || endNodeIndex === -1) return [];
 
         const startNode = nodes[startNodeIndex];
         const endNode = nodes[endNodeIndex];
@@ -92,9 +88,7 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
         const rinit = parsed[i];
         const r = rinit[0];
         const domRange = convertToDomRange(r[0], r[1]);
-        for (const range of domRange) {
-          ranges.push([range, rinit[1]]);
-        }
+        for (const range of domRange) ranges.push([range, rinit[1]]);
       }
 
       for (const syntax of highlighterSyntax) {
@@ -105,9 +99,7 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
           const index = match.index;
           const converted = convertToDomRange(index, index + length);
           if (converted) {
-            for (const range of converted) {
-              ranges.push([range, syntax.type]);
-            }
+            for (const range of converted) ranges.push([range, syntax.type]);
           }
         }
       }
@@ -124,9 +116,8 @@ const runHighlight = () => {
   for (const h of highLights) {
     for (const range of h[1]) {
       const type = range[1];
-      if (!formatedRanges[type]) {
-        formatedRanges[type] = [];
-      }
+      if (!formatedRanges[type]) formatedRanges[type] = [];
+
       formatedRanges[type].push(range[0]);
     }
   }
@@ -377,8 +368,8 @@ const highlighterSyntax = [
 function simpleCBSHighlightParser(text: string) {
   let depth = 0;
   let pointer = 0;
-  let depthStarts = new Uint8Array(100);
-  let highlightMode = new Uint8Array(100);
+  const depthStarts = new Uint8Array(100);
+  const highlightMode = new Uint8Array(100);
 
   const ranges: HighlightInt[] = [];
   const excludesRanges: [number, number][] = [];
@@ -444,9 +435,7 @@ function simpleCBSHighlightParser(text: string) {
         }
       }
 
-      if (upString.startsWith("// ")) {
-        highlightMode[depth] = 4;
-      }
+      if (upString.startsWith("// ")) highlightMode[depth] = 4;
 
       colorHighlight();
     }
@@ -482,11 +471,9 @@ function simpleCBSHighlightParser(text: string) {
       depthStarts[depth] = pointer + 1;
       highlightMode[depth] = 0;
     } else if (c === "}" && nextC === "}") {
-      if (highlightMode[depth] === 0) {
-        checkHighlight();
-      } else {
-        colorHighlight();
-      }
+      if (highlightMode[depth] === 0) checkHighlight();
+      else colorHighlight();
+
       depth--;
       pointer++;
       depthStarts[depth] = pointer;

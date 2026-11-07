@@ -122,9 +122,8 @@ export type PluginStorageRouteDependencies = {
 };
 
 function normalizeHeader(value: IncomingHttpHeaders[string]): string {
-  if (Array.isArray(value)) {
-    return typeof value[0] === "string" ? value[0] : "";
-  }
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+
   return typeof value === "string" ? value : "";
 }
 
@@ -165,9 +164,8 @@ export function registerPluginStorageRoutes({
     "/api/database-v2/plugins",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       const storage = getStorage();
       if (!storage.enabled) {
         res.status(404).send({
@@ -334,9 +332,8 @@ export function registerPluginStorageRoutes({
     "/api/database-v2/plugin-custom-storage/keys",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       const storage = getStorage();
       if (!storage.enabled) {
         res.status(404).send({
@@ -359,9 +356,8 @@ export function registerPluginStorageRoutes({
     "/api/database-v2/plugin-custom-storage/keys/:key",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       const storage = getStorage();
       if (!storage.enabled) {
         res.status(404).send({
@@ -400,9 +396,8 @@ export function registerPluginStorageRoutes({
     "/api/database-v2/plugin-custom-storage",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       const storage = getStorage();
       if (!storage.enabled) {
         res.status(404).send({
@@ -434,9 +429,8 @@ export function registerPluginStorageRoutes({
     "/api/database-v2/plugins-data",
     authenticatedRouteLimiter,
     async (req, res, next) => {
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
+
       const storage = getStorage();
       if (!storage.enabled) {
         res.status(404).send({

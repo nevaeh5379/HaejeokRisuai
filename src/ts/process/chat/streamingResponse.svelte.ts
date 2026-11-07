@@ -61,6 +61,7 @@ function prepareStreamingTarget(options: StreamingOptions) {
       chatId: options.generationId,
     });
   }
+
   return { msgIndex, prefix, outputMessageId: messages[msgIndex]?.chatId };
 }
 
@@ -126,6 +127,7 @@ async function finalizeStreamingOutput(
   if (settingsStore.state.ttsAutoSpeech) {
     await sayTTS(options.currentChar, result);
   }
+
   return { currentChat, resendChat: triggered.resendChat };
 }
 

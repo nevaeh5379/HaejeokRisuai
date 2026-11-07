@@ -32,9 +32,8 @@ class CharacterImageCache extends Map<string, string> {
 
   private revokeIfUnused(value: string): void {
     if (!value.startsWith("blob:")) return;
-    for (const other of super.values()) {
-      if (other === value) return;
-    }
+    for (const other of super.values()) if (other === value) return;
+
     if (
       typeof URL !== "undefined" &&
       typeof URL.revokeObjectURL === "function"
@@ -74,10 +73,9 @@ class CharacterImageCache extends Map<string, string> {
   override clear(): void {
     const urls = new Set<string>();
     for (const value of super.values()) {
-      if (value.startsWith("blob:")) {
-        urls.add(value);
-      }
+      if (value.startsWith("blob:")) urls.add(value);
     }
+
     super.clear();
     this.pinnedKeys.clear();
     if (
@@ -108,6 +106,7 @@ class CharacterImageCache extends Map<string, string> {
         evictableFullResolutionCount += 1;
       }
     }
+
     // Evict items by iterating over keys directly to avoid O(n^2) time complexity
     // and massive garbage collection overhead that comes with spreading [...keys()] on every eviction.
     if (evictableFullResolutionCount > maxFullResolution) {
@@ -118,11 +117,10 @@ class CharacterImageCache extends Map<string, string> {
         if (evictableFullResolutionCount <= maxFullResolution) break;
       }
     }
+
     for (const key of super.keys()) {
       if (this.size <= maxEntries) break;
-      if (!this.isPinned(key)) {
-        this.delete(key);
-      }
+      if (!this.isPinned(key)) this.delete(key);
     }
   }
 }
@@ -198,18 +196,21 @@ export async function getCharImage(
   type: "plain" | "css" | "contain" | "lgcss",
   options?: { thumbnail?: boolean },
 ) {
-  if (settingsStore.state.hideAllImages)
+  if (settingsStore.state.hideAllImages) {
     return type === "plain" ? "/none.webp" : "";
+  }
   if (!loc) return type === "css" ? "" : null;
 
   const imageCacheKey = options?.thumbnail ? `thumb_${loc}` : loc;
   if (fullImageBlobCache.has(imageCacheKey)) {
     const fileSource = fullImageBlobCache.get(imageCacheKey)!;
     if (type === "plain") return fileSource;
-    if (type === "css")
+    if (type === "css") {
       return `background: url("${fileSource}");background-size: cover;`;
-    if (type === "lgcss")
+    }
+    if (type === "lgcss") {
       return `background: url("${fileSource}");background-size: cover;height: 10.66rem;`;
+    }
     return `background: url("${fileSource}");background-size: contain;background-repeat: no-repeat;background-position: center;`;
   }
 
@@ -232,10 +233,12 @@ export async function getCharImage(
   const fileSource = await imageLoad;
   if (fileSource) fullImageBlobCache.set(imageCacheKey, fileSource);
   if (type === "plain") return fileSource;
-  if (type === "css")
+  if (type === "css") {
     return `background: url("${fileSource}");background-size: cover;`;
-  if (type === "lgcss")
+  }
+  if (type === "lgcss") {
     return `background: url("${fileSource}");background-size: cover;height: 10.66rem;`;
+  }
   return `background: url("${fileSource}");background-size: contain;background-repeat: no-repeat;background-position: center;`;
 }
 
@@ -271,9 +274,7 @@ export async function getAssetsBatch(
     options.width === undefined &&
     options.height === undefined;
 
-  if (!wantsOriginal) {
-    return getCharImagesBatch(locs, options);
-  }
+  if (!wantsOriginal) return getCharImagesBatch(locs, options);
 
   const result = new Map<string, string>();
   await Promise.all(
@@ -306,9 +307,8 @@ export async function getCharImagesBatch(
   const result = new Map<string, string>();
   if (!locs || locs.length === 0) return result;
   if (settingsStore.state.hideAllImages) {
-    for (const loc of locs) {
-      result.set(loc, "/none.webp");
-    }
+    for (const loc of locs) result.set(loc, "/none.webp");
+
     return result;
   }
 
@@ -318,14 +318,11 @@ export async function getCharImagesBatch(
     const cacheKey = getCharImageBatchCacheKey(loc, options);
     if (fullImageBlobCache.has(cacheKey)) {
       result.set(loc, fullImageBlobCache.get(cacheKey)!);
-    } else {
-      uncachedLocs.push(loc);
-    }
+    } else uncachedLocs.push(loc);
   }
 
-  if (uncachedLocs.length === 0) {
-    return result;
-  }
+  if (uncachedLocs.length === 0) return result;
+
   const setMissing = (loc: string) => {
     const cacheKey = getCharImageBatchCacheKey(loc, options);
     fullImageBlobCache.set(cacheKey, "/none.webp");
@@ -333,13 +330,17 @@ export async function getCharImagesBatch(
   };
 
   const remoteNativeNodeStorage =
-    forageStorage.realStorage instanceof NodeStorage && (isTauri || isCapacitor);
+    forageStorage.realStorage instanceof NodeStorage &&
+    (isTauri || isCapacitor);
 
   // Browser/Node-hosted NodeStorage can use the streaming bulk endpoint. Native
   // remote profiles intentionally avoid it: Tauri/Capacitor HTTP transports do
   // not share the WebView's streaming/CORS semantics, so getFileSrc() fetches
   // bounded native HTTP responses and returns Blob URLs instead.
-  if (forageStorage.realStorage instanceof NodeStorage && !remoteNativeNodeStorage) {
+  if (
+    forageStorage.realStorage instanceof NodeStorage &&
+    !remoteNativeNodeStorage
+  ) {
     const nodeStorage = forageStorage.realStorage as NodeStorage;
     try {
       const directLocs = uncachedLocs.filter((loc) =>
@@ -392,15 +393,11 @@ export async function getCharImagesBatch(
                 const blobUrl = URL.createObjectURL(blob);
                 fullImageBlobCache.set(cacheKey, blobUrl);
                 result.set(loc, blobUrl);
-              } else {
-                setMissing(loc);
-              }
+              } else setMissing(loc);
             }
           } catch (error) {
             console.error("Failed to load character image batch", error);
-            for (const loc of batch) {
-              setMissing(loc);
-            }
+            for (const loc of batch) setMissing(loc);
           }
         }
       }
@@ -414,9 +411,8 @@ export async function getCharImagesBatch(
       return result;
     } catch (e) {
       console.error("Failed to batch load character images", e);
-      for (const loc of uncachedLocs) {
-        setMissing(loc);
-      }
+      for (const loc of uncachedLocs) setMissing(loc);
+
       return result;
     }
   }

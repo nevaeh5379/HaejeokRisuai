@@ -145,9 +145,7 @@ export function linuxCsdTabInsets(node: HTMLElement) {
 }
 
 export async function initializeLinuxWindowIntegration(): Promise<LinuxWindowCapabilities> {
-  if (!isTauriLinux) {
-    return { ...EMPTY_CAPABILITIES };
-  }
+  if (!isTauriLinux) return { ...EMPTY_CAPABILITIES };
 
   try {
     const [{ invoke }, { getCurrentWebviewWindow }] = await Promise.all([

@@ -10,9 +10,8 @@ import { sleep } from "src/ts/util";
 let initPython = false;
 
 async function installPython() {
-  if (initPython) {
-    return;
-  }
+  if (initPython) return;
+
   initPython = true;
   const appDir = await path.appDataDir();
   const completedPath = await path.join(appDir, "python", "completed.txt");
@@ -68,9 +67,8 @@ async function getLocalKey(retry = true) {
     const key = await readTextFile(keyPath);
     return key;
   } catch (error) {
-    if (!retry) {
-      throw `Error when getting local key: ${error}`;
-    }
+    if (!retry) throw `Error when getting local key: ${error}`;
+
     //if is cors error
     if (
       error.message.includes(
@@ -80,9 +78,7 @@ async function getLocalKey(retry = true) {
     ) {
       await installPython();
       return await getLocalKey(false);
-    } else {
-      throw `Error when getting local key: ${error}`;
-    }
+    } else throw `Error when getting local key: ${error}`;
   }
 }
 

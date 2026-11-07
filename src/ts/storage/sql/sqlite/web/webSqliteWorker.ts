@@ -88,9 +88,8 @@ let activeVfs: "opfs-sahpool" | "opfs" | null = null;
 let activeSahPool: SahPoolUtil | null = null;
 
 async function getOpfsRoot(): Promise<FileSystemDirectoryHandle> {
-  if (!navigator.storage?.getDirectory) {
-    throw new Error("OPFS not available");
-  }
+  if (!navigator.storage?.getDirectory) throw new Error("OPFS not available");
+
   return navigator.storage.getDirectory();
 }
 
@@ -100,8 +99,9 @@ async function opfsRootFileExists(filename: string): Promise<boolean> {
     await root.getFileHandle(filename.replace(/^\/+/, ""), { create: false });
     return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError")
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return false;
+    }
     throw error;
   }
 }
@@ -146,8 +146,9 @@ async function openPersistentDatabase(
   sqlite3: Sqlite3Module,
 ): Promise<SqliteDb> {
   if (typeof sqlite3.installOpfsSAHPoolVfs !== "function") {
-    if (typeof sqlite3.oo1?.OpfsDb !== "function")
+    if (typeof sqlite3.oo1?.OpfsDb !== "function") {
       throw new Error("OPFS not available");
+    }
     activeVfs = "opfs";
     return new sqlite3.oo1.OpfsDb(DB_FILE);
   }
@@ -307,16 +308,15 @@ function rebuildMessagesFromRows(
         core.message_content_encoded as string | null,
       );
     }
+
     if (core.message_sender_name != null) {
       message.name = String(core.message_sender_name);
-    } else {
-      delete message.name;
-    }
+    } else delete message.name;
+
     if (core.message_sent_time != null) {
       message.time = Number(core.message_sent_time);
-    } else {
-      delete message.time;
-    }
+    } else delete message.time;
+
     message.chatId = id;
 
     if (
@@ -328,9 +328,11 @@ function rebuildMessagesFromRows(
       if (core.message_generation_model != null) {
         message.generationInfo.model = String(core.message_generation_model);
       }
+
       if (core.message_input_tokens != null) {
         message.generationInfo.inputTokens = Number(core.message_input_tokens);
       }
+
       if (core.message_output_tokens != null) {
         message.generationInfo.outputTokens = Number(
           core.message_output_tokens,
@@ -343,9 +345,8 @@ function rebuildMessagesFromRows(
 
 function runInternal(sql: string, bind: unknown[] = []): void {
   if (!db) throw new Error("Database not opened");
-  if (bind.length === 0) {
-    db.exec(sql);
-  } else {
+  if (bind.length === 0) db.exec(sql);
+  else {
     const stmt = db.prepare(sql);
     try {
       stmt.bind(bind);
@@ -414,9 +415,8 @@ async function handleInit(): Promise<{
         (statement) =>
           statement.length > 0 && !sqliteStatements.isPragma(statement),
       );
-    for (const stmt of schemaStatements) {
-      db.exec(stmt);
-    }
+    for (const stmt of schemaStatements) db.exec(stmt);
+
     const lastMessageTrigger = selectOneInternal(
       "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
       [lastMessageTime.TRIGGER_NAME],
@@ -426,6 +426,7 @@ async function handleInit(): Promise<{
         "SQLite last_message_time trigger was not installed by the schema",
       );
     }
+
     if (!hadLastMessageTimeTrigger) db.exec(lastMessageTime.BACKFILL_SQL);
     const rows = selectRowsInternal(
       "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
@@ -487,6 +488,7 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
         for (const statement of msg.statements) {
           runInternal(statement.sql, statement.bind ?? []);
         }
+
         (self as any).postMessage({ id: msg.id, ok: true });
         break;
       }
@@ -503,9 +505,11 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
                 : undefined,
             };
           }
+
           if (statement.transform === "messages") {
             return { value: rebuildMessagesFromRows(selected.rows) };
           }
+
           return selected;
         });
         (self as any).postMessage({ id: msg.id, ok: true, result });

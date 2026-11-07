@@ -16,8 +16,9 @@ function authorNoteDatabase(
           ? `:${++index}`
           : `@p${++index}`,
     );
-    if (vendor === "postgres")
+    if (vendor === "postgres") {
       return (await client.query(converted, values)).rows;
+    }
     if (vendor === "azure") {
       const request = client.request();
       const mssql = await loadMssql();

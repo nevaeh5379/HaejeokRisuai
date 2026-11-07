@@ -340,11 +340,14 @@ export function characterDefault<K extends keyof CharacterFields>(
 export function validateCharacterKeys(
   keys: readonly string[],
 ): (keyof CharacterFields)[] {
-  if (keys.length === 0)
+  if (keys.length === 0) {
     throw new TypeError("At least one character field is required");
-  for (const key of keys)
-    if (!KEY_SET.has(key))
+  }
+  for (const key of keys) {
+    if (!KEY_SET.has(key)) {
       throw new TypeError(`Unknown character field: ${key}`);
+    }
+  }
 
   return [...new Set(keys)] as (keyof CharacterFields)[];
 }
@@ -354,8 +357,9 @@ export function validateCharacterUpdate(
   patch: CharacterUpdate,
 ): void {
   for (const key of Object.keys(patch)) {
-    if (!KEY_SET.has(key))
+    if (!KEY_SET.has(key)) {
       throw new TypeError(`Unknown character field: ${key}`);
+    }
     const field = key as keyof CharacterFields;
     const value = patch[field];
     if (
@@ -364,6 +368,7 @@ export function validateCharacterUpdate(
     ) {
       throw new TypeError(`Character field cannot be undefined: ${field}`);
     }
+
     if (
       (field === "type" && value !== "character") ||
       (field === "chaId" && value !== id)

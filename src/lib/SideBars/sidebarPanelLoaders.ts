@@ -14,6 +14,7 @@ export function createCachedLoader<T>(
         throw error;
       });
     }
+
     return pending;
   };
 }

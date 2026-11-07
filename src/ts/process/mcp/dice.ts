@@ -46,13 +46,13 @@ function rollDice(notation: string): { total: number; details: string } {
   const dicePattern = /(\d*)d(\d+)([+-]\d+)?/g;
   let match;
   let total = 0;
-  let details = [];
+  const details = [];
   while ((match = dicePattern.exec(notation)) !== null) {
     const count = parseInt(match[1]) || 1;
     const sides = parseInt(match[2]);
     const modifier = match[3] ? parseInt(match[3]) : 0;
     let rollTotal = 0;
-    let rolls = [];
+    const rolls = [];
     for (let i = 0; i < count; i++) {
       const roll = Math.floor(Math.random() * sides) + 1;
       rolls.push(roll);

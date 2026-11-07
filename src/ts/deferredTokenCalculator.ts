@@ -31,14 +31,13 @@ export function createDeferredTokenCalculator<T extends TokenSource>({
     if ("requestIdleCallback" in globalThis) {
       return globalThis.requestIdleCallback(callback);
     }
+
     return globalThis.setTimeout(callback, 0);
   },
   cancelIdle = (handle) => {
     if ("cancelIdleCallback" in globalThis) {
       globalThis.cancelIdleCallback(handle as number);
-    } else {
-      globalThis.clearTimeout(handle);
-    }
+    } else globalThis.clearTimeout(handle);
   },
   setTimer = (callback, delay) => globalThis.setTimeout(callback, delay),
   clearTimer = (handle) => globalThis.clearTimeout(handle),
@@ -68,9 +67,7 @@ export function createDeferredTokenCalculator<T extends TokenSource>({
       const text = source[key];
       if (appliedSource?.[key] === text && appliedTokens) {
         result[key] = appliedTokens[key];
-      } else {
-        result[key] = text == null ? null : await calculate(text);
-      }
+      } else result[key] = text == null ? null : await calculate(text);
     }
 
     if (!disposed && runGeneration === generation) {
@@ -102,6 +99,7 @@ export function createDeferredTokenCalculator<T extends TokenSource>({
           changedKeys.push(key as keyof T);
         }
       }
+
       if (!changedKeys) return [];
 
       desired = { ...source };

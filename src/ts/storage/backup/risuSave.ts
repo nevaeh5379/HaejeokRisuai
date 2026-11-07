@@ -88,15 +88,12 @@ export async function encodeRisuSaveLegacyAsync(
   data: any,
   compression: "noCompression" | "compression" = "noCompression",
 ): Promise<Uint8Array> {
-  let encoded: Uint8Array = packr.encode(writeLegacyPresetFields(data));
+  const encoded: Uint8Array = packr.encode(writeLegacyPresetFields(data));
   if (compression === "compression") {
     const compressed = await new Promise<Uint8Array>((resolve, reject) => {
       fflate.compress(encoded, (err, res) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(res);
-        }
+        if (err) reject(err);
+        else resolve(res);
       });
     });
     const result = new Uint8Array(
@@ -156,7 +153,7 @@ export class RisuSaveDecoder {
       } | null>;
     }[] = [];
     let offset = magicRisuSaveHeader.length;
-    let db: Database = {} as Database;
+    const db: Database = {} as Database;
     const loadedBlocks = new Set<string>();
     while (offset < data.length) {
       try {
@@ -194,12 +191,11 @@ export class RisuSaveDecoder {
         continue;
       }
     }
+
     // Index byte views first so directory resolution sees every local block.
     // Decompress and parse only the current block, never all source strings.
     const releaseBlock = (index: number) => {
-      if (blocks[index]) {
-        blocks[index] = undefined as any;
-      }
+      if (blocks[index]) blocks[index] = undefined as any;
     };
     let directory: string[] = [];
     for (let i = 0; i < blocks.length; i++) {
@@ -215,9 +211,8 @@ export class RisuSaveDecoder {
           block.content = loaded.content;
         }
         let content: string;
-        if (typeof block.content === "string") {
-          content = block.content;
-        } else if (block.compression) {
+        if (typeof block.content === "string") content = block.content;
+        else if (block.compression) {
           await checkCompressionStreams();
           const cs = new DecompressionStream("gzip");
           const writer = cs.writable.getWriter();
@@ -234,9 +229,8 @@ export class RisuSaveDecoder {
             continue;
           }
           content = await text;
-        } else {
-          content = new TextDecoder().decode(block.content);
-        }
+        } else content = new TextDecoder().decode(block.content);
+
         const parsed =
           block.type === RisuSaveType.CONFIG ? undefined : JSON.parse(content);
         content = "";
@@ -249,6 +243,7 @@ export class RisuSaveDecoder {
               if (!db[rootKey] && !rootKey.startsWith("__")) {
                 db[rootKey] = rootData[rootKey];
               }
+
               if (rootKey === "__directory") {
                 directory = rootData[rootKey];
                 for (const dirKey of directory) {
@@ -358,9 +353,7 @@ export class RisuSaveDecoder {
                   }
                 } else {
                   const stored = await forageStorage.getItem(fileName);
-                  if (stored) {
-                    remoteData = stored as Uint8Array;
-                  }
+                  if (stored) remoteData = stored as Uint8Array;
                 }
 
                 if (!remoteData) {
@@ -463,6 +456,7 @@ function matchesPrefix(data: Uint8Array, prefix: Uint8Array): boolean {
   for (let i = 0; i < prefix.length; i++) {
     if (data[i] !== prefix[i]) return false;
   }
+
   return true;
 }
 

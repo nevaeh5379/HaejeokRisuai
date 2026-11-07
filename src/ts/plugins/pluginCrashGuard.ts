@@ -30,6 +30,7 @@ export class PluginCrashGuard {
     if (!PluginCrashGuard.instance) {
       PluginCrashGuard.instance = PluginCrashGuard.create();
     }
+
     return PluginCrashGuard.instance;
   }
 

@@ -67,17 +67,23 @@ export function parseAuthorNoteOperations(
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new Error("authorNotes must be an array");
   return value.map((raw): AuthorNoteOperation => {
-    if (!raw || typeof raw !== "object")
+    if (!raw || typeof raw !== "object") {
       throw new Error("Invalid author note operation");
+    }
     const row = raw as Record<string, unknown>;
     if (row.type === "settings") {
-      if (typeof row.allowScriptWrite !== "boolean")
+      if (typeof row.allowScriptWrite !== "boolean") {
         throw new Error("Invalid author note setting");
+      }
       return { type: "settings", allowScriptWrite: row.allowScriptWrite };
     }
     if (row.type === "restore") {
-      if (!Array.isArray(row.rows) || typeof row.allowScriptWrite !== "boolean")
+      if (
+        !Array.isArray(row.rows) ||
+        typeof row.allowScriptWrite !== "boolean"
+      ) {
         throw new Error("Invalid author note restore");
+      }
       const ids = new Set<string>();
       const rows = row.rows.map((entry): AuthorNoteRow => {
         if (
@@ -90,8 +96,9 @@ export function parseAuthorNoteOperations(
           !Number.isSafeInteger(entry.updatedAt) ||
           entry.updatedAt < 0 ||
           ids.has(entry.id)
-        )
+        ) {
           throw new Error("Invalid author note restore row");
+        }
         ids.add(entry.id);
         return {
           id: entry.id,
@@ -108,16 +115,19 @@ export function parseAuthorNoteOperations(
         clear: row.clear === false ? false : true,
       };
     }
-    if (typeof row.id !== "string" || !row.id || row.id.length > 128)
+    if (typeof row.id !== "string" || !row.id || row.id.length > 128) {
       throw new Error("Invalid author note id");
-    if (row.id === NO_AUTHOR_NOTE)
+    }
+    if (row.id === NO_AUTHOR_NOTE) {
       throw new AuthorNoteError("protected", row.id);
+    }
     switch (row.type) {
       case "remove":
         return { type: "remove", id: row.id };
       case "create":
-        if (typeof row.content !== "string" || typeof row.name !== "string")
+        if (typeof row.content !== "string" || typeof row.name !== "string") {
           throw new Error("Invalid author note create");
+        }
         return {
           type: "create",
           id: row.id,
@@ -125,8 +135,9 @@ export function parseAuthorNoteOperations(
           content: row.content,
         };
       case "rename":
-        if (typeof row.name !== "string")
+        if (typeof row.name !== "string") {
           throw new Error("Invalid author note name");
+        }
         return { type: "rename", id: row.id, name: row.name };
       case "content":
         if (
@@ -136,8 +147,9 @@ export function parseAuthorNoteOperations(
               !/^[a-f0-9]{64}$/.test(row.expectedHash))) ||
           (row.force !== undefined && typeof row.force !== "boolean") ||
           (row.script !== undefined && typeof row.script !== "boolean")
-        )
+        ) {
           throw new Error("Invalid author note content");
+        }
         return {
           type: "content",
           id: row.id,

@@ -17,9 +17,11 @@ export class BoundedAssetBatch {
     if (!Number.isInteger(maxFiles) || maxFiles <= 0) {
       throw new RangeError("maxFiles must be a positive integer");
     }
+
     if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
       throw new RangeError("maxBytes must be a positive integer");
     }
+
     this.#maxFiles = maxFiles;
     this.#maxBytes = maxBytes;
     this.#map = new Map();
@@ -132,6 +134,7 @@ export async function writeItemsConcurrently<T>(
   if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
     throw new RangeError("concurrency must be a positive safe integer");
   }
+
   let cursor: number = 0;
   const workerCount: number = Math.min(concurrency, items.length);
   const workers: Promise<void>[] = Array.from(

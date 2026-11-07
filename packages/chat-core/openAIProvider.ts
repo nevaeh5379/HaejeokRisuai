@@ -46,6 +46,7 @@ function appendOpenAIStreamingFragment(current?: any, incoming?: any): any {
   if (incoming.length > current.length && incoming.startsWith(current)) {
     return incoming;
   }
+
   return current + incoming;
 }
 
@@ -65,9 +66,11 @@ function mergeOpenAIStreamingToolCallDeltas(current?: any, deltas?: any): any {
         function: { name: null, arguments: "" },
       };
     }
+
     if (toolCall?.id) merged[index].id = toolCall.id;
-    if (toolCall?.function?.name)
+    if (toolCall?.function?.name) {
       merged[index].function.name = toolCall.function.name;
+    }
     if (toolCall?.function?.arguments) {
       merged[index].function.arguments = appendOpenAIStreamingFragment(
         merged[index].function.arguments,
@@ -134,9 +137,11 @@ function normalizeOpenAIProviderMessages(
       )) {
         message.name = undefined;
       }
+
       if (options.newOAIHandle && message.memo?.startsWith("NewChat")) {
         message.content = "";
       }
+
       if (
         options.deepSeekPrefix &&
         i === normalized.length - 1 &&
@@ -144,6 +149,7 @@ function normalizeOpenAIProviderMessages(
       ) {
         message.prefix = true;
       }
+
       if (
         options.deepSeekThinkingInput &&
         i === normalized.length - 1 &&
@@ -153,6 +159,7 @@ function normalizeOpenAIProviderMessages(
       ) {
         message.reasoning_content = message.thoughts.join("\n");
       }
+
       delete message.memo;
       delete message.removable;
       delete message.attr;
@@ -170,6 +177,7 @@ function normalizeOpenAIProviderMessages(
   if (oobaSystemPrompts.length > 0) {
     normalized.push({ role: "system", content: oobaSystemPrompts.join("\n") });
   }
+
   if (options.newOAIHandle) {
     normalized = normalized.filter(
       (message?: any) =>
@@ -179,12 +187,14 @@ function normalizeOpenAIProviderMessages(
         message.role === "tool",
     );
   }
+
   if (options.developerRole) {
     normalized = normalized.map((message?: any) => {
       if (message.role === "system") message.role = "developer";
       return message;
     });
   }
+
   return normalized;
 }
 
@@ -201,6 +211,7 @@ function resolveOpenAIRequestModel(options: any = {}): any {
   if (OPENAI_MODEL_ALIASES[options.requestModel]) {
     return OPENAI_MODEL_ALIASES[options.requestModel];
   }
+
   return options.internalID || options.requestModel || "gpt-3.5-turbo";
 }
 
@@ -253,6 +264,7 @@ function resolveOpenAIRequestEndpoint(options: any = {}): any {
       url += url.endsWith("/") ? "v1/chat/completions" : "/v1/chat/completions";
     }
   }
+
   return { url, risuIdentify };
 }
 
@@ -292,6 +304,7 @@ function buildOpenAIRequestHeaders(options: any = {}): any {
   if (options.aiModel === "nanogpt" && options.nanoGPTProvider) {
     headers["X-Provider"] = options.nanoGPTProvider;
   }
+
   if (options.risuIdentify) headers["X-Proxy-Risu"] = "RisuAI";
   return headers;
 }
@@ -321,6 +334,7 @@ function applyOpenAIPreParameterBodyPolicies(
   if (body.logit_bias && Object.keys(body.logit_bias).length === 0) {
     delete body.logit_bias;
   }
+
   if (options.useCompletionTokens) {
     body.max_completion_tokens = body.max_tokens;
     delete body.max_tokens;
@@ -332,21 +346,26 @@ function applyOpenAIPreParameterBodyPolicies(
       json_schema: options.responseJsonSchema,
     };
   }
+
   if (options.prediction) {
     body.prediction = { type: "content", content: options.prediction };
   }
+
   if (options.aiModel === "openrouter") {
     if (options.openRouterFallback) body.route = "fallback";
     body.transforms = options.openRouterMiddleOut ? ["middle-out"] : [];
     const configuredProvider: any = options.openRouterProvider;
     if (configuredProvider && typeof configuredProvider === "object") {
       const provider: any = {};
-      if (configuredProvider.order?.length)
+      if (configuredProvider.order?.length) {
         provider.order = configuredProvider.order;
-      if (configuredProvider.only?.length)
+      }
+      if (configuredProvider.only?.length) {
         provider.only = configuredProvider.only;
-      if (configuredProvider.ignore?.length)
+      }
+      if (configuredProvider.ignore?.length) {
         provider.ignore = configuredProvider.ignore;
+      }
       if (Object.keys(provider).length) body.provider = provider;
     }
     if (options.instructPrompt !== undefined) {
@@ -386,21 +405,22 @@ function applyOpenAIPostParameterBodyPolicies(
       delete body.top_p;
       delete body.frequency_penalty;
       delete body.presence_penalty;
-    } else {
-      body.thinking = { type: "disabled" };
-    }
+    } else body.thinking = { type: "disabled" };
   }
+
   if (
     Array.isArray(options.toolDefinitions) &&
     options.toolDefinitions.length > 0
   ) {
     body.tools = options.toolDefinitions;
   }
+
   if (options.reverseProxyOobaMode && options.reverseProxyOobaArgs) {
     for (const [key, value] of Object.entries(options.reverseProxyOobaArgs)) {
       if (value !== undefined && value !== null) body[key] = value;
     }
   }
+
   if (options.removeLogitBiasForInlay) delete body.logit_bias;
   if (options.multiGen) {
     if (options.hasTools) {
@@ -410,6 +430,7 @@ function applyOpenAIPostParameterBodyPolicies(
           "MultiGen mode cannot be used with tool calls. Please disable one of them.",
       };
     }
+
     body.n = options.genTime;
   }
   return { body, error: null };
@@ -440,10 +461,12 @@ function formatOpenAIReasoningText(data?: any, options: any = {}): any {
   if (reasoningContentField && !result.startsWith("<Thoughts>")) {
     result = `<Thoughts>\n${reasoningContentField}\n</Thoughts>\n${result}`;
   }
+
   const openRouterReasoning: any = message?.reasoning;
   if (openRouterReasoning) {
     result = `<Thoughts>\n${openRouterReasoning}\n</Thoughts>\n${result}`;
   }
+
   return result;
 }
 

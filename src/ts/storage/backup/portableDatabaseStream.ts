@@ -59,6 +59,7 @@ function shallowCloneRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     throw new Error("Streamed chat record data must be an object");
   }
+
   return { ...(value as Record<string, unknown>) };
 }
 
@@ -137,9 +138,8 @@ export async function exportPortableDatabaseStream(
           }
         : record,
     );
-    if (fragmentRecords.length >= fragmentRecordLimit) {
-      await flush();
-    }
+    if (fragmentRecords.length >= fragmentRecordLimit) await flush();
+
     hooks.onProgress?.({
       stage: record.type,
       current: totalRecords,

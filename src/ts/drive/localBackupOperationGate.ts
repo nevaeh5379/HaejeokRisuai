@@ -50,6 +50,7 @@ async function runInProcess<T>(
   if (activeOperation) {
     throw new LocalBackupOperationBusyError(activeOperation.kind, kind);
   }
+
   activeOperation = { kind, startedAt: Date.now() };
   try {
     return await operation();
@@ -66,15 +67,15 @@ export async function runExclusiveLocalBackupOperation<T>(
   if (activeOperation) {
     throw new LocalBackupOperationBusyError(activeOperation.kind, kind);
   }
+
   if (!lockManager) return await runInProcess(kind, operation);
 
   return await lockManager.request(
     LOCAL_BACKUP_LOCK_NAME,
     { mode: "exclusive", ifAvailable: true },
     async (lock) => {
-      if (!lock) {
-        throw new LocalBackupOperationBusyError("other-context", kind);
-      }
+      if (!lock) throw new LocalBackupOperationBusyError("other-context", kind);
+
       return await runInProcess(kind, operation);
     },
   );

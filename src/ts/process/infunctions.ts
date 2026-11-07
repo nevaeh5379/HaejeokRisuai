@@ -2,8 +2,8 @@ import { getChatVar, getGlobalChatVar } from "../parser/chatVar.svelte";
 
 function toRPN(expression: string) {
   let outputQueue = "";
-  let operatorStack = [];
-  let operators = {
+  const operatorStack = [];
+  const operators = {
     "+": { precedence: 2, associativity: "Left" },
     "-": { precedence: 2, associativity: "Left" },
     "*": { precedence: 3, associativity: "Left" },
@@ -23,7 +23,7 @@ function toRPN(expression: string) {
   const operatorsKeys = Object.keys(operators);
 
   expression = expression.replace(/\s+/g, "");
-  let expression2 = [];
+  const expression2 = [];
 
   let lastToken = "";
 
@@ -37,28 +37,20 @@ function toRPN(expression: string) {
     ) {
       lastToken += char;
     } else if (operatorsKeys.includes(char)) {
-      if (lastToken !== "") {
-        expression2.push(lastToken);
-      } else {
-        expression2.push("0");
-      }
+      if (lastToken !== "") expression2.push(lastToken);
+      else expression2.push("0");
+
       lastToken = "";
       expression2.push(char);
-    } else {
-      lastToken += char;
-    }
+    } else lastToken += char;
   }
 
-  if (lastToken !== "") {
-    expression2.push(lastToken);
-  } else {
-    expression2.push("0");
-  }
+  if (lastToken !== "") expression2.push(lastToken);
+  else expression2.push("0");
 
   expression2.forEach((token) => {
-    if (parseFloat(token) || token === "0") {
-      outputQueue += token + " ";
-    } else if (operatorsKeys.includes(token)) {
+    if (parseFloat(token) || token === "0") outputQueue += token + " ";
+    else if (operatorsKeys.includes(token)) {
       while (
         operatorStack.length > 0 &&
         ((operators[token].associativity === "Left" &&
@@ -75,21 +67,18 @@ function toRPN(expression: string) {
     }
   });
 
-  while (operatorStack.length > 0) {
-    outputQueue += operatorStack.pop() + " ";
-  }
+  while (operatorStack.length > 0) outputQueue += operatorStack.pop() + " ";
 
   return outputQueue.trim();
 }
 
 function calculateRPN(expression: string) {
-  let stack: number[] = [];
+  const stack: number[] = [];
 
   expression.split(" ").forEach((token) => {
-    if (parseFloat(token) || token === "0") {
-      stack.push(parseFloat(token));
-    } else {
-      let [b, a] = [stack.pop(), stack.pop()];
+    if (parseFloat(token) || token === "0") stack.push(parseFloat(token));
+    else {
+      const [b, a] = [stack.pop(), stack.pop()];
       switch (token) {
         case "+":
           stack.push(a + b);
@@ -140,9 +129,7 @@ function calculateRPN(expression: string) {
     }
   });
 
-  if (stack.length === 0) {
-    return 0;
-  }
+  if (stack.length === 0) return 0;
 
   return stack.pop();
 }
@@ -152,17 +139,15 @@ function executeRPNCalculation(text: string) {
     .replace(/\$([a-zA-Z0-9_]+)/g, (_, p1) => {
       const v = getChatVar(p1);
       const parsed = parseFloat(v);
-      if (isNaN(parsed)) {
-        return "0";
-      }
+      if (isNaN(parsed)) return "0";
+
       return parsed.toString();
     })
     .replace(/\@([a-zA-Z0-9_]+)/g, (_, p1) => {
       const v = getGlobalChatVar(p1);
       const parsed = parseFloat(v);
-      if (isNaN(parsed)) {
-        return "0";
-      }
+      if (isNaN(parsed)) return "0";
+
       return parsed.toString();
     })
     .replace(/&&/g, "&")
@@ -178,17 +163,14 @@ function executeRPNCalculation(text: string) {
 }
 
 export function calcString(text: string) {
-  let depthText: string[] = [""];
+  const depthText: string[] = [""];
 
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === "(") {
-      depthText.push("");
-    } else if (text[i] === ")" && depthText.length > 1) {
-      let result = executeRPNCalculation(depthText.pop());
+    if (text[i] === "(") depthText.push("");
+    else if (text[i] === ")" && depthText.length > 1) {
+      const result = executeRPNCalculation(depthText.pop());
       depthText[depthText.length - 1] += result;
-    } else {
-      depthText[depthText.length - 1] += text[i];
-    }
+    } else depthText[depthText.length - 1] += text[i];
   }
 
   return executeRPNCalculation(depthText.join(""));

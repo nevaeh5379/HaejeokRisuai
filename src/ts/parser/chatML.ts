@@ -6,9 +6,7 @@ export function parseChatML(data: string): OpenAIChat[] | null {
   const ender = "<|im_end|>";
 
   const trimedData = data.trim();
-  if (!trimedData.startsWith(starter)) {
-    return null;
-  }
+  if (!trimedData.startsWith(starter)) return null;
 
   return trimedData
     .split(starter)
@@ -40,11 +38,9 @@ export function parseChatML(data: string): OpenAIChat[] | null {
 
       v = v.trim();
 
-      if (v.endsWith(ender)) {
-        v = v.substring(0, v.length - ender.length);
-      }
+      if (v.endsWith(ender)) v = v.substring(0, v.length - ender.length);
 
-      let thoughts: string[] = [];
+      const thoughts: string[] = [];
       v = v.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_, p1) => {
         thoughts.push(p1);
         return "";

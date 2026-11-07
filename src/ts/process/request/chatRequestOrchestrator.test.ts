@@ -19,6 +19,7 @@ vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
           if (property === "fallbackModels") {
             throw new Error("fallbackModels must be read from PresetStore");
           }
+
           return Reflect.get(target, property, receiver);
         },
       },

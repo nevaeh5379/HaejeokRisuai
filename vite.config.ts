@@ -99,6 +99,7 @@ export default defineConfig(({ command, mode }) => {
               "<head>\n    <script>globalThis.__NODE__ = true; globalThis.__RISU_LEGAL_CONFIGURED__ = true;</script>",
             );
           }
+
           return html;
         },
       },
@@ -192,8 +193,9 @@ export default defineConfig(({ command, mode }) => {
             log.message.includes(
               "has been externalized for browser compatibility",
             )
-          )
+          ) {
             return;
+          }
 
           handler(level, log);
         },
@@ -397,8 +399,9 @@ export default defineConfig(({ command, mode }) => {
             log.message.includes(
               "has been externalized for browser compatibility",
             )
-          )
+          ) {
             return;
+          }
           handler(level, log);
         },
       },

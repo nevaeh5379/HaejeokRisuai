@@ -131,9 +131,7 @@ function migrateStreamingDisplayMode(data: Database): void {
 }
 
 function applyPlatformRuntimePolicy(data: Database): void {
-  if (!isNodeServer && !isTauri) {
-    data.promptInfoInsideChat = false;
-  }
+  if (!isNodeServer && !isTauri) data.promptInfoInsideChat = false;
 }
 
 export function normalizeRuntimeDatabaseSettings(

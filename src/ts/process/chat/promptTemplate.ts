@@ -50,8 +50,9 @@ function isCardEnabled(card: PromptItem, context: RenderContext) {
       "jailbreakToggle",
       settingsStore.state.jailbreakToggle,
     )
-  )
+  ) {
     return false;
+  }
   if (card.type === "cot" && !settingsStore.state.chainOfThought) return false;
   return true;
 }
@@ -114,6 +115,7 @@ function renderPlainCard(
         .positionParser(context.currentChar.replaceGlobalNote, positionType)
         .replaceAll("{{original}}", content);
     }
+
     if (
       context.currentChar.prebuiltAssetCommand &&
       !card.text.includes("{{//@customimageinstruction}}")
@@ -135,6 +137,7 @@ function renderPlainCard(
   if (capturePromptInfo && card.type2 !== "globalNote") {
     appendPromptInfo(promptInfo, prompt.role, prompt.content, context);
   }
+
   return { prompts: [prompt], promptInfo };
 }
 
@@ -156,6 +159,7 @@ function systemizeChat(chats: OpenAIChat[]) {
     } else if (!attr.includes("nameAdded")) {
       chat.content = `${chat.role}: ${chat.content}`;
     }
+
     chat.role = "system";
     delete chat.memo;
     delete chat.name;
@@ -184,6 +188,7 @@ function renderChatCard(
   ) {
     prompts = systemizeChat(prompts);
   }
+
   return { prompts, promptInfo: [] };
 }
 
@@ -260,12 +265,15 @@ function renderTypedCard(
   if (card.type === "persona") {
     return renderPersonaCard(card, context, capturePromptInfo);
   }
+
   if (card.type === "description") {
     return renderDescriptionCard(card, context, capturePromptInfo);
   }
+
   if (card.type === "authornote") {
     return renderAuthorNoteCard(card, context, capturePromptInfo);
   }
+
   return renderMemoryCard(card, context, memories, capturePromptInfo);
 }
 
@@ -282,6 +290,7 @@ function renderPostEverythingCard(context: RenderContext): RenderedCard {
       content: promptSettings.postEndInnerFormat,
     });
   }
+
   return { prompts, promptInfo: [] };
 }
 
@@ -300,6 +309,7 @@ function renderCard(
   ) {
     return renderTypedCard(card, context, memories, capturePromptInfo);
   }
+
   if (
     card.type === "plain" ||
     card.type === "jailbreak" ||
@@ -307,9 +317,11 @@ function renderCard(
   ) {
     return renderPlainCard(card, context, capturePromptInfo);
   }
+
   if (card.type === "lorebook") {
     return { prompts: context.unformated.lorebook, promptInfo: [] };
   }
+
   if (card.type === "postEverything") return renderPostEverythingCard(context);
   if (card.type === "chatML") {
     return {
@@ -317,6 +329,7 @@ function renderCard(
       promptInfo: [],
     };
   }
+
   if (card.type === "chat") return renderChatCard(card, context);
   return { prompts: [], promptInfo: [] };
 }
@@ -334,6 +347,7 @@ export async function estimatePromptTemplateTokens(options: {
     for (const prompts of Object.values(options.context.unformated)) {
       tokens += await options.tokenizer.tokenizeChats(prompts);
     }
+
     return { tokens, supaMemoryCardUsed, hasCachePoint };
   }
 
@@ -373,9 +387,7 @@ function mergePrompts(target: OpenAIChat[], prompts: OpenAIChat[]) {
       previous.name === chat.name
     ) {
       previous.content += `\n\n${chat.content}`;
-    } else {
-      target.push(chat);
-    }
+    } else target.push(chat);
   }
 }
 
@@ -513,6 +525,7 @@ async function runPromptEditTriggers(
       options.context.chatTarget,
     );
   }
+
   return edited;
 }
 
@@ -526,9 +539,7 @@ export async function formatPromptForRequest(options: FormatPromptOptions) {
 
   if (options.promptTemplate) {
     renderTemplateCards(options, formated, promptInfoBody, capturePromptInfo);
-  } else {
-    renderLegacyPromptOrder(options, formated);
-  }
+  } else renderLegacyPromptOrder(options, formated);
 
   trimPromptContents(formated);
   if (capturePromptInfo) trimPromptContents(promptInfoBody);

@@ -70,20 +70,20 @@ export async function requestGoogleCloudVertex(
       ) {
         return null;
       }
+
       return {
         thought: true,
         thoughtSignature: sig.signatures[0].content,
       };
     },
   });
-  if (preparedConversation.consumedLeadingSystem) {
-    formated.shift();
-  }
-  let reformatedChat: GeminiChat[] = preparedConversation.chats;
-  let systemPrompt = preparedConversation.systemPrompt;
+  if (preparedConversation.consumedLeadingSystem) formated.shift();
+
+  const reformatedChat: GeminiChat[] = preparedConversation.chats;
+  const systemPrompt = preparedConversation.systemPrompt;
 
   for (let i = 0; i < reformatedChat.length; i++) {
-    let chat = reformatedChat[i];
+    const chat = reformatedChat[i];
     for (let j = 0; j < chat.parts.length; j++) {
       const part = chat.parts[j];
       if (part.text && part.text.includes("<tool_call>")) {
@@ -130,13 +130,12 @@ export async function requestGoogleCloudVertex(
               role: chat.role,
             });
           }
+
           // Keep the first text in the current part
           if (segments.length > 0 && segments[0].type === "text") {
             part.text = segments[0].content.trim() ? segments[0].content : "";
             segments.shift();
-          } else {
-            part.text = "";
-          }
+          } else part.text = "";
 
           // Mark the current part for removal if its text is empty
           const shouldRemoveCurrentPart = !part.text.trim();
@@ -182,10 +181,9 @@ export async function requestGoogleCloudVertex(
                         data: (() => {
                           const res: string[] = [];
                           for (const r of segment.call.response) {
-                            if (r.type === "text") {
-                              res.push(r.text);
-                            }
+                            if (r.type === "text") res.push(r.text);
                           }
+
                           return res;
                         })(),
                       },
@@ -196,13 +194,12 @@ export async function requestGoogleCloudVertex(
               insertIndex++;
             }
           }
+
           // Remove the current part if its text is empty
           if (shouldRemoveCurrentPart) {
             reformatedChat.splice(i, 1);
             i = insertIndex - 2; // Adjust index after removal
-          } else {
-            i = insertIndex - 1; // Start from the correct position in the next loop
-          }
+          } else i = insertIndex - 1; // Start from the correct position in the next loop
         }
       }
     }
@@ -256,9 +253,7 @@ export async function requestGoogleCloudVertex(
     },
   };
 
-  if (systemPrompt === "") {
-    delete body.systemInstruction;
-  }
+  if (systemPrompt === "") delete body.systemInstruction;
 
   const finalizedGeneration = finalizeGoogleGenerationConfig(
     body.generation_config,
@@ -276,7 +271,7 @@ export async function requestGoogleCloudVertex(
   );
   arg.useStreaming = finalizedGeneration.useStreaming;
 
-  let headers: { [key: string]: string } = {
+  const headers: { [key: string]: string } = {
     "Content-Type": "application/json",
   };
 
@@ -290,6 +285,7 @@ export async function requestGoogleCloudVertex(
         "Web Crypto API is not available in this environment. Please ensure you are using HTTPS.",
       );
     }
+
     // Input validation
     const normalizedEmail = email.trim();
     if (
@@ -301,6 +297,7 @@ export async function requestGoogleCloudVertex(
         "Invalid Vertex client email. Must be a Google service account address",
       );
     }
+
     if (
       !key.includes("-----BEGIN PRIVATE KEY-----") ||
       !key.includes("-----END PRIVATE KEY-----")
@@ -321,6 +318,7 @@ export async function requestGoogleCloudVertex(
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
+
       return bytes.buffer;
     }
 
@@ -386,9 +384,7 @@ export async function requestGoogleCloudVertex(
     const data = await response.json();
     const token = data.access_token;
 
-    if (!token) {
-      throw new Error("No google access token in the response");
-    }
+    if (!token) throw new Error("No google access token in the response");
 
     const db2 = settingsStore.state;
     db2.vertexAccessToken = token;
@@ -411,9 +407,7 @@ export async function requestGoogleCloudVertex(
       headers["Authorization"] =
         "Bearer " +
         (await generateToken(db.vertexClientEmail, db.vertexPrivateKey));
-    } else {
-      headers["Authorization"] = "Bearer " + db.vertexAccessToken;
-    }
+    } else headers["Authorization"] = "Bearer " + db.vertexAccessToken;
   }
 
   if (presetStore.state.jsonSchemaEnabled || arg.schema) {
@@ -427,13 +421,12 @@ export async function requestGoogleCloudVertex(
   }
 
   let url = "";
-  let apiKey = arg.key || db.google.accessToken;
+  const apiKey = arg.key || db.google.accessToken;
 
   if (arg.customURL) {
     let baseURL = arg.customURL;
-    if (!baseURL.endsWith("/")) {
-      baseURL += "/";
-    }
+    if (!baseURL.endsWith("/")) baseURL += "/";
+
     const endpoint = arg.useStreaming
       ? "streamGenerateContent"
       : "generateContent";
@@ -442,9 +435,8 @@ export async function requestGoogleCloudVertex(
       baseURL,
     );
     u.searchParams.set("key", apiKey);
-    if (arg.useStreaming) {
-      u.searchParams.set("alt", "sse");
-    }
+    if (arg.useStreaming) u.searchParams.set("alt", "sse");
+
     url = u.toString();
   } else if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
     const endpoint = arg.useStreaming
@@ -466,13 +458,10 @@ export async function requestGoogleCloudVertex(
     arg.useStreaming
   ) {
     url = `https://generativelanguage.googleapis.com/v1beta/models/${arg.modelInfo.internalID}:streamGenerateContent?key=${apiKey}&alt=sse`;
-  } else {
-    url = buildGoogleGenerateContentUrl(arg.modelInfo.internalID, apiKey);
-  }
+  } else url = buildGoogleGenerateContentUrl(arg.modelInfo.internalID, apiKey);
+
   // will return error if functionDeclarations is empty
-  if (body.tools?.functionDeclarations?.length === 0) {
-    body.tools = undefined;
-  }
+  if (body.tools?.functionDeclarations?.length === 0) body.tools = undefined;
 
   body = applyAdditionalParameters(
     body,
@@ -520,6 +509,7 @@ async function requestGoogle(
         failByServerError: true,
       };
     }
+
     if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
       return {
         type: "fail",
@@ -572,9 +562,8 @@ async function requestGoogle(
 
     if (f.status !== 200) {
       const text = await textifyReadableStream(f.body);
-      if (text.includes("RESOURCE_EXHAUSTED")) {
-        return fallBackGemini(text);
-      }
+      if (text.includes("RESOURCE_EXHAUSTED")) return fallBackGemini(text);
+
       return {
         type: "fail",
         result: text,
@@ -617,9 +606,8 @@ async function requestGoogle(
           ? remoteTransport.data
           : JSON.stringify(remoteTransport.data);
       const text = JSON.stringify(data);
-      if (text.includes("RESOURCE_EXHAUSTED")) {
-        return fallBackGemini(text);
-      }
+      if (text.includes("RESOURCE_EXHAUSTED")) return fallBackGemini(text);
+
       return {
         type: "fail",
         result: `${text} (status: ${remoteTransport.status})`,
@@ -639,9 +627,8 @@ async function requestGoogle(
     if (!res.ok) {
       const data = await res.text();
       const text = JSON.stringify(data);
-      if (text.includes("RESOURCE_EXHAUSTED")) {
-        return fallBackGemini(text);
-      }
+      if (text.includes("RESOURCE_EXHAUSTED")) return fallBackGemini(text);
+
       return {
         type: "fail",
         result: `${text} (status: ${res.status})`,
@@ -650,7 +637,7 @@ async function requestGoogle(
     responseData = await res.json();
   }
 
-  let rDatas: { text: string; thought?: boolean }[] = [];
+  const rDatas: { text: string; thought?: boolean }[] = [];
   const processDataItem = async (data: any): Promise<GeminiPart[]> => {
     const parts = data?.candidates?.[0]?.content?.parts as GeminiPart[];
 
@@ -724,6 +711,7 @@ async function requestGoogle(
         }
       }
     }
+
     return parts;
   };
 
@@ -761,6 +749,7 @@ async function requestGoogle(
         }),
       });
     }
+
     // Add the model response part to the request content (text response and function calls)
     else {
       chat.push({
@@ -768,6 +757,7 @@ async function requestGoogle(
         parts: parts.filter((p) => !p.thought),
       });
     }
+
     // If the last part is a model response, merge it with the previous model response
     if (chat[chat.length - 2]?.role === "model") {
       chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(
@@ -863,9 +853,7 @@ async function requestGoogle(
       attempt++;
       resRec = await requestGoogle(url, body, headers, arg);
 
-      if (resRec.type != "fail") {
-        break;
-      }
+      if (resRec.type != "fail") break;
     } while (attempt <= db.requestRetrys); // Retry up to db.requestRetrys times
 
     // Does not include the text response if simplifiedToolUse is enabled
@@ -920,6 +908,7 @@ function initStreamState(state?: { [key: string]: string }): {
       "0": "",
     };
   }
+
   state["__sign_text"] = state["__sign_text"] || "";
   state["__sign_function"] = state["__sign_function"] || "";
   state["__last_thought"] = state["__last_thought"] || "";
@@ -940,7 +929,7 @@ function getTranStream(args: {
       buffer += new TextDecoder().decode(chunk);
       const lines = buffer.split("\n");
 
-      let readed = initStreamState();
+      const readed = initStreamState();
 
       try {
         for (const line of lines) {
@@ -956,11 +945,9 @@ function getTranStream(args: {
                 if (part.text) {
                   readed["__thoughts"] += readed["__last_thought"];
                   readed["__last_thought"] = "";
-                  if (part.thought) {
-                    readed["__last_thought"] = part.text;
-                  } else {
-                    readed["0"] += part.text;
-                  }
+                  if (part.thought) readed["__last_thought"] = part.text;
+                  else readed["0"] += part.text;
+
                   if (part.thoughtSignature) {
                     readed["__sign_text"] = part.thoughtSignature;
                     if (saveSignature) {
@@ -1012,11 +999,13 @@ function getTranStream(args: {
                 jsonData.usageMetadata,
               );
             }
+
             if (jsonData.modelStatus) {
               readed["__modelStatus"] = JSON.stringify(jsonData.modelStatus);
             }
           }
         }
+
         control.enqueue(readed);
       } catch (error) {}
     },
@@ -1090,6 +1079,7 @@ function wrapToolStream(
                 }),
               });
             }
+
             // Add the model response part to the request content (text response and function calls)
             else {
               chat.push({
@@ -1115,6 +1105,7 @@ function wrapToolStream(
                 ),
               });
             }
+
             // If the last part is a model response, merge it with the previous model response
             if (chat[chat.length - 2]?.role === "model") {
               chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(
@@ -1149,6 +1140,7 @@ function wrapToolStream(
                     },
                   });
                 }
+
                 // Store the encoded tool call history for later use
                 if (arg.rememberToolUsage) {
                   callCodes.push(
@@ -1162,6 +1154,7 @@ function wrapToolStream(
                     }),
                   );
                 }
+
                 for (let i = 0; i < result.length; i++) {
                   let response: any = result[i].text;
                   try {
@@ -1241,9 +1234,8 @@ function wrapToolStream(
 
             reader = transtream.readable.getReader();
 
-            if (db.simplifiedToolUse) {
-              prefix += callCodes.join("\n\n");
-            } else {
+            if (db.simplifiedToolUse) prefix += callCodes.join("\n\n");
+            else {
               prefix +=
                 (thoughts + lastThought
                   ? `<Thoughts>\n\n${thoughts + lastThought}\n\n</Thoughts>\n\n`
@@ -1264,6 +1256,7 @@ function wrapToolStream(
               console.error(e);
             }
           }
+
           return controller.close();
         }
 

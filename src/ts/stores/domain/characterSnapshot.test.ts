@@ -456,6 +456,7 @@ describe.each([
         ),
       ).toBe(false);
     }
+
     expect(characterStore.currentCharacter!.chaId).toBe("char-1");
     expect(get(selectedCharID)).toBe(1);
     expect(characterStore.characters[2].chatPage).toBe(0);
@@ -495,8 +496,9 @@ describe.each([
       "chat_branches",
       "chat_active_branches",
       "message_branch_links",
-    ])
+    ]) {
       expect(rows(table).some((row) => row.chat_id === "chat-1")).toBe(false);
+    }
     expect((await restart())[0].chats.map((chat) => chat.id)).toEqual(
       restored.chats.map((chat) => chat.id),
     );
@@ -522,8 +524,9 @@ describe.each([
       "chat_branches",
       "chat_active_branches",
       "message_branch_links",
-    ])
+    ]) {
       expect(rows(table)).toEqual([]);
+    }
     expect(unrelated.map(rows)).toEqual(before);
     expect(characterStore.selectedId).toBe(-1);
     expect(await restart()).toEqual([]);
@@ -729,14 +732,16 @@ describe.each([
       if (invalid === "character") values.push({ ...values[0] });
       if (invalid === "chat") values[0].chats.push({ ...values[0].chats[0] });
       if (invalid === "owner") values[1].chats.push(values[0].chats.shift()!);
-      if (invalid === "new-character")
+      if (invalid === "new-character") {
         values.push({ ...values[1], chaId: "new", detailsLoaded: false });
-      if (invalid === "new-chat")
+      }
+      if (invalid === "new-chat") {
         values[0].chats.push({
           ...values[0].chats[0],
           id: "new-chat",
           messagesFullyLoaded: false,
         });
+      }
       flushSync();
       await characterStore.flush();
       const before = await storage.exportDatabaseSnapshot();

@@ -38,6 +38,4 @@ if (diagnostics.length) {
     }),
   );
   process.exitCode = 1;
-} else {
-  console.log("Node server entry-point types: no implicit any");
-}
+} else console.log("Node server entry-point types: no implicit any");

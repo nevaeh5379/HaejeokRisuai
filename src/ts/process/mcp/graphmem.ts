@@ -148,7 +148,7 @@ export class GraphMemClient extends MCPClientLike {
     const processer = new HypaProcesser();
     await processer.embedDocuments(graph.map((g) => g.name));
 
-    let results: {
+    const results: {
       queryTerm: string;
       entries: GraphIndex[];
     }[] = [];

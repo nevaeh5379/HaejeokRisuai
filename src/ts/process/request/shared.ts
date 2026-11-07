@@ -44,9 +44,8 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
   let cur: any = obj;
   for (let i = 0; i < splitKey.length - 1; i++) {
     const k = splitKey[i];
-    if (!cur[k] || typeof cur[k] !== "object") {
-      cur[k] = {};
-    }
+    if (!cur[k] || typeof cur[k] !== "object") cur[k] = {};
+
     cur = cur[k];
   }
   cur[splitKey[splitKey.length - 1]] = value;
@@ -56,13 +55,9 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
 export function getAdditionalParameters(aiModel?: string): [string, string][] {
   const db = settingsStore.state;
 
-  if (!aiModel) {
-    return [];
-  }
+  if (!aiModel) return [];
 
-  if (aiModel === "reverse_proxy") {
-    return [...(db.additionalParams ?? [])];
-  }
+  if (aiModel === "reverse_proxy") return [...(db.additionalParams ?? [])];
 
   if (!aiModel.startsWith("xcustom:::")) {
     return db.applyAdditionalParamsToAll
@@ -72,9 +67,7 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
 
   const found = db.customModels.find((model) => model.id === aiModel);
   const params = found?.params;
-  if (!params) {
-    return [];
-  }
+  if (!params) return [];
 
   const additionalParams: [string, string][] = [];
   const lines = params.split("\n");
@@ -95,19 +88,16 @@ export function applyAdditionalParameters<T extends Record<string, any>>(
   additionalParams: [string, string][],
 ): T {
   for (const [rawKey, rawValue] of additionalParams) {
-    let key = rawKey;
-    let value = rawValue;
+    const key = rawKey;
+    const value = rawValue;
 
-    if (!key || !value) {
-      continue;
-    }
+    if (!key || !value) continue;
 
     if (value === "{{none}}") {
       if (key.startsWith("header::")) {
         delete headers[key.replace("header::", "")];
-      } else {
-        delete body[key];
-      }
+      } else delete body[key];
+
       continue;
     }
 
@@ -123,6 +113,7 @@ export function applyAdditionalParameters<T extends Record<string, any>>(
       if (parsedValue !== undefined) {
         body = setObjectValue(body, key, parsedValue);
       }
+
       continue;
     }
 
@@ -222,9 +213,8 @@ export function applyParameters(
 
     for (const parameter of parameters) {
       let value: number | string = 0;
-      if (isReasoningCapabilityParameter(parameter)) {
-        continue;
-      }
+      if (isReasoningCapabilityParameter(parameter)) continue;
+
       if (
         parameter === "top_k" &&
         arg.ignoreTopKIfZero &&
@@ -310,9 +300,8 @@ export function applyParameters(
 
   for (const parameter of parameters) {
     let value: number | string = 0;
-    if (isReasoningCapabilityParameter(parameter)) {
-      continue;
-    }
+    if (isReasoningCapabilityParameter(parameter)) continue;
+
     if (
       parameter === "top_k" &&
       arg.ignoreTopKIfZero &&
@@ -320,6 +309,7 @@ export function applyParameters(
     ) {
       continue;
     }
+
     switch (parameter) {
       case "temperature": {
         value =
@@ -381,9 +371,7 @@ export function applyParameters(
       }
     }
 
-    if (value === -1000) {
-      continue;
-    }
+    if (value === -1000) continue;
 
     data = setObjectValue(data, rename[parameter] ?? parameter, value);
   }

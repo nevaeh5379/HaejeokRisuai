@@ -23,12 +23,13 @@ import {
   defaultColorScheme,
   type ColorScheme,
 } from "@risuai/protocol/domain/colorScheme.ts";
-export { defaultColorScheme, type ColorScheme } from "@risuai/protocol/domain/colorScheme.ts";
+export {
+  defaultColorScheme,
+  type ColorScheme,
+} from "@risuai/protocol/domain/colorScheme.ts";
 
 async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
-  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
-    return;
-  }
+  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) return;
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -48,9 +49,7 @@ async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
         }),
       ]);
       applyLinuxDecorationAlpha(decorationAlpha);
-    } else {
-      await nativeAppearance;
-    }
+    } else await nativeAppearance;
   } catch (error) {
     console.warn(
       "Failed to sync native Tauri appearance with Risu theme:",
@@ -291,16 +290,13 @@ export const colorSchemeList = Object.keys(
   colorShemes,
 ) as (keyof typeof colorShemes)[];
 
-
 export function getCurrentlyColorScheme(): ColorScheme["type"] {
   return settingsStore.state.colorScheme?.type ?? "dark";
 }
 
 export function isLight() {
-  if (getCurrentlyColorScheme() === "light")
-    return true
-  else
-    return false
+  if (getCurrentlyColorScheme() === "light") return true;
+  else return false;
 }
 export function changeColorScheme(colorScheme: string) {
   try {
@@ -313,6 +309,7 @@ export function changeColorScheme(colorScheme: string) {
         colorShemes[colorScheme],
       );
     }
+
     settingsStore.state.colorSchemeName = colorScheme;
     updateColorScheme();
   } catch (error) {}
@@ -330,7 +327,7 @@ export function updateCustomColorScheme() {
 
 export function updateColorScheme() {
   try {
-    let db = settingsStore.state;
+    const db = settingsStore.state;
 
     let colorScheme = db.colorScheme;
 
@@ -338,9 +335,7 @@ export function updateColorScheme() {
       colorScheme = safeStructuredClone(defaultColorScheme);
     }
 
-    if (get(isLite)) {
-      colorScheme = safeStructuredClone(colorShemes.lite);
-    }
+    if (get(isLite)) colorScheme = safeStructuredClone(colorShemes.lite);
 
     //set css variables
     document.documentElement.style.setProperty(
@@ -385,12 +380,12 @@ export function updateColorScheme() {
     if (isCapacitorAndroid) {
       void syncAndroidSystemBars(colorScheme.type === "dark");
     }
+
     applyUITheme();
     const isFluent =
       isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
-    if (isFluent && isTauriWindows) {
-      void ensureFluentWindowsBackdrop();
-    }
+    if (isFluent && isTauriWindows) void ensureFluentWindowsBackdrop();
+
     void syncTauriNativeAppearance(colorScheme);
     updateTextThemeAndCSS();
   } catch (error) {}
@@ -405,15 +400,14 @@ export function changeColorSchemeType(type: "light" | "dark") {
 }
 
 export function exportColorScheme() {
-  let json = JSON.stringify(settingsStore.state.customColorScheme);
+  const json = JSON.stringify(settingsStore.state.customColorScheme);
   downloadFile("colorScheme.json", json);
 }
 
 export async function importColorScheme() {
   const uarray = await selectSingleFile(["json"]);
-  if (uarray == null) {
-    return;
-  }
+  if (uarray == null) return;
+
   const string = BufferToText(uarray.data);
   try {
     const result = safeParse(colorSchemeSchema, JSON.parse(string));
@@ -430,15 +424,14 @@ export async function importColorScheme() {
 }
 
 export function updateTextThemeAndCSS() {
-  let db = settingsStore.state;
+  const db = settingsStore.state;
   const root = document.querySelector(":root") as HTMLElement;
-  if (!root) {
-    return;
-  }
+  if (!root) return;
+
   const isFluent =
     isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
-  let textTheme = get(isLite) ? "standard" : db.textTheme;
-  let colorScheme = get(isLite) ? "dark" : (db.colorScheme?.type ?? "dark");
+  const textTheme = get(isLite) ? "standard" : db.textTheme;
+  const colorScheme = get(isLite) ? "dark" : (db.colorScheme?.type ?? "dark");
   switch (textTheme) {
     case "standard": {
       if (isFluent) {
@@ -528,9 +521,8 @@ export function updateTextThemeAndCSS() {
           "--risu-font-family",
           '"Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif',
         );
-      } else {
-        root.style.setProperty("--risu-font-family", "Arial, sans-serif");
-      }
+      } else root.style.setProperty("--risu-font-family", "Arial, sans-serif");
+
       break;
     }
     case "timesnewroman": {
@@ -543,9 +535,6 @@ export function updateTextThemeAndCSS() {
     }
   }
 
-  if (!get(SafeModeStore)) {
-    CustomCSSStore.set(db.customCSS ?? "");
-  } else {
-    CustomCSSStore.set("");
-  }
+  if (!get(SafeModeStore)) CustomCSSStore.set(db.customCSS ?? "");
+  else CustomCSSStore.set("");
 }

@@ -71,12 +71,14 @@ function decodeResponsesJson(value: any): { text: string; reasoning: string } {
   if (value?.type === "response.output_text.delta") {
     return { text: asText(value.delta), reasoning: "" };
   }
+
   if (
     value?.type === "response.reasoning_summary_text.delta" ||
     value?.type === "response.reasoning_text.delta"
   ) {
     return { text: "", reasoning: asText(value.delta) };
   }
+
   let text = asText(value?.output_text);
   let reasoning = "";
   for (const item of value?.output ?? value?.response?.output ?? []) {
@@ -87,6 +89,7 @@ function decodeResponsesJson(value: any): { text: string; reasoning: string } {
       }
     }
   }
+
   return { text, reasoning };
 }
 
@@ -95,6 +98,7 @@ function decodeAnthropicJson(value: any): { text: string; reasoning: string } {
     if (value?.delta?.type === "text_delta") {
       return { text: asText(value.delta.text), reasoning: "" };
     }
+
     if (value?.delta?.type === "thinking_delta") {
       return { text: "", reasoning: asText(value.delta.thinking) };
     }
@@ -105,6 +109,7 @@ function decodeAnthropicJson(value: any): { text: string; reasoning: string } {
     if (part?.type === "text") text += asText(part.text);
     else if (part?.type === "thinking") reasoning += asText(part.thinking);
   }
+
   return { text, reasoning };
 }
 
@@ -119,6 +124,7 @@ function decodeGeminiJson(value: any): { text: string; reasoning: string } {
       else text += part.text;
     }
   }
+
   return { text, reasoning };
 }
 
@@ -153,6 +159,7 @@ export function decodeDurableModelJob(
       return raw;
     }
   }
+
   for (const value of values) {
     const decoded = decoder(value);
     text += decoded.text;
@@ -209,8 +216,9 @@ async function readJournal(
     `/api/model-jobs/${encodeURIComponent(job.id)}/stream`,
     { headers: await authHeaders() },
   );
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(`Model job journal unavailable (${response.status})`);
+  }
   if (!onProgress || !response.body) return await response.text();
 
   const reader = response.body.getReader();
@@ -285,8 +293,12 @@ function previewRecoveredText(job: DurableModelJobRecord, text: string): void {
 }
 
 function clearRecoveredPreview(job: DurableModelJobRecord): void {
-  if (!job.generationId || !remotePreviewGenerationIds.delete(job.generationId))
+  if (
+    !job.generationId ||
+    !remotePreviewGenerationIds.delete(job.generationId)
+  ) {
     return;
+  }
   for (const character of characterStore.characters) {
     const chat = character?.chats?.find((item) => item?.id === job.chatId);
     if (!chat?.message) continue;
@@ -417,6 +429,7 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
           dedupeKey: `model-job:${terminal.generationId || terminal.id}`,
         });
       }
+
       const text = decodeDurableModelJob(
         terminal.protocol,
         raw,
@@ -432,9 +445,7 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
         terminal.error,
       );
       await claimJob(terminal.id);
-    } else if (terminal.status === "aborted") {
-      clearRecoveredPreview(terminal);
-    }
+    } else if (terminal.status === "aborted") clearRecoveredPreview(terminal);
   } catch (error) {
     console.warn(
       "[ModelJobRecovery] active job reattach failed",
@@ -490,9 +501,7 @@ export function initDurableModelJobRecovery(): void {
   if (!isNodeServer || recoveryTriggersInstalled) return;
   recoveryTriggersInstalled = true;
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      void recoverDurableModelJobs();
-    }
+    if (document.visibilityState === "visible") void recoverDurableModelJobs();
   });
   window.addEventListener("online", () => {
     void recoverDurableModelJobs();

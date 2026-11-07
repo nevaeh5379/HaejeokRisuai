@@ -24,7 +24,9 @@ async function waitForAppReady(page: import("@playwright/test").Page) {
     { timeout: 30_000 },
   );
 
-  await expect(page.getByText("Loading...")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText("Loading...")).toHaveCount(0, {
+    timeout: 30_000,
+  });
   // The module store hydrates asynchronously from SQLite; installing modules
   // before hydration completes races init() overwriting the in-memory module
   // list with the database snapshot.
@@ -47,7 +49,9 @@ async function enableSaveIconSetting(page: import("@playwright/test").Page) {
 }
 
 test.describe("Save indicator icon (E2E)", () => {
-  test("displays save confirmation icon when enabled and auto-hides after delay", async ({ page }) => {
+  test("displays save confirmation icon when enabled and auto-hides after delay", async ({
+    page,
+  }) => {
     await waitForAppReady(page);
 
     // 1. Initially, save indicator should not be visible
@@ -80,7 +84,9 @@ test.describe("Save indicator icon (E2E)", () => {
     await othersTabButton.click();
 
     // 4. Locate the showSavingIcon setting
-    const savingIconSetting = page.locator('[data-setting-id="display.showSavingIcon"]');
+    const savingIconSetting = page.locator(
+      '[data-setting-id="display.showSavingIcon"]',
+    );
     await expect(savingIconSetting).toBeVisible({ timeout: 5000 });
 
     const checkbox = savingIconSetting.locator('input[type="checkbox"]');
@@ -93,7 +99,10 @@ test.describe("Save indicator icon (E2E)", () => {
     // 6. The setting commit occurs -> save indicator appears (even with Settings open, due to z-50)
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
     await expect(saveIndicator).toHaveClass(/z-50/);
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // 7. Verify it auto-hides after ~2.5s timer expires
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -101,9 +110,9 @@ test.describe("Save indicator icon (E2E)", () => {
     // 8. Close Settings
     await page.evaluate(async () => {
       const storesUrl = "/src/ts/stores.svelte.ts";
-      const { settingsOpen } = (await import(
-        /* @vite-ignore */ storesUrl
-      )) as { settingsOpen: { set: (v: boolean) => void } };
+      const { settingsOpen } = (await import(/* @vite-ignore */ storesUrl)) as {
+        settingsOpen: { set: (v: boolean) => void };
+      };
       settingsOpen.set(false);
     });
   });
@@ -126,7 +135,10 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for character creation
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -167,7 +179,11 @@ test.describe("Save indicator icon (E2E)", () => {
       characterStore.markChatDirty(newChat.id);
       characterStore.markChatManifestDirty(char.chaId);
       await characterStore.flush();
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message);
+      await messageStore.persistNewChat(
+        char.chaId,
+        newChat.id,
+        newChat.message,
+      );
       await changeChar(idx);
     });
 
@@ -192,7 +208,10 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for message append
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -234,7 +253,11 @@ test.describe("Save indicator icon (E2E)", () => {
       characterStore.markChatDirty(newChat.id);
       characterStore.markChatManifestDirty(char.chaId);
       await characterStore.flush();
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message);
+      await messageStore.persistNewChat(
+        char.chaId,
+        newChat.id,
+        newChat.message,
+      );
       await changeChar(idx);
 
       // Append initial message so a fork message exists
@@ -274,7 +297,10 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for branch creation
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -322,7 +348,10 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for lorebook update
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -351,7 +380,10 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for module creation
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
@@ -371,19 +403,27 @@ test.describe("Save indicator icon (E2E)", () => {
         /* @vite-ignore */ presetStoreUrl
       )) as { presetStore: any };
 
-      const nextModel = presetStore.state.aiModel === "claude-3-5-sonnet" ? "gpt-4o" : "claude-3-5-sonnet";
+      const nextModel =
+        presetStore.state.aiModel === "claude-3-5-sonnet"
+          ? "gpt-4o"
+          : "claude-3-5-sonnet";
       presetStore.state.aiModel = nextModel;
     });
 
     // Save indicator should appear for model selection
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
   });
 
-  test("displays save icon when editing and saving a message", async ({ page }) => {
+  test("displays save icon when editing and saving a message", async ({
+    page,
+  }) => {
     await waitForAppReady(page);
     await enableSaveIconSetting(page);
 
@@ -420,7 +460,11 @@ test.describe("Save indicator icon (E2E)", () => {
       characterStore.markChatDirty(newChat.id);
       characterStore.markChatManifestDirty(char.chaId);
       await characterStore.flush();
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message);
+      await messageStore.persistNewChat(
+        char.chaId,
+        newChat.id,
+        newChat.message,
+      );
       await changeChar(idx);
 
       await messageStore.appendMessage(newChat.id, {
@@ -451,13 +495,18 @@ test.describe("Save indicator icon (E2E)", () => {
 
     // Save indicator should appear for message update
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
   });
 
-  test("displays save icon when editing a message and branching", async ({ page }) => {
+  test("displays save icon when editing a message and branching", async ({
+    page,
+  }) => {
     await waitForAppReady(page);
     await enableSaveIconSetting(page);
 
@@ -468,85 +517,98 @@ test.describe("Save indicator icon (E2E)", () => {
     const msg2Id = crypto.randomUUID();
 
     // Create a character with chat and 2 messages
-    await page.evaluate(async ({ id1, id2 }) => {
-      const charUrl = "/src/ts/characters.ts";
-      const domainUrl = "/src/ts/stores/domain/index.ts";
-      const { createNewCharacter, changeChar } = (await import(
-        /* @vite-ignore */ charUrl
-      )) as {
-        createNewCharacter: () => number;
-        changeChar: (idx: number) => Promise<void>;
-      };
-      const { characterStore, messageStore } = (await import(
-        /* @vite-ignore */ domainUrl
-      )) as { characterStore: any; messageStore: any };
+    await page.evaluate(
+      async ({ id1, id2 }) => {
+        const charUrl = "/src/ts/characters.ts";
+        const domainUrl = "/src/ts/stores/domain/index.ts";
+        const { createNewCharacter, changeChar } = (await import(
+          /* @vite-ignore */ charUrl
+        )) as {
+          createNewCharacter: () => number;
+          changeChar: (idx: number) => Promise<void>;
+        };
+        const { characterStore, messageStore } = (await import(
+          /* @vite-ignore */ domainUrl
+        )) as { characterStore: any; messageStore: any };
 
-      const idx = createNewCharacter();
-      const char = characterStore.characters[idx];
-      const newChat = {
-        message: [],
-        note: "",
-        name: "Chat 1",
-        localLore: [],
-        fmIndex: -1,
-        id: crypto.randomUUID(),
-      };
-      char.chats = [newChat];
-      characterStore.markChatDirty(newChat.id);
-      characterStore.markChatManifestDirty(char.chaId);
-      await characterStore.flush();
-      await messageStore.persistNewChat(char.chaId, newChat.id, newChat.message);
-      await changeChar(idx);
+        const idx = createNewCharacter();
+        const char = characterStore.characters[idx];
+        const newChat = {
+          message: [],
+          note: "",
+          name: "Chat 1",
+          localLore: [],
+          fmIndex: -1,
+          id: crypto.randomUUID(),
+        };
+        char.chats = [newChat];
+        characterStore.markChatDirty(newChat.id);
+        characterStore.markChatManifestDirty(char.chaId);
+        await characterStore.flush();
+        await messageStore.persistNewChat(
+          char.chaId,
+          newChat.id,
+          newChat.message,
+        );
+        await changeChar(idx);
 
-      await messageStore.appendMessage(newChat.id, {
-        chatId: id1,
-        role: "user",
-        data: "First message",
-      });
-      await messageStore.appendMessage(newChat.id, {
-        chatId: id2,
-        role: "char",
-        data: "Second message to branch from",
-      });
-    }, { id1: msg1Id, id2: msg2Id });
+        await messageStore.appendMessage(newChat.id, {
+          chatId: id1,
+          role: "user",
+          data: "First message",
+        });
+        await messageStore.appendMessage(newChat.id, {
+          chatId: id2,
+          role: "char",
+          data: "Second message to branch from",
+        });
+      },
+      { id1: msg1Id, id2: msg2Id },
+    );
 
     // Wait for setup indicators to clear
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
 
     // Edit message and branch (simulates Chat.svelte saveEditedMessage with createBranch = true)
-    await page.evaluate(async ({ forkId }) => {
-      const factoryUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";
-      const domainUrl = "/src/ts/stores/domain/index.ts";
-      const { getSqlBranchStorage } = (await import(
-        /* @vite-ignore */ factoryUrl
-      )) as { getSqlBranchStorage: () => Promise<any> };
-      const { characterStore, messageStore } = (await import(
-        /* @vite-ignore */ domainUrl
-      )) as { characterStore: any; messageStore: any };
+    await page.evaluate(
+      async ({ forkId }) => {
+        const factoryUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";
+        const domainUrl = "/src/ts/stores/domain/index.ts";
+        const { getSqlBranchStorage } = (await import(
+          /* @vite-ignore */ factoryUrl
+        )) as { getSqlBranchStorage: () => Promise<any> };
+        const { characterStore, messageStore } = (await import(
+          /* @vite-ignore */ domainUrl
+        )) as { characterStore: any; messageStore: any };
 
-      const currentChat = characterStore.currentChat;
-      if (currentChat?.id) {
-        const storage = await getSqlBranchStorage();
-        const branch = await storage.createChatBranch({
-          id: crypto.randomUUID(),
-          chatId: currentChat.id,
-          forkMessageId: forkId,
-          reason: "manual",
-          createdAt: Date.now(),
-        });
-        currentChat.activeBranchId = branch.id;
-        const editedMessage = {
-          chatId: crypto.randomUUID(),
-          role: "char",
-          data: "Edited and branched message content",
-        };
-        await messageStore.appendMessage(currentChat.id, editedMessage);
-      }
-    }, { forkId: msg1Id });
+        const currentChat = characterStore.currentChat;
+        if (currentChat?.id) {
+          const storage = await getSqlBranchStorage();
+          const branch = await storage.createChatBranch({
+            id: crypto.randomUUID(),
+            chatId: currentChat.id,
+            forkMessageId: forkId,
+            reason: "manual",
+            createdAt: Date.now(),
+          });
+          currentChat.activeBranchId = branch.id;
+          const editedMessage = {
+            chatId: crypto.randomUUID(),
+            role: "char",
+            data: "Edited and branched message content",
+          };
+          await messageStore.appendMessage(currentChat.id, editedMessage);
+        }
+      },
+      { forkId: msg1Id },
+    );
 
     // Save indicator should appear for edit-and-branch
     await expect(saveIndicator).toBeVisible({ timeout: 5000 });
-    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+    await expect(saveIndicator).toHaveAttribute(
+      "data-save-indicator",
+      /saving|saved/,
+    );
 
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });

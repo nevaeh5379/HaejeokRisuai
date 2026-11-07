@@ -181,9 +181,8 @@ async function createRemoteVerifier() {
     "ANDROID_E2E_REMOTE_PASSWORD or ANDROID_E2E_REMOTE_PASSWORD_DIGEST is required",
   );
   const verifierUrl = new URL(remoteUrl);
-  if (verifierUrl.hostname === "10.0.2.2") {
-    verifierUrl.hostname = "127.0.0.1";
-  }
+  if (verifierUrl.hostname === "10.0.2.2") verifierUrl.hostname = "127.0.0.1";
+
   const baseUrl = verifierUrl.origin;
   const api = new NodeApiClient({
     version: 1,
@@ -203,9 +202,8 @@ async function createRemoteVerifier() {
     createAuth: () => identity.createAuth(),
     requestPassword: async () => remotePassword,
   });
-  if (remotePassword) {
-    await auth.connectWithPassword(remotePassword);
-  } else {
+  if (remotePassword) await auth.connectWithPassword(remotePassword);
+  else {
     await api.getCapabilities();
     await auth.authorizeKey(remotePasswordDigest);
   }
@@ -238,9 +236,8 @@ async function waitForRemoteRestoredFixture(
         if (!paddingAsset) return;
         try {
           const data = await assets.getItem(paddingAsset.key);
-          if (!data) {
-            lastAssetState = "missing";
-          } else {
+          if (!data) lastAssetState = "missing";
+          else {
             lastAssetState = `${data.byteLength} bytes`;
             const expectedByte = (index: number) => index % 251;
             const boundary = LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE;
@@ -264,6 +261,7 @@ async function waitForRemoteRestoredFixture(
         `Remote restore verification failed (HTTP ${response.status})`,
       );
     }
+
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
@@ -293,6 +291,7 @@ async function waitForRestoredFixtureInSqlite(browser: WebdriverIO.Browser) {
     ) {
       return;
     }
+
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
@@ -574,9 +573,7 @@ async function selectNativeDocument(
     const roots = await browser.$(
       "//*[@content-desc='Show roots' or @content-desc='루트 표시']",
     );
-    if (await roots.isDisplayed().catch(() => false)) {
-      await roots.click();
-    }
+    if (await roots.isDisplayed().catch(() => false)) await roots.click();
 
     await browser.waitUntil(
       async () => {

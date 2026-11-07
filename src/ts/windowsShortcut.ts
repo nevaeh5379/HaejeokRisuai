@@ -37,9 +37,8 @@ function drawRoundedCenterCrop(
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") {
     ctx.roundRect(0, 0, size, size, radius);
-  } else {
-    ctx.rect(0, 0, size, size);
-  }
+  } else ctx.rect(0, 0, size, size);
+
   ctx.clip();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
@@ -61,7 +60,11 @@ async function canvasToPngArrayBuffer(
 async function buildCharacterIcoBytes(
   imageLoc: string | undefined,
 ): Promise<Uint8Array | null> {
-  if (!imageLoc || typeof document === "undefined" || typeof Image === "undefined") {
+  if (
+    !imageLoc ||
+    typeof document === "undefined" ||
+    typeof Image === "undefined"
+  ) {
     return null;
   }
 
@@ -74,7 +77,8 @@ async function buildCharacterIcoBytes(
       element.crossOrigin = "anonymous";
       element.decoding = "async";
       element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("Failed to load character avatar"));
+      element.onerror = () =>
+        reject(new Error("Failed to load character avatar"));
       element.src = src;
     });
 
@@ -92,9 +96,7 @@ async function buildCharacterIcoBytes(
         canvas.height = size;
         drawRoundedCenterCrop(ctx, img, size);
         const pngBuffer = await canvasToPngArrayBuffer(canvas);
-        if (pngBuffer) {
-          imageBuffers.push({ buffer: pngBuffer });
-        }
+        if (pngBuffer) imageBuffers.push({ buffer: pngBuffer });
       }
 
       if (imageBuffers.length === 0) return null;
@@ -108,7 +110,10 @@ async function buildCharacterIcoBytes(
       canvas.height = 0;
     }
   } catch (error) {
-    console.warn("[WindowsShortcut] Failed to build custom character icon:", error);
+    console.warn(
+      "[WindowsShortcut] Failed to build custom character icon:",
+      error,
+    );
     return null;
   }
 }
@@ -178,9 +183,8 @@ export async function openChatFromShortcutTarget(
 
   const opened = await openChatTargetInTab(target.characterId, target.chatId);
   if (opened && isTauri) {
-    const { publishCurrentTauriChatWorkspaceState } = await import(
-      "./tauriChatWindows"
-    );
+    const { publishCurrentTauriChatWorkspaceState } =
+      await import("./tauriChatWindows");
     await publishCurrentTauriChatWorkspaceState();
   }
   return opened;
@@ -203,10 +207,11 @@ export async function initializeWindowsChatShortcutRuntime(): Promise<void> {
     const pendingTarget = await invoke<ChatShortcutTarget | null>(
       "take_pending_chat_shortcut",
     );
-    if (pendingTarget) {
-      await openChatFromShortcutTarget(pendingTarget);
-    }
+    if (pendingTarget) await openChatFromShortcutTarget(pendingTarget);
   } catch (error) {
-    console.warn("[WindowsShortcut] Failed to check pending chat shortcut:", error);
+    console.warn(
+      "[WindowsShortcut] Failed to check pending chat shortcut:",
+      error,
+    );
   }
 }

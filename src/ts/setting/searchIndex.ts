@@ -418,8 +418,9 @@ function isMenuAvailable(menuIndex: number): boolean {
     menuIndex === 15 &&
     typeof window !== "undefined" &&
     window.innerWidth < 768
-  )
+  ) {
     return false;
+  }
   return true;
 }
 function collectVisible(
@@ -434,9 +435,7 @@ function collectVisible(
       if (item.options?.children) {
         collectVisible(item.options.children, ctx, result);
       }
-    } else if (item.type !== "header") {
-      result.push(item);
-    }
+    } else if (item.type !== "header") result.push(item);
   }
 }
 
@@ -476,16 +475,19 @@ function rankMatch(
   for (let i = 0; i < terms.length; i++) {
     if (!allText.includes(terms[i])) return -1;
   }
+
   if (
     primaryLabel.toLowerCase() === query ||
     (secondaryLabel && secondaryLabel.toLowerCase() === query)
-  )
+  ) {
     return 0;
+  }
   if (
     primaryLabel.toLowerCase().startsWith(query) ||
     (secondaryLabel && secondaryLabel.toLowerCase().startsWith(query))
-  )
+  ) {
     return 1;
+  }
 
   let allInLabel = true;
   for (let i = 0; i < terms.length; i++) {
@@ -494,6 +496,7 @@ function rankMatch(
       break;
     }
   }
+
   if (allInLabel) return 2;
 
   if (keywordText) {
@@ -504,6 +507,7 @@ function rankMatch(
         break;
       }
     }
+
     if (allInKeywords) return 3;
   }
   return 4;
@@ -560,13 +564,15 @@ export function searchSettings(rawQuery: string): SettingSearchResult[] {
       isTauri &&
       (entry.target.kind === "dbExplorer" ||
         entry.target.kind === "storageExplorer")
-    )
+    ) {
       continue;
+    }
     if (
       entry.target.kind === "menu" &&
       !isMenuAvailable(entry.target.menuIndex)
-    )
+    ) {
       continue;
+    }
     const label = entry.label();
     const rank = rankMatch(query, terms, label, "", entry.keywords, "", "");
     if (rank < 0) continue;
@@ -604,6 +610,7 @@ export function scrollToSettingAnchor(itemId: string, attempt = 0): void {
     );
     return;
   }
-  if (attempt < 45)
+  if (attempt < 45) {
     requestAnimationFrame(() => scrollToSettingAnchor(itemId, attempt + 1));
+  }
 }

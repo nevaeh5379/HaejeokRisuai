@@ -145,8 +145,9 @@ export async function applyAndroidDynamicPalette(dark: boolean): Promise<void> {
     if (
       !root.classList.contains("theme-android-material") ||
       !palette.available
-    )
+    ) {
       return;
+    }
 
     const accent = dark ? palette.accentDark : palette.accentLight;
     const accentContainer = dark

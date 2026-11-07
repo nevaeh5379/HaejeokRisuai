@@ -34,7 +34,7 @@ export function messageForm(arg: Message[], loadPages: number) {
     return data?.trim();
   }
 
-  let a: Messagec[] = [];
+  const a: Messagec[] = [];
   for (let i = 0; i < arg.length; i++) {
     const m = arg[i];
     a.unshift({
@@ -62,9 +62,8 @@ export async function selectSingleFile(ext: string[]) {
   if (domSelect) {
     const v = await selectFileByDom(ext, "single");
     const file = v[0];
-    if (!file) {
-      return null;
-    }
+    if (!file) return null;
+
     return { name: file.name, data: await readFileAsUint8Array(file) };
   }
 
@@ -76,11 +75,9 @@ export async function selectSingleFile(ext: string[]) {
       },
     ],
   });
-  if (Array.isArray(selected)) {
-    return null;
-  } else if (selected === null) {
-    return null;
-  } else {
+  if (Array.isArray(selected)) return null;
+  else if (selected === null) return null;
+  else {
     return { name: await basename(selected), data: await readFile(selected) };
   }
 }
@@ -88,10 +85,11 @@ export async function selectSingleFile(ext: string[]) {
 export async function selectMultipleFile(ext: string[]) {
   if (!isTauri) {
     const v = await selectFileByDom(ext, "multiple");
-    let arr: { name: string; data: Uint8Array }[] = [];
+    const arr: { name: string; data: Uint8Array }[] = [];
     for (const file of v) {
       arr.push({ name: file.name, data: await readFileAsUint8Array(file) });
     }
+
     return arr;
   }
 
@@ -105,14 +103,14 @@ export async function selectMultipleFile(ext: string[]) {
     multiple: true,
   });
   if (Array.isArray(selected)) {
-    let arr: { name: string; data: Uint8Array }[] = [];
+    const arr: { name: string; data: Uint8Array }[] = [];
     for (const file of selected) {
       arr.push({ name: await basename(file), data: await readFile(file) });
     }
+
     return arr;
-  } else if (selected === null) {
-    return null;
-  } else {
+  } else if (selected === null) return null;
+  else {
     return [{ name: await basename(selected), data: await readFile(selected) }];
   }
 }
@@ -133,9 +131,8 @@ export function checkPersonaBinded(target?: ChatExecutionTarget) {
     const chat = (
       target ? resolveChatTarget(target) : resolveSelectedChatTarget()
     )?.chat;
-    if (!chat?.bindedPersona) {
-      return null;
-    }
+    if (!chat?.bindedPersona) return null;
+
     const persona = personaStore.list.find((v) => v.id === chat.bindedPersona);
     return persona;
   } catch (error) {
@@ -145,34 +142,30 @@ export function checkPersonaBinded(target?: ChatExecutionTarget) {
 
 export function getUserName(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.name;
-  }
+  if (bindedPersona) return bindedPersona.name;
+
   return personaStore.activePersona?.name ?? "User";
 }
 
 export function getUserIcon(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.icon;
-  }
+  if (bindedPersona) return bindedPersona.icon;
+
   return personaStore.activePersona?.icon ?? "";
 }
 
 export function getPersonaPrompt(target?: ChatExecutionTarget) {
   const bindedPersona = checkPersonaBinded(target);
-  if (bindedPersona) {
-    return bindedPersona.personaPrompt;
-  }
+  if (bindedPersona) return bindedPersona.personaPrompt;
+
   return personaStore.activePersona?.personaPrompt ?? "";
 }
 
 export function getUserIconProtrait(target?: ChatExecutionTarget) {
   try {
     const bindedPersona = checkPersonaBinded(target);
-    if (bindedPersona) {
-      return bindedPersona.largePortrait;
-    }
+    if (bindedPersona) return bindedPersona.largePortrait;
+
     return personaStore.activePersona?.largePortrait ?? false;
   } catch (error) {
     return false;
@@ -202,18 +195,18 @@ export function selectFileByDom(
         const allKnown =
           allowedExtensions.length > 0 &&
           allowedExtensions.every((ext) => hasKnownMimeType(ext));
-        if (!allKnown) {
-          fileInput.removeAttribute("accept");
-        } else {
+        if (!allKnown) fileInput.removeAttribute("accept");
+        else {
           fileInput.accept = allowedExtensions
             .map((ext) => `.${ext}`)
             .join(",");
         }
       }
-    } else {
-      // An empty accept filter means "all files". The literal "*" is not a
-      // valid HTML accept token and Android WebView may pass it through as an
-      // unusable MIME filter to the system document picker.
+    } else
+    // An empty accept filter means "all files". The literal "*" is not a
+    // valid HTML accept token and Android WebView may pass it through as an
+    // unusable MIME filter to the system document picker.
+    {
       fileInput.removeAttribute("accept");
     }
 
@@ -263,20 +256,16 @@ function readFileAsUint8Array(file: File) {
 export async function changeFullscreen() {
   const db = settingsStore.state;
   const isFull = await appWindow.isFullscreen();
-  if (db.fullScreen && !isFull) {
-    await appWindow.setFullscreen(true);
-  }
-  if (!db.fullScreen && isFull) {
-    await appWindow.setFullscreen(false);
-  }
+  if (db.fullScreen && !isFull) await appWindow.setFullscreen(true);
+
+  if (!db.fullScreen && isFull) await appWindow.setFullscreen(false);
 }
 
 export async function getCustomBackground(
   background: string | null | undefined,
 ) {
-  if (!background || background.length < 2) {
-    return "";
-  } else {
+  if (!background || background.length < 2) return "";
+  else {
     const { getCharImage } = await import("./characterImage");
     const filesrc = await getCharImage(background, "plain");
     return `background: url("${filesrc}"); background-size: cover;`;
@@ -285,13 +274,10 @@ export async function getCustomBackground(
 
 export function findCharacterbyId(id: string) {
   for (const char of characterStore.characters) {
-    if (char.type !== "group") {
-      if (char.chaId === id) {
-        return char;
-      }
-    }
+    if (char.type !== "group") if (char.chaId === id) return char;
   }
-  let unknown = createBlankChar();
+
+  const unknown = createBlankChar();
   unknown.name = "Unknown Character";
   return unknown;
 }
@@ -299,9 +285,8 @@ export function findCharacterbyId(id: string) {
 export function findCharacterIndexbyId(id: string) {
   let i = 0;
   for (const char of characterStore.characters) {
-    if (char.chaId === id) {
-      return i;
-    }
+    if (char.chaId === id) return i;
+
     i += 1;
   }
   return -1;
@@ -309,7 +294,7 @@ export function findCharacterIndexbyId(id: string) {
 
 export function getCharacterIndexObject() {
   let i = 0;
-  let result: { [key: string]: number } = {};
+  const result: { [key: string]: number } = {};
   for (const char of characterStore.characters) {
     result[char.chaId] = i;
     i += 1;
@@ -318,14 +303,10 @@ export function getCharacterIndexObject() {
 }
 
 export function defaultEmotion(em: [string, string][]) {
-  if (!em) {
-    return "";
-  }
-  for (const v of em) {
-    if (v[0] === "neutral") {
-      return v[1];
-    }
-  }
+  if (!em) return "";
+
+  for (const v of em) if (v[0] === "neutral") return v[1];
+
   return "";
 }
 
@@ -337,15 +318,13 @@ export async function getEmotion(
   const { getCharImage } = await import("./characterImage");
   const selectedChar = get(selectedCharID);
   const currentDat = db.characters[selectedChar];
-  if (!currentDat) {
-    return [];
-  }
+  if (!currentDat) return [];
+
   let charIdList: string[] = [];
 
   if (currentDat.type === "group") {
-    if (currentDat.characters.length === 0) {
-      return [];
-    }
+    if (currentDat.characters.length === 0) return [];
+
     switch (currentDat.viewScreen) {
       case "multiple":
         charIdList = currentDat.characters;
@@ -371,11 +350,9 @@ export async function getEmotion(
         break;
       }
     }
-  } else {
-    charIdList = [currentDat.chaId];
-  }
+  } else charIdList = [currentDat.chaId];
 
-  let datas: string[] = [
+  const datas: string[] = [
     currentDat.viewScreen === "emp" ? "emp" : ("normal" as const),
   ];
   for (const chaid of charIdList) {
@@ -391,16 +368,13 @@ export async function getEmotion(
       } else {
         im = await getCharImage(currEmotion[currEmotion.length - 1][1], type);
       }
-      if (im && im.length > 2) {
-        datas.push(im);
-      }
+
+      if (im && im.length > 2) datas.push(im);
     } else if (currentChar.viewScreen === "imggen") {
       const currEmotion = chaEmotion[currentChar.chaId];
       if (!currEmotion || currEmotion.length === 0) {
         datas.push(await getCharImage(currentChar.image ?? "", "plain"));
-      } else {
-        datas.push(currEmotion[currEmotion.length - 1][1]);
-      }
+      } else datas.push(currEmotion[currEmotion.length - 1][1]);
     }
   }
   return datas;
@@ -409,15 +383,12 @@ export async function getEmotion(
 export function getAuthorNoteDefaultText() {
   const db = settingsStore.state;
   const template = presetStore.state.promptTemplate;
-  if (!template) {
-    return "";
-  }
+  if (!template) return "";
 
   for (const v of template) {
-    if (v.type === "authornote") {
-      return v.defaultText ?? "";
-    }
+    if (v.type === "authornote") return v.defaultText ?? "";
   }
+
   return "";
 }
 
@@ -482,31 +453,27 @@ export function toState<T>(t: T): Writable<T> {
 }
 
 export function BufferToText(data: Uint8Array) {
-  if (!TextDecoder) {
-    return Buffer.from(data).toString("utf-8");
-  }
+  if (!TextDecoder) return Buffer.from(data).toString("utf-8");
+
   return new TextDecoder().decode(data);
 }
 
 export function encodeMultilangString(data: { [code: string]: string }) {
   let result = "";
-  if (data.xx) {
-    result = data.xx;
-  }
-  for (const key in data) {
-    result = `${result}\n# \`${key}\`\n${data[key]}`;
-  }
+  if (data.xx) result = data.xx;
+
+  for (const key in data) result = `${result}\n# \`${key}\`\n${data[key]}`;
+
   return result;
 }
 
 export function parseMultilangString(data: string) {
-  let result: { [code: string]: string } = {};
+  const result: { [code: string]: string } = {};
   const regex = /# `(.+?)`\n([\s\S]+?)(?=\n# `|$)/g;
   let m: RegExpExecArray;
   while ((m = regex.exec(data)) !== null) {
-    if (m.index === regex.lastIndex) {
-      regex.lastIndex++;
-    }
+    if (m.index === regex.lastIndex) regex.lastIndex++;
+
     result[m[1]] = m[2];
   }
   result.xx = data.replace(regex, "");
@@ -541,9 +508,7 @@ export function blobToUint8Array(data: Blob) {
     reader.onload = () => {
       if (reader.result instanceof ArrayBuffer) {
         resolve(new Uint8Array(reader.result));
-      } else {
-        reject(new Error("reader.result is not ArrayBuffer"));
-      }
+      } else reject(new Error("reader.result is not ArrayBuffer"));
     };
     reader.onerror = () => {
       reject(reader.error);
@@ -695,7 +660,7 @@ export function sfc32(a: number, b: number, c: number, d: number) {
     b |= 0;
     c |= 0;
     d |= 0;
-    let t = (((a + b) | 0) + d) | 0;
+    const t = (((a + b) | 0) + d) | 0;
     d = (d + 1) | 0;
     a = b ^ (b >>> 9);
     b = (c + (c << 3)) | 0;
@@ -707,9 +672,8 @@ export function sfc32(a: number, b: number, c: number, d: number) {
 
 export function uuidtoNumber(uuid: string) {
   let result = 0;
-  for (let i = 0; i < uuid.length; i++) {
-    result += uuid.charCodeAt(i);
-  }
+  for (let i = 0; i < uuid.length; i++) result += uuid.charCodeAt(i);
+
   return result;
 }
 
@@ -722,6 +686,7 @@ export function trimUntilPunctuation(s: string) {
   while (result.length > 0 && !isLastCharPunctuation(result)) {
     result = result.slice(0, -1);
   }
+
   return result;
 }
 
@@ -770,9 +735,8 @@ export function appendLastPath(url, lastPath) {
 export function getNodetextToSentence(node: Node): string {
   let result = "";
   for (const child of node.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      result += child.textContent;
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
+    if (child.nodeType === Node.TEXT_NODE) result += child.textContent;
+    else if (child.nodeType === Node.ELEMENT_NODE) {
       if (child.nodeName === "BR") {
         result += "\n";
         continue;
@@ -792,11 +756,10 @@ export function getNodetextToSentence(node: Node): string {
         result += "**" + getNodetextToSentence(child) + "**";
       } else if (child.nodeName === "EM" || child.nodeName === "I") {
         result += "*" + getNodetextToSentence(child) + "*";
-      } else {
-        result += getNodetextToSentence(child);
-      }
+      } else result += getNodetextToSentence(child);
     }
   }
+
   return result;
 }
 
@@ -1021,9 +984,8 @@ export const TagList = [
 
 export const searchTagList = (query: string) => {
   const splited = query.split(",").map((v) => v.trim());
-  if (splited.length > 10) {
-    return [];
-  }
+  if (splited.length > 10) return [];
+
   const realQuery = splited.at(-1).trim().toLowerCase();
 
   const result: string[] = [];
@@ -1055,17 +1017,13 @@ export const isKnownUri = (uri: string) => {
 
 export function parseKeyValue(template: string) {
   try {
-    if (!template) {
-      return [];
-    }
+    if (!template) return [];
 
     const keyValue: [string, string][] = [];
 
     for (const line of template.split("\n")) {
       const [key, value] = line.split("=");
-      if (key && value) {
-        keyValue.push([key, value]);
-      }
+      if (key && value) keyValue.push([key, value]);
     }
 
     return keyValue;
@@ -1115,9 +1073,7 @@ export type sidebarToggle =
 
 export function parseToggleSyntax(template: string) {
   try {
-    if (!template) {
-      return [];
-    }
+    if (!template) return [];
 
     const keyValue: sidebarToggle[] = [];
 
@@ -1173,13 +1129,13 @@ export function pickHashRand(cid: number, word: string) {
     for (let counter = 0; counter < word.length; counter++) {
       hashAddress = (hashAddress << 5) + hashAddress + word.charCodeAt(counter);
     }
+
     return hashAddress;
   };
   const randF = sfc32(rand(word), rand(word), rand(word), rand(word));
   const v = cid % 1000;
-  for (let i = 0; i < v; i++) {
-    randF();
-  }
+  for (let i = 0; i < v; i++) randF();
+
   return randF();
 }
 
@@ -1209,23 +1165,22 @@ export function simplifySchema(
   }
 
   if (Array.isArray(schema.type)) {
-    if (schema.type.includes("null")) {
-      schema.nullable = true;
-    }
+    if (schema.type.includes("null")) schema.nullable = true;
+
     schema.type = (schema.type as string[]).filter((v) => v !== "null")[0];
   }
 
   console.log("schema", schema);
   const result: any = {};
 
-  if (schema.type) {
-    result.type = (schema.type as string)?.toLowerCase();
-  }
+  if (schema.type) result.type = (schema.type as string)?.toLowerCase();
+
   if (schema.type === "object") {
     result.properties = {};
     for (const key in schema.properties) {
       result.properties[key] = simplifySchema(schema.properties[key], args);
     }
+
     if (schema.required && schema.required.length > 0) {
       result.required = schema.required;
     }
@@ -1238,13 +1193,9 @@ export function simplifySchema(
     result.enum = schema.enum;
   }
 
-  if (schema.type === "string" && schema.format) {
-    result.format = schema.format;
-  }
+  if (schema.type === "string" && schema.format) result.format = schema.format;
 
-  if (schema.nullable) {
-    result.nullable = true;
-  }
+  if (schema.nullable) result.nullable = true;
 
   if (schema.maxLength !== undefined && schema.maxLength !== null) {
     result.maxLength = schema.maxLength;
@@ -1262,9 +1213,7 @@ export function simplifySchema(
     result.maxProperties = schema.maxProperties;
   }
 
-  if (schema.description) {
-    result.description = schema.description;
-  }
+  if (schema.description) result.description = schema.description;
 
   if (schema.anyOf && schema.anyOf.length > 0) {
     console.log("anyOf", schema.anyOf);
@@ -1290,6 +1239,7 @@ export const jsonOutputTrimmer = (data: string) => {
   if (data.startsWith("```json") && data.endsWith("```")) {
     data = data.slice(7, -3).trim();
   }
+
   return data.trim();
 };
 
@@ -1303,9 +1253,7 @@ export function asBuffer(
 ): Uint8Array<ArrayBuffer> | ArrayBuffer {
   if (arr instanceof Uint8Array) {
     return arr as unknown as Uint8Array<ArrayBuffer>;
-  } else {
-    return arr as unknown as ArrayBuffer;
-  }
+  } else return arr as unknown as ArrayBuffer;
 }
 
 /**
@@ -1341,9 +1289,7 @@ export class Semaphore {
       next();
       return;
     }
-    if (this.available < this.max) {
-      this.available += 1;
-    }
+    if (this.available < this.max) this.available += 1;
   }
 }
 
@@ -1355,7 +1301,7 @@ export {
 
 export function base64url(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
-  let encodedSource = btoa(String.fromCharCode.apply(null, [...bytes]))
+  const encodedSource = btoa(String.fromCharCode.apply(null, [...bytes]))
     .replace(/=+$/, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");

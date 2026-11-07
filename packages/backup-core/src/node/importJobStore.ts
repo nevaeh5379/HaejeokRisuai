@@ -93,6 +93,7 @@ export class LocalBackupImportJobStore {
     if (!job || job.status !== "pending" || !job.uploadToken || !uploadToken) {
       return false;
     }
+
     const expected = Buffer.from(job.uploadToken);
     const actual = Buffer.from(uploadToken);
     return (
@@ -109,6 +110,7 @@ export class LocalBackupImportJobStore {
         "job_not_found",
       );
     }
+
     return job;
   }
 
@@ -120,6 +122,7 @@ export class LocalBackupImportJobStore {
         "job_already_started",
       );
     }
+
     job.status = "uploading";
     job.uploadToken = null;
     job.progress = {
@@ -137,6 +140,7 @@ export class LocalBackupImportJobStore {
         "Local backup import is not ready to restore",
       );
     }
+
     job.status = "restoring";
     job.progress = { stage: "reading", current: 0, total: 0 };
   }
@@ -188,6 +192,7 @@ export class LocalBackupImportJobStore {
     ) {
       await job.completion;
     }
+
     return {
       status: job.status,
       error: job.error,

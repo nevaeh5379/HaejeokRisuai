@@ -30,6 +30,7 @@ export class RemoteDatabaseBackupClient {
     if (json.length < 64 * 1024 || typeof CompressionStream === "undefined") {
       return { body: json };
     }
+
     const compressed = new Blob([json])
       .stream()
       .pipeThrough(new CompressionStream("gzip"));
@@ -53,6 +54,7 @@ export class RemoteDatabaseBackupClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "Backup database status load failed");
     }
+
     return await response.json();
   }
 
@@ -78,6 +80,7 @@ export class RemoteDatabaseBackupClient {
         "Backup database connection test failed",
       );
     }
+
     return await response.json();
   }
 
@@ -97,6 +100,7 @@ export class RemoteDatabaseBackupClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "Backup database configuration failed");
     }
+
     return await response.json();
   }
 
@@ -124,9 +128,8 @@ export class RemoteDatabaseBackupClient {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === "progress") {
-          onProgress?.(parsed);
-        } else if (parsed.type === "done") {
+        if (parsed.type === "progress") onProgress?.(parsed);
+        else if (parsed.type === "done") {
           finalResult = {
             success: parsed.success !== false,
             lastFullSyncAt: parsed.lastFullSyncAt,
@@ -175,6 +178,7 @@ export class RemoteDatabaseBackupClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "Backup database removal failed");
     }
+
     return await response.json();
   }
 }

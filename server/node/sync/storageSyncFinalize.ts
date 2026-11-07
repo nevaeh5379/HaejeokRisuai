@@ -33,6 +33,7 @@ function assertReadySession(session?: any): any {
       "invalid_finalize_session",
     );
   }
+
   if (session.status !== "sql-ready") {
     throw new StorageSyncFinalizeError(
       "Storage sync session has not finished SQL staging",
@@ -70,6 +71,7 @@ async function preflightStorageSyncFinalize(options?: any): Promise<any> {
       "target_changed",
     );
   }
+
   const skippedAssets: any = await assetStaging.verifySkippedAssets(
     session,
     assetStorage,
@@ -122,6 +124,7 @@ class StorageSyncFinalizeGate {
         "finalize_in_progress",
       );
     }
+
     const token: any = Symbol("storage-sync-finalize");
     let resolveDrain: any = null;
     const drained: any =
@@ -239,6 +242,7 @@ async function finalizeStorageSyncReplacement(options?: any): Promise<any> {
           throw rollbackError;
         }
       }
+
       throw asTargetChanged(error);
     }
 

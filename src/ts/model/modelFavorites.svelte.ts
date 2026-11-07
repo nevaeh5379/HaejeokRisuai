@@ -36,9 +36,8 @@ class ModelFavoritesStore {
     if (!modelId) return;
     if (this.favorites.includes(modelId)) {
       this.favorites = this.favorites.filter((id) => id !== modelId);
-    } else {
-      this.favorites = [...this.favorites, modelId];
-    }
+    } else this.favorites = [...this.favorites, modelId];
+
     saveToStorage(FAVORITES_STORAGE_KEY, $state.snapshot(this.favorites));
   }
 

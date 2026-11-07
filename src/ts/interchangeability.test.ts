@@ -102,9 +102,8 @@ describe("interchangeability conversion optimizations", () => {
         embeddedModule: editableModule(),
       };
       const before = structuredClone(source);
-      if (target === "module") {
-        editModule(convertPersonaToModule(source));
-      } else {
+      if (target === "module") editModule(convertPersonaToModule(source));
+      else {
         const result = convertPersonaToCharacter(source);
         result.globalLore[0].content = "edited";
         result.triggerscript[0].effect.length = 0;

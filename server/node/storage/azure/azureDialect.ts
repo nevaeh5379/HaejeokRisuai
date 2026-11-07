@@ -46,6 +46,7 @@ function quoteTable(table: string): string {
   if (parts.length > 2 || parts.some((part) => !IDENTIFIER.test(part))) {
     throw new Error(`Unsafe SQL identifier: ${table}`);
   }
+
   return parts.map((part) => `[${part}]`).join(".");
 }
 
@@ -53,6 +54,7 @@ function quote(column: string): string {
   if (!IDENTIFIER.test(column)) {
     throw new Error(`Unsafe SQL identifier: ${column}`);
   }
+
   return `[${column}]`;
 }
 
@@ -121,6 +123,7 @@ export class AzureDialect implements SqlDialect {
         for (const [column, type] of columns) {
           item[column] = payloadValue(row[column], type);
         }
+
         return item;
       });
       const request = this.request();

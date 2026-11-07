@@ -25,11 +25,8 @@ export async function additionalInformations(
         let name = chat.saying ?? "";
 
         if (!name) {
-          if (chat.role === "user") {
-            name = getUserName(chatTarget);
-          } else {
-            name = char.name;
-          }
+          if (chat.role === "user") name = getUserName(chatTarget);
+          else name = char.name;
         }
 
         return `${name}: ${chat.data}`;

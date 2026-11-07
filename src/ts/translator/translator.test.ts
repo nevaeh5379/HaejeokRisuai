@@ -391,6 +391,7 @@ describe("translation direction and cache context", () => {
         translatorNote: `previous context ${i}`,
       });
     }
+
     await expect(translate("chat text", false)).resolves.toBe(
       "chat text-translated",
     );

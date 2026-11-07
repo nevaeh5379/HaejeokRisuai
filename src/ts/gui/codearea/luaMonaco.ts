@@ -260,9 +260,8 @@ function toCompletionItem(
 }
 
 export function registerLuaMonaco() {
-  if (registered) {
-    return;
-  }
+  if (registered) return;
+
   registered = true;
 
   monaco.languages.registerCompletionItemProvider("lua", {

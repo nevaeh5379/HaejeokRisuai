@@ -29,6 +29,7 @@ export async function tryExecuteNodeProvider(
     ) {
       return null;
     }
+
     const result = await storage.executeChatProvider(
       { format, payload },
       abortSignal,
@@ -57,6 +58,7 @@ export async function tryExecuteNodeProviderTransport(
   if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
     return null;
   }
+
   const storage = forageStorage.realStorage;
   try {
     const capabilities = await storage.getNodeProviderCapabilities(abortSignal);

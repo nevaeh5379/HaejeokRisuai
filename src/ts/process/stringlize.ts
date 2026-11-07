@@ -12,34 +12,28 @@ export function stringlizeChat(
   char: string,
   continued: boolean,
 ) {
-  let resultString: string[] = [];
+  const resultString: string[] = [];
   for (const form of formated) {
-    if (form.memo?.startsWith("inlayImage")) {
-      continue;
-    }
-    if (form.role === "system") {
-      resultString.push("system: " + form.content);
-    } else if (form.name) {
-      resultString.push(form.name + ": " + form.content);
-    } else {
-      resultString.push(form.content);
-    }
+    if (form.memo?.startsWith("inlayImage")) continue;
+
+    if (form.role === "system") resultString.push("system: " + form.content);
+    else if (form.name) resultString.push(form.name + ": " + form.content);
+    else resultString.push(form.content);
   }
   let res = resultString.join("\n\n");
 
-  if (!continued) {
-    res += `\n\n${char}:`;
-  }
+  if (!continued) res += `\n\n${char}:`;
+
   return res;
 }
 
 function appendWhitespace(prefix: string, seperator: string = " ") {
-  if (!prefix) {
-    return "";
-  }
+  if (!prefix) return "";
+
   if (prefix && !"> \n".includes(prefix[prefix.length - 1])) {
     prefix += seperator.includes("\n\n") ? "\n" : " ";
   }
+
   return prefix;
 }
 export function stringlizeChatOba(
@@ -50,7 +44,7 @@ export function stringlizeChatOba(
   chatTarget?: ChatExecutionTarget,
 ) {
   const db = settingsStore.state;
-  let resultString: string[] = [];
+  const resultString: string[] = [];
   let { systemPrefix, userPrefix, assistantPrefix, seperator } =
     presetStore.state.ooba.formating;
   systemPrefix = systemPrefix ?? "";
@@ -86,9 +80,7 @@ export function stringlizeChatOba(
     if (presetStore.state.ooba.formating.useName) {
       console.log(name);
       resultString.push(prefix + name + form.content);
-    } else {
-      resultString.push(prefix + form.content);
-    }
+    } else resultString.push(prefix + form.content);
   }
   if (!continued) {
     if (presetStore.state.ooba.formating.useName) {
@@ -98,21 +90,16 @@ export function stringlizeChatOba(
             `${getUserName(chatTarget)}:\n` +
             presetStore.state.autoSuggestPrefix,
         );
-      } else {
-        resultString.push(assistantPrefix + `${characterName}:`);
-      }
-    } else {
-      if (suggesting) {
-        resultString.push(
-          appendWhitespace(assistantPrefix, seperator) +
-            `\n` +
-            presetStore.state.autoSuggestPrefix,
-        );
-      } else {
-        resultString.push(assistantPrefix);
-      }
-    }
+      } else resultString.push(assistantPrefix + `${characterName}:`);
+    } else if (suggesting) {
+      resultString.push(
+        appendWhitespace(assistantPrefix, seperator) +
+          `\n` +
+          presetStore.state.autoSuggestPrefix,
+      );
+    } else resultString.push(assistantPrefix);
   }
+
   console.log(resultString);
   return resultString.join(seperator).trim();
 }
@@ -124,9 +111,8 @@ function toTitleCase(s: string) {
 export function getStopStrings(suggesting: boolean = false) {
   const db = settingsStore.state;
   let { userPrefix, seperator } = presetStore.state.ooba.formating;
-  if (!seperator) {
-    seperator = "\n";
-  }
+  if (!seperator) seperator = "\n";
+
   const username = getUserName();
   const stopStrings = [
     "GPT4 User",
@@ -136,9 +122,8 @@ export function getStopStrings(suggesting: boolean = false) {
     userPrefix,
     `${username}:`,
   ];
-  if (suggesting) {
-    stopStrings.push("\n\n");
-  }
+  if (suggesting) stopStrings.push("\n\n");
+
   for (const user of userStrings) {
     for (const u of [
       user.toLowerCase(),
@@ -150,6 +135,7 @@ export function getStopStrings(suggesting: boolean = false) {
       stopStrings.push(`### ${u}`);
     }
   }
+
   return Array.from(new Set(stopStrings));
 }
 
@@ -170,17 +156,12 @@ export function unstringlizeChat(
 
   for (const chunk of chunks) {
     const ind = text.indexOf(chunk);
-    if (ind === -1) {
-      continue;
-    }
-    if (minIndex === -1 || minIndex > ind) {
-      minIndex = ind;
-    }
+    if (ind === -1) continue;
+
+    if (minIndex === -1 || minIndex > ind) minIndex = ind;
   }
 
-  if (minIndex !== -1) {
-    text = text.substring(0, minIndex).trim();
-  }
+  if (minIndex !== -1) text = text.substring(0, minIndex).trim();
 
   return text;
 }
@@ -191,13 +172,13 @@ export function getUnstringlizerChunks(
   mode: "ain" | "normal" = "normal",
   chatTarget?: ChatExecutionTarget,
 ) {
-  let chunks: string[] = [
+  const chunks: string[] = [
     "system note:",
     "system:",
     "system note：",
     "system：",
   ];
-  let charNames: string[] = [];
+  const charNames: string[] = [];
   const db = settingsStore.state;
   if (char) {
     charNames.push(char);
@@ -233,16 +214,15 @@ export function getUnstringlizerChunks(
           chunks.push(`${form.name} `);
           chunks.push(`${form.name}　`);
         }
-      } else {
-        if (!chunks.includes(`${form.name}:`)) {
-          chunks.push(`${form.name}:`);
-          chunks.push(`${form.name}：`);
-          chunks.push(`${form.name}: `);
-          chunks.push(`${form.name}： `);
-        }
+      } else if (!chunks.includes(`${form.name}:`)) {
+        chunks.push(`${form.name}:`);
+        chunks.push(`${form.name}：`);
+        chunks.push(`${form.name}: `);
+        chunks.push(`${form.name}： `);
       }
     }
   }
+
   return { chunks, extChunk: charNames.concat(chunks) };
 }
 
@@ -252,7 +232,7 @@ export function stringlizeAINChat(
   continued: boolean,
   chatTarget?: ChatExecutionTarget,
 ) {
-  let resultString: string[] = [];
+  const resultString: string[] = [];
   const db = settingsStore.state;
 
   for (const form of formated) {
@@ -264,27 +244,22 @@ export function stringlizeAINChat(
       resultString.push("[新しいチャットの始まり]");
       continue;
     }
-    if (form.role === "system") {
-      resultString.push(form.content);
-    } else if (form.role === "user") {
+    if (form.role === "system") resultString.push(form.content);
+    else if (form.role === "user") {
       resultString.push(...formatToAIN(getUserName(chatTarget), form.content));
     } else if (form.name || form.role === "assistant") {
       resultString.push(...formatToAIN(form.name ?? char, form.content));
-    } else {
-      resultString.push(form.content);
-    }
+    } else resultString.push(form.content);
   }
   let res = resultString.join("\n\n");
-  if (!continued) {
-    res += +`\n\n${char} 「`;
-  } else {
-    res += " 「";
-  }
+  if (!continued) res += +`\n\n${char} 「`;
+  else res += " 「";
+
   return res;
 }
 
 function extractAINOutputStrings(inputString: string, characters: string[]) {
-  let results: {
+  const results: {
     content: string;
     character: string;
   }[] = [];
@@ -316,7 +291,7 @@ function extractAINOutputStrings(inputString: string, characters: string[]) {
       });
       break;
     } else {
-      let endQuoteIndex = remainingString.indexOf(
+      const endQuoteIndex = remainingString.indexOf(
         "」",
         characterIndex + character.length,
       );
@@ -357,7 +332,7 @@ export function unstringlizeAIN(
     chatTarget,
   );
   const chunks = chunksResult.chunks;
-  let result: ["char" | "user", string][] = [];
+  const result: ["char" | "user", string][] = [];
   data = `${char} 「` + data;
 
   for (const n of chunksResult.extChunk) {
@@ -370,11 +345,8 @@ export function unstringlizeAIN(
   const contents = extractAINOutputStrings(data, chunks);
   for (const cont of contents) {
     if (cont.character === "[narrator]") {
-      if (result.length === 0) {
-        result[0] = ["char", cont.content];
-      } else {
-        result[result.length - 1][1] += "\n" + cont.content;
-      }
+      if (result.length === 0) result[0] = ["char", cont.content];
+      else result[result.length - 1][1] += "\n" + cont.content;
     } else {
       const role =
         cont.character.trim() === getUserName(chatTarget) ? "user" : "char";
@@ -387,21 +359,21 @@ export function unstringlizeAIN(
 
 function formatToAIN(name: string, content: string) {
   function extractContent(str: string) {
-    let result: {
+    const result: {
       type: "outside" | "inside";
       content: string;
     }[] = [];
     let lastEndIndex = 0;
-    let regex = /「(.*?)」/g;
+    const regex = /「(.*?)」/g;
     let match: RegExpExecArray | null = null;
 
     while ((match = regex.exec(str)) !== null) {
-      let start = match.index;
-      let end = start + match[0].length;
-      let inside = match[1];
+      const start = match.index;
+      const end = start + match[0].length;
+      const inside = match[1];
 
       if (start != lastEndIndex) {
-        let outside = str.slice(lastEndIndex, start);
+        const outside = str.slice(lastEndIndex, start);
         result.push({
           type: "outside",
           content: outside,
@@ -417,7 +389,7 @@ function formatToAIN(name: string, content: string) {
     }
 
     if (lastEndIndex < str.length) {
-      let outside = str.slice(lastEndIndex);
+      const outside = str.slice(lastEndIndex);
       result.push({
         type: "outside",
         content: outside,
@@ -430,21 +402,16 @@ function formatToAIN(name: string, content: string) {
   let quoteCounter = 0;
   content = content.replace(/"/g, () => {
     quoteCounter++;
-    if (quoteCounter % 2 !== 0) {
-      return "「";
-    } else {
-      return "」";
-    }
+    if (quoteCounter % 2 !== 0) return "「";
+    else return "」";
   });
 
   const conts = extractContent(content);
-  let strs: string[] = [];
+  const strs: string[] = [];
   for (const cont of conts) {
-    if (cont.type === "inside") {
-      strs.push(`${name} 「${cont.content}」`);
-    } else {
-      strs.push(cont.content);
-    }
+    if (cont.type === "inside") strs.push(`${name} 「${cont.content}」`);
+    else strs.push(cont.content);
   }
+
   return strs;
 }

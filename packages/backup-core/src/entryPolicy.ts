@@ -40,6 +40,7 @@ function normalizeBackupEntryName(name: string): string | null {
   ) {
     return null;
   }
+
   return normalized;
 }
 
@@ -60,8 +61,9 @@ function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
   if (Fragment.parseName(normalized) !== null) return "databaseStream";
   if (COLD_STORAGE_RE.test(normalized)) return "coldStorage";
   if (INLAY_RE.test(normalized)) return "inlay";
-  if (normalized.startsWith("assets/") || !normalized.includes("/"))
+  if (normalized.startsWith("assets/") || !normalized.includes("/")) {
     return "asset";
+  }
   return "extension";
 }
 
@@ -84,9 +86,7 @@ function normalizeBackupAssetPath(name: string): string {
   const normalizedName = name.replace(/\\/g, "/");
   const segments = normalizedName.split("/");
 
-  while (segments[0] === "assets") {
-    segments.shift();
-  }
+  while (segments[0] === "assets") segments.shift();
 
   if (
     segments.length === 0 ||

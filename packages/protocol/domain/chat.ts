@@ -91,11 +91,14 @@ const REQUIRED_FIELDS = new Set<string>(["name", "note", "localLore"]);
 export function validateChatKeys(
   keys: readonly string[],
 ): (keyof ChatFields)[] {
-  if (keys.length === 0)
+  if (keys.length === 0) {
     throw new TypeError("At least one chat field is required");
-  for (const key of keys)
-    if (!Object.hasOwn(FIELD_NAMES, key))
+  }
+  for (const key of keys) {
+    if (!Object.hasOwn(FIELD_NAMES, key)) {
       throw new TypeError(`Unknown chat field: ${key}`);
+    }
+  }
   return [...new Set(keys)] as (keyof ChatFields)[];
 }
 
@@ -103,15 +106,18 @@ export function validateChatKeys(
  * Explicit undefined clears an optional field. Identity, ordering and derived values cannot be patched. */
 export function validateChatUpdate(patch: ChatUpdate): void {
   for (const key of Object.keys(patch)) {
-    if (!Object.hasOwn(FIELD_NAMES, key))
+    if (!Object.hasOwn(FIELD_NAMES, key)) {
       throw new TypeError(`Unknown chat field: ${key}`);
-    if (READ_ONLY_FIELDS.has(key))
+    }
+    if (READ_ONLY_FIELDS.has(key)) {
       throw new TypeError(`Chat field is read-only: ${key}`);
+    }
     if (
       REQUIRED_FIELDS.has(key) &&
       patch[key as keyof ChatUpdate] === undefined
-    )
+    ) {
       throw new TypeError(`Chat field cannot be undefined: ${key}`);
+    }
   }
 }
 

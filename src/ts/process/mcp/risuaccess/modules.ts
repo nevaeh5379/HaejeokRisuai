@@ -398,9 +398,7 @@ export class ModuleHandler extends MCPToolHandler {
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
 
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     const enabledModules = new Set(moduleStore.enabledModules || []);
     const defaultFields = ["name", "description", "id", "enabled"];
@@ -421,13 +419,10 @@ export class ModuleHandler extends MCPToolHandler {
       // TODO: Guard against field
       if (!allowedFields.has(field)) continue;
 
-      if (field === "enabled") {
-        obj.enabled = enabledModules.has(module.id);
-      } else {
+      if (field === "enabled") obj.enabled = enabledModules.has(module.id);
+      else {
         const val = module[field];
-        if (val !== undefined) {
-          obj[field] = val;
-        }
+        if (val !== undefined) obj[field] = val;
       }
     }
 
@@ -478,14 +473,13 @@ export class ModuleHandler extends MCPToolHandler {
 
       if (key === "enabled") {
         const enabledModules = new Set(moduleStore.enabledModules || []);
-        if (value) {
-          enabledModules.add(id);
-        } else {
-          enabledModules.delete(id);
-        }
+        if (value) enabledModules.add(id);
+        else enabledModules.delete(id);
+
         moduleStore.enabledModules = Array.from(enabledModules);
-      } else {
-        // @ts-ignore
+      } else
+      // @ts-ignore
+      {
         module[key] = value;
       }
     }
@@ -504,9 +498,7 @@ export class ModuleHandler extends MCPToolHandler {
     offset: number = 0,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (count > 100) count = 100;
     if (count < 1) count = 1;
@@ -534,9 +526,7 @@ export class ModuleHandler extends MCPToolHandler {
     names: string[],
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     const entries = (module.lorebook || []).filter((l) => {
       const displayName =
@@ -577,9 +567,7 @@ export class ModuleHandler extends MCPToolHandler {
     alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (
       !(await this.promptAccess(
@@ -595,9 +583,7 @@ export class ModuleHandler extends MCPToolHandler {
       ];
     }
 
-    if (!module.lorebook) {
-      module.lorebook = [];
-    }
+    if (!module.lorebook) module.lorebook = [];
 
     const index = module.lorebook.findIndex((l) => {
       const displayName =
@@ -627,20 +613,15 @@ export class ModuleHandler extends MCPToolHandler {
 
     const entry = module.lorebook[index];
 
-    if (content !== undefined) {
-      entry.content = content;
-    }
-    if (keys !== undefined) {
-      entry.key = alwaysActive ? "" : keys.join(",");
-    }
-    if (newName !== undefined) {
-      entry.comment = newName;
-    }
+    if (content !== undefined) entry.content = content;
+
+    if (keys !== undefined) entry.key = alwaysActive ? "" : keys.join(",");
+
+    if (newName !== undefined) entry.comment = newName;
+
     if (alwaysActive !== undefined) {
       entry.alwaysActive = alwaysActive;
-      if (alwaysActive) {
-        entry.key = "";
-      }
+      if (alwaysActive) entry.key = "";
     }
 
     return [
@@ -656,9 +637,7 @@ export class ModuleHandler extends MCPToolHandler {
     name: string,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (
       !(await this.promptAccess(
@@ -674,9 +653,7 @@ export class ModuleHandler extends MCPToolHandler {
       ];
     }
 
-    if (!module.lorebook) {
-      module.lorebook = [];
-    }
+    if (!module.lorebook) module.lorebook = [];
 
     const index = module.lorebook.findIndex((l) => {
       const displayName =
@@ -706,9 +683,7 @@ export class ModuleHandler extends MCPToolHandler {
   async getModuleRegexScripts(id: string): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
 
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     const organized = (module.regex || []).map((script) => {
       return {
@@ -742,9 +717,7 @@ export class ModuleHandler extends MCPToolHandler {
     ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (
       !(await this.promptAccess(
@@ -760,9 +733,7 @@ export class ModuleHandler extends MCPToolHandler {
       ];
     }
 
-    if (!module.regex) {
-      module.regex = [];
-    }
+    if (!module.regex) module.regex = [];
 
     const index = module.regex.findIndex((r) => {
       const displayName =
@@ -810,9 +781,7 @@ export class ModuleHandler extends MCPToolHandler {
     name: string,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (
       !(await this.promptAccess(
@@ -828,9 +797,7 @@ export class ModuleHandler extends MCPToolHandler {
       ];
     }
 
-    if (!module.regex) {
-      module.regex = [];
-    }
+    if (!module.regex) module.regex = [];
 
     const index = module.regex.findIndex((r) => {
       const displayName =
@@ -859,9 +826,7 @@ export class ModuleHandler extends MCPToolHandler {
 
   async getModuleLuaScript(id: string): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     const firstTrigger = module.trigger?.[0];
     if (
@@ -889,9 +854,7 @@ export class ModuleHandler extends MCPToolHandler {
     code: string,
   ): Promise<RPCToolCallContent[]> {
     const module = moduleStore.modules.find((m) => m.id === id);
-    if (!module || module.mcp) {
-      return moduleNotFound(id);
-    }
+    if (!module || module.mcp) return moduleNotFound(id);
 
     if (
       !(await this.promptAccess(

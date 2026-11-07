@@ -23,10 +23,12 @@ function parseWebSocketFrame(
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }
+
   const record: Record<string, unknown> = value as Record<string, unknown>;
   if (typeof record.event !== "string" || record.event.length === 0) {
     return null;
   }
+
   const id: number | undefined =
     typeof record.id === "number" &&
     Number.isSafeInteger(record.id) &&

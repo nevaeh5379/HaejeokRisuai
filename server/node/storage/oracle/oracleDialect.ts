@@ -224,6 +224,7 @@ export function oracleTableName(table: string): string {
       return replacement + table.slice(prefix.length);
     }
   }
+
   return table;
 }
 
@@ -238,6 +239,7 @@ function assertIdentifier(value: string): string {
   if (!IDENTIFIER.test(value)) {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
+
   return value;
 }
 
@@ -269,9 +271,8 @@ function bindValue(value: unknown, type: SqlColumnType): unknown {
   if (type === "json") return encodeJsonValue(value);
   if (value === undefined || value === null) return null;
   if (typeof value === "boolean") return value ? 1 : 0;
-  if (type === "binary" && typeof value === "string") {
-    return Buffer.from(value);
-  }
+  if (type === "binary" && typeof value === "string") return Buffer.from(value);
+
   return value;
 }
 
@@ -308,6 +309,7 @@ async function lobToString(value: unknown): Promise<unknown> {
         lob.on?.("error", reject);
       });
     }
+
     return value;
   }
   return String(value);
@@ -417,6 +419,7 @@ export class OracleDialect implements SqlDialect {
       ) {
         await flush();
       }
+
       if (chunkBinds.length === 0) {
         chunkTypes = types;
         chunkSizes = sizes.map((size) => Math.max(1, size));
@@ -425,6 +428,7 @@ export class OracleDialect implements SqlDialect {
           chunkSizes[index] = Math.max(chunkSizes[index], sizes[index]);
         }
       }
+
       chunkBinds.push(binds);
     }
     await flush();
@@ -594,6 +598,7 @@ export class OracleDialect implements SqlDialect {
       if (type === "binary") binaryColumns.add(column);
       else if (type === "text" || type === "json") textColumns.add(column);
     }
+
     const hints = LOB_COLUMNS[table];
     for (const column of hints?.text ?? []) textColumns.add(column);
     for (const column of hints?.binary ?? []) {
@@ -609,6 +614,7 @@ export class OracleDialect implements SqlDialect {
     for (const key of Object.keys(row)) {
       if (row[key] === "\u0000") row[key] = "";
     }
+
     return row;
   }
 

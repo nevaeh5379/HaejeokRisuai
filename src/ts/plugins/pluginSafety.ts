@@ -72,9 +72,8 @@ export async function checkCodeSafety(code: string): Promise<CheckResult> {
     const cachedResult = localStorage.getItem(cacheKey);
     if (cachedResult) {
       const got = JSON.parse(cachedResult) as CheckResult;
-      if (got.checkerVersion === checkerVersion) {
-        return got;
-      }
+      if (got.checkerVersion === checkerVersion) return got;
+
       localStorage.removeItem(cacheKey);
     }
   } catch {
@@ -193,13 +192,9 @@ function purgeSafetyCache(keepKey?: string) {
     const toRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key?.startsWith("safety-") && key !== keepKey) {
-        toRemove.push(key);
-      }
+      if (key?.startsWith("safety-") && key !== keepKey) toRemove.push(key);
     }
-    for (const key of toRemove) {
-      localStorage.removeItem(key);
-    }
+    for (const key of toRemove) localStorage.removeItem(key);
   } catch {}
 }
 

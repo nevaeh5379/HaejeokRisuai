@@ -28,6 +28,7 @@ describe("RemoteLocalBackupClient import API", () => {
         if (path === "/api/local-backup/import/jobs") {
           return response({ id: "import-1", uploadToken: "upload-1" });
         }
+
         if (path === "/api/local-backup/import/jobs/import-1/file") {
           return response({
             status: "complete",
@@ -36,6 +37,7 @@ describe("RemoteLocalBackupClient import API", () => {
             recordCount: 12,
           });
         }
+
         if (path.endsWith("/progress")) {
           return response({
             status: "uploading",
@@ -46,6 +48,7 @@ describe("RemoteLocalBackupClient import API", () => {
             },
           });
         }
+
         throw new Error(`unexpected path ${path}`);
       },
     );
@@ -100,6 +103,7 @@ describe("RemoteLocalBackupClient import API", () => {
             uploadToken: "upload-stream",
           });
         }
+
         if (
           path.startsWith("/api/local-backup/import/jobs/import-stream/chunks?")
         ) {
@@ -135,6 +139,7 @@ describe("RemoteLocalBackupClient import API", () => {
         ) {
           throw new Error("successful upload must not be cancelled");
         }
+
         throw new Error(`unexpected path ${path}`);
       }),
       resolve: (path: string) => `http://localhost${path}`,
@@ -190,9 +195,8 @@ describe("RemoteLocalBackupClient import API", () => {
             await new Response(init?.body as BodyInit).arrayBuffer(),
           );
           const previous = seen.get(offset);
-          if (previous) {
-            expect(chunk).toEqual(previous);
-          } else {
+          if (previous) expect(chunk).toEqual(previous);
+          else {
             expect(offset).toBe(received);
             seen.set(offset, chunk);
             received += chunk.byteLength;
@@ -223,6 +227,7 @@ describe("RemoteLocalBackupClient import API", () => {
         if (init?.method === "DELETE") {
           throw new Error("successful retry must not cancel the import");
         }
+
         throw new Error(`unexpected path ${requestPath}`);
       }),
       resolve: (requestPath: string) => `http://localhost${requestPath}`,
@@ -286,21 +291,25 @@ describe("RemoteLocalBackupClient export API", () => {
         if (path.startsWith("/api/local-backup/export/jobs?")) {
           return response({ id: "export 1" });
         }
+
         if (path.endsWith("/progress")) {
           return response({
             status: "streaming",
             progress: { stage: "assets", current: 2, total: 5 },
           });
         }
+
         if (path === "/api/local-backup/export/jobs/export%201") {
           return response({ status: "complete", error: null });
         }
+
         if (path === "/api/local-backup/export/export%201") {
           return new Response(new Uint8Array([1, 2, 3]), {
             status: 200,
             headers: { "content-type": "application/octet-stream" },
           });
         }
+
         throw new Error(`unexpected path ${path}`);
       }),
       resolve: (path: string) => `https://backup.example${path}`,

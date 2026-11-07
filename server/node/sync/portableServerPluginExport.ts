@@ -10,6 +10,7 @@ export async function* iterateServerBackupPlugins(
     if (typeof script !== "string") {
       throw new Error(`Backup could not load plugin script ${id}`);
     }
+
     yield { type: "plugin", id, position, data, script };
   }
 }

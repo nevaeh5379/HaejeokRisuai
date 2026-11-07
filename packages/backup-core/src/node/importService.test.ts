@@ -50,8 +50,9 @@ async function nativeDatabaseEntries(
   ],
 ): Promise<{ fragment: Uint8Array; manifest: Uint8Array }> {
   const counts: Record<string, number> = {};
-  for (const record of records)
+  for (const record of records) {
     counts[record.type] = (counts[record.type] ?? 0) + 1;
+  }
   const fragment = await encodeLegacyBackupDatabase({
     format: "haejeok-stream-fragment",
     index: 1,

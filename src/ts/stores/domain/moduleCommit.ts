@@ -34,9 +34,8 @@ export function buildModuleDelta(
 
   return {
     upserts: current.flatMap((module, position) => {
-      if (previous.get(module.id) === baseline.get(module.id)) {
-        return [];
-      }
+      if (previous.get(module.id) === baseline.get(module.id)) return [];
+
       return [{ id: module.id, position, data: module }];
     }),
     deletes: previousOrder.filter((id) => !baseline.has(id)),

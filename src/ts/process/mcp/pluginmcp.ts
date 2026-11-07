@@ -45,6 +45,7 @@ export async function registerMCPModule(
   if (!arg.identifier.startsWith("plugin:")) {
     throw new Error(`MCP module identifier must start with 'plugin:'.`);
   }
+
   const client = new CustomPluginMCPClient({
     ...arg,
     getToolList,

@@ -149,8 +149,9 @@ async function writeIndexSnapshot(
     }),
     "utf8",
   );
-  if (metadata.length > 64 * 1024 * 1024)
+  if (metadata.length > 64 * 1024 * 1024) {
     throw new RangeError("Vector index cache metadata is too large");
+  }
   const header: any = Buffer.allocUnsafe(PERSIST_HEADER_BYTES);
   PERSIST_MAGIC.copy(header, 0);
   header.writeUInt32LE(metadata.length, PERSIST_MAGIC.length);
@@ -172,8 +173,9 @@ async function writeIndexSnapshot(
         );
       } else {
         const encoded: any = Buffer.allocUnsafe(embedding.byteLength);
-        for (let i: any = 0; i < embedding.length; i++)
+        for (let i: any = 0; i < embedding.length; i++) {
           encoded.writeFloatLE(embedding[i], i * FLOAT_BYTES);
+        }
         await handle.write(encoded);
       }
     }
@@ -240,8 +242,9 @@ async function readPersistedMetadata(filePath?: any): Promise<any> {
     if (
       headerRead.bytesRead !== header.length ||
       !header.subarray(0, PERSIST_MAGIC.length).equals(PERSIST_MAGIC)
-    )
+    ) {
       return null;
+    }
     const metadataLength: any = header.readUInt32LE(PERSIST_MAGIC.length);
     if (metadataLength <= 0 || metadataLength > 64 * 1024 * 1024) return null;
     const metadataBuffer: any = Buffer.alloc(metadataLength);
@@ -257,8 +260,9 @@ async function readPersistedMetadata(filePath?: any): Promise<any> {
       metadata?.version !== PERSIST_VERSION ||
       typeof metadata?.indexId !== "string" ||
       !Array.isArray(metadata?.entries)
-    )
+    ) {
       return null;
+    }
     const stat: any = await handle.stat();
     return { metadata, size: stat.size };
   } catch {
@@ -279,6 +283,7 @@ function loadPersistedIndex(indexId?: any): any {
     ) {
       throw new Error("Invalid vector index cache header");
     }
+
     const metadataLength: any = encoded.readUInt32LE(PERSIST_MAGIC.length);
     if (
       metadataLength <= 0 ||
@@ -287,6 +292,7 @@ function loadPersistedIndex(indexId?: any): any {
     ) {
       throw new Error("Invalid vector index cache metadata length");
     }
+
     const metadata: any = JSON.parse(
       encoded
         .subarray(PERSIST_HEADER_BYTES, PERSIST_HEADER_BYTES + metadataLength)
@@ -301,8 +307,10 @@ function loadPersistedIndex(indexId?: any): any {
         "Vector index cache metadata does not match the requested index",
       );
     }
-    if (metadata.entries.length > MAX_VECTORS_PER_INDEX)
+
+    if (metadata.entries.length > MAX_VECTORS_PER_INDEX) {
       throw new RangeError("Persisted vector index contains too many vectors");
+    }
     const dimension: any =
       metadata.dimension === null ? null : Number(metadata.dimension);
     if (
@@ -313,17 +321,21 @@ function loadPersistedIndex(indexId?: any): any {
     ) {
       throw new RangeError("Persisted vector index has invalid dimensions");
     }
-    if (metadata.revision !== null && metadata.revision !== undefined)
+
+    if (metadata.revision !== null && metadata.revision !== undefined) {
       validateRevision(metadata.revision);
+    }
     const floatCount: any = metadata.entries.length * (dimension || 0);
-    if (floatCount > MAX_FLOATS_PER_INDEX)
+    if (floatCount > MAX_FLOATS_PER_INDEX) {
       throw new RangeError("Persisted vector index exceeds the memory limit");
+    }
     const payloadOffset: any = PERSIST_HEADER_BYTES + metadataLength;
     const payloadBytes: any = floatCount * FLOAT_BYTES;
-    if (encoded.length !== payloadOffset + payloadBytes)
+    if (encoded.length !== payloadOffset + payloadBytes) {
       throw new Error(
         "Persisted vector index payload length does not match metadata",
       );
+    }
     const storage: any = new ArrayBuffer(payloadBytes);
     new Uint8Array(storage).set(encoded.subarray(payloadOffset));
     const vectors: any = new Map();
@@ -346,12 +358,15 @@ function loadPersistedIndex(indexId?: any): any {
           i * dimension * FLOAT_BYTES,
           dimension * FLOAT_BYTES,
         );
-        for (let j: any = 0; j < dimension; j++)
+        for (let j: any = 0; j < dimension; j++) {
           embedding[j] = view.getFloat32(j * FLOAT_BYTES, true);
+        }
       }
-      for (const value of embedding)
-        if (!Number.isFinite(value))
+      for (const value of embedding) {
+        if (!Number.isFinite(value)) {
           throw new Error("Persisted embedding contains a non-finite value");
+        }
+      }
       vectors.set(id, { signature, embedding });
     }
     return {
@@ -452,10 +467,12 @@ function syncVectorIndex(
   descriptors?: any,
   revision: any = null,
 ): any {
-  if (!Array.isArray(descriptors))
+  if (!Array.isArray(descriptors)) {
     throw new TypeError("descriptors must be an array");
-  if (descriptors.length > MAX_VECTORS_PER_INDEX)
+  }
+  if (descriptors.length > MAX_VECTORS_PER_INDEX) {
     throw new RangeError("Too many vectors");
+  }
   if (revision !== null) validateRevision(revision);
   const index: any = touchIndex(indexId, true);
   const activeIds: any = new Set();
@@ -482,6 +499,7 @@ function syncVectorIndex(
       index.vectors.delete(id);
     }
   }
+
   if (index.vectors.size === 0) index.dimension = null;
 
   if (revision !== null) {
@@ -516,29 +534,35 @@ function upsertVectorIndex(indexId?: any, entries?: any): any {
     const id: any = String(entry?.id ?? "");
     const signature: any = String(entry?.signature ?? "");
     const rawEmbedding: any = entry?.embedding;
-    if (!id || !Array.isArray(rawEmbedding))
+    if (!id || !Array.isArray(rawEmbedding)) {
       throw new TypeError("Invalid vector entry");
+    }
     if (rawEmbedding.length === 0 || rawEmbedding.length > MAX_DIMENSIONS) {
       throw new RangeError("Invalid embedding dimensions");
     }
+
     const embedding: any = Float32Array.from(rawEmbedding, (value?: any) =>
       Number(value),
     );
     for (const value of embedding) {
-      if (!Number.isFinite(value))
+      if (!Number.isFinite(value)) {
         throw new TypeError("Embedding contains a non-finite value");
+      }
     }
+
     if (index.dimension !== null && index.dimension !== embedding.length) {
       throw new RangeError(
         "Embedding dimensions do not match the vector index",
       );
     }
+
     index.dimension = embedding.length;
     const existing: any = index.vectors.get(id);
     const nextFloatCount: any =
       index.floatCount - (existing?.embedding.length || 0) + embedding.length;
-    if (nextFloatCount > MAX_FLOATS_PER_INDEX)
+    if (nextFloatCount > MAX_FLOATS_PER_INDEX) {
       throw new RangeError("Vector index memory limit exceeded");
+    }
     index.floatCount = nextFloatCount;
     index.vectors.set(id, { signature, embedding });
     if (index.pendingSignatures?.get(id) === signature) {
@@ -617,14 +641,16 @@ function searchVectorIndex(
   topK: any = null,
 ): any {
   if (!Array.isArray(queries)) throw new TypeError("queries must be an array");
-  if (!VECTOR_SEARCH_METRICS.includes(metric))
+  if (!VECTOR_SEARCH_METRICS.includes(metric)) {
     throw new TypeError("Invalid vector search metric");
+  }
   if (
     topK !== null &&
     (!Number.isSafeInteger(topK) || topK <= 0 || topK > MAX_VECTORS_PER_INDEX)
   ) {
     throw new RangeError("Invalid vector search topK");
   }
+
   const index: any = touchIndex(indexId, false);
   if (!index) return null;
 
@@ -637,19 +663,22 @@ function searchVectorIndex(
     ) {
       throw new RangeError("Invalid query embedding dimensions");
     }
+
     const query: any = Float32Array.from(rawQuery, (value?: any) =>
       Number(value),
     );
     if (index.dimension !== null && query.length !== index.dimension) {
       throw new RangeError("Query dimensions do not match the vector index");
     }
+
     return rankVectors(vectors, query, metric, topK);
   });
 }
 
 async function getVectorIndexCacheStats(scopePrefix: any = ""): Promise<any> {
-  if (typeof scopePrefix !== "string")
+  if (typeof scopePrefix !== "string") {
     throw new TypeError("scopePrefix must be a string");
+  }
   let memoryIndexes: any = 0;
   let memoryVectors: any = 0;
   let memoryFloats: any = 0;
@@ -675,8 +704,9 @@ async function getVectorIndexCacheStats(scopePrefix: any = ""): Promise<any> {
       if (
         !inspected ||
         (scopePrefix && !inspected.metadata.indexId.startsWith(scopePrefix))
-      )
+      ) {
         continue;
+      }
       diskIndexes += 1;
       diskVectors += inspected.metadata.entries.length;
       diskBytes += inspected.size;
@@ -716,8 +746,9 @@ async function getVectorIndexCacheStats(scopePrefix: any = ""): Promise<any> {
 }
 
 async function clearVectorIndexCache(scopePrefix: any = ""): Promise<any> {
-  if (typeof scopePrefix !== "string")
+  if (typeof scopePrefix !== "string") {
     throw new TypeError("scopePrefix must be a string");
+  }
   for (const [indexId, pending] of Array.from(persistTimers.entries()) as [
     string,
     any,
@@ -758,8 +789,9 @@ async function clearVectorIndexCache(scopePrefix: any = ""): Promise<any> {
       if (
         !inspected ||
         (scopePrefix && !inspected.metadata.indexId.startsWith(scopePrefix))
-      )
+      ) {
         continue;
+      }
       await fsp.unlink(filePath).catch(() => {});
       diskIndexes += 1;
       diskBytes += inspected.size;

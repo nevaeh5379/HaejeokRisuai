@@ -81,6 +81,7 @@ export function syncMobileGUI(
       initMobileGesture();
     });
   }
+
   MobileGUI.set(active);
   return active;
 }
@@ -153,9 +154,8 @@ export const hypaV3ProgressStore = writable({
 CustomCSSStore.subscribe((css) => {
   console.log(css);
   const q = document.querySelector("#customcss");
-  if (q) {
-    q.innerHTML = css;
-  } else {
+  if (q) q.innerHTML = css;
+  else {
     const s = document.createElement("style");
     s.id = "customcss";
     s.innerHTML = css;
@@ -166,9 +166,7 @@ CustomCSSStore.subscribe((css) => {
 export function createSimpleCharacter(
   char: Character | GroupChat,
 ): SimpleCharacter | null {
-  if (!char || char.type === "group") {
-    return null;
-  }
+  if (!char || char.type === "group") return null;
 
   const simpleChar: SimpleCharacter = {
     type: "simple",
@@ -239,7 +237,7 @@ export const popupStore = $state({
 export const popUpEditorStore = $state({
   open: false,
   value: "",
-  mode: "default" as "default",
+  mode: "default" as const,
   language: "markdown" as string,
 });
 
@@ -290,6 +288,7 @@ export function openMobileSettingsPage(
       sideBar: sidebar ?? 0,
     };
   }
+
   selectedCharID.set(-1);
   MobileSideBar.set(0);
   MobileGUIStack.set(2);

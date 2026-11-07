@@ -31,6 +31,7 @@ export function normalizeHypaModel(model: unknown): HypaModel {
   ) {
     return model as HypaModel;
   }
+
   return DEFAULT_HYPA_MODEL;
 }
 
@@ -82,9 +83,8 @@ export class HypaProcesser {
     if (isContextModel(this.model)) {
       const provider = getContextProvider(this.model);
       const inputs: string[] = Array.isArray(input) ? input : [input];
-      if (inputType === "query") {
-        return await provider.embedQueries(inputs);
-      }
+      if (inputType === "query") return await provider.embedQueries(inputs);
+
       const groups = inputs.map((s) => [s]);
       const results = await provider.embedDocumentGroups(groups);
       return results.map((group) => group[0]);
@@ -94,6 +94,7 @@ export class HypaProcesser {
       if (!this.customEmbeddingUrl) {
         throw new Error("Custom model requires a Custom Server URL");
       }
+
       const { customEmbeddingUrl } = this;
       const replaceUrl = customEmbeddingUrl.endsWith("/embeddings")
         ? customEmbeddingUrl
@@ -141,9 +142,7 @@ export class HypaProcesser {
     }
     const data = gf.data;
 
-    if (!gf.ok) {
-      throw JSON.stringify(gf.data);
-    }
+    if (!gf.ok) throw JSON.stringify(gf.data);
 
     const result: number[][] = [];
     for (let i = 0; i < data.data.length; i++) {
@@ -155,9 +154,8 @@ export class HypaProcesser {
 
   async testText(text: string) {
     const forageResult: number[] = await this.forage.getItem(text);
-    if (forageResult) {
-      return forageResult;
-    }
+    if (forageResult) return forageResult;
+
     const vec = (await this.embedDocuments([text]))[0];
     await this.forage.setItem(text, vec);
     return vec;
@@ -253,6 +251,7 @@ export class HypaProcesser {
     if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
       return false;
     }
+
     const indexId = this.getServerVectorIndexId();
     if (!indexId) return false;
 
@@ -298,9 +297,7 @@ export class HypaProcesser {
           const vector = cached[i];
           if (vector?.embedding?.length) {
             embeddingByText.set(uniqueTexts[i], vector.embedding);
-          } else {
-            uncachedTexts.push(uniqueTexts[i]);
-          }
+          } else uncachedTexts.push(uniqueTexts[i]);
         }
 
         if (uncachedTexts.length > 0) {
@@ -325,6 +322,7 @@ export class HypaProcesser {
                 `Missing embedding for vector index entry ${entry.id}`,
               );
             }
+
             return {
               id: entry.id,
               signature: vectorContentSignature(content),
@@ -386,6 +384,7 @@ export class HypaProcesser {
     if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
       return null;
     }
+
     const indexId = this.getServerVectorIndexId();
     if (!indexId) return null;
 
@@ -461,9 +460,8 @@ export class HypaProcesser {
 
 export function similarity(a: VectorArray, b: VectorArray) {
   let dot = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-  }
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+
   return dot;
 }
 
@@ -503,5 +501,6 @@ export const chunkArray = <T>(arr: T[], chunkSize: number): T[][] => {
   for (let i = 0; i < arr.length; i += chunkSize) {
     chunks.push(arr.slice(i, i + chunkSize));
   }
+
   return chunks;
 };

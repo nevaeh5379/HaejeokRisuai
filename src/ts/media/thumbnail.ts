@@ -12,9 +12,8 @@ export async function generateClientThumbnail(
   imageData: Uint8Array,
   maxSize: number = 128,
 ): Promise<Uint8Array> {
-  if (typeof window === "undefined") {
-    return imageData;
-  }
+  if (typeof window === "undefined") return imageData;
+
   try {
     const blob = new Blob([imageData as any]);
 
@@ -84,9 +83,7 @@ export async function generateClientThumbnail(
             const dataUrl = canvas.toDataURL("image/webp", 0.8);
             const b64 = dataUrl.split(",")[1];
             resolve(Buffer.from(b64, "base64"));
-          } else {
-            resolve(imageData);
-          }
+          } else resolve(imageData);
         };
         img.onerror = () => {
           URL.revokeObjectURL(url);

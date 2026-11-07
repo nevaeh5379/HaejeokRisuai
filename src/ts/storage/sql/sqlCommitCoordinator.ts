@@ -21,6 +21,7 @@ function conflictRevision(error: unknown): number | null {
   ) {
     return (error as { currentRevision: number }).currentRevision;
   }
+
   return null;
 }
 

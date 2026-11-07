@@ -66,12 +66,14 @@ class PersonaStore
         `Invalid selected persona index: ${String(selected)}`,
       );
     }
+
     const index = typeof selected === "number" ? selected : 0;
     if (!personas[index]) {
       throw new RangeError(
         `[PersonaStore.init] Invalid persona index: ${index} (persona count: ${personas.length})`,
       );
     }
+
     this.personas = personas;
     this.activeIndex = index;
     this.loaded = true;
@@ -120,6 +122,7 @@ class PersonaStore
         "Cannot refresh personas while local changes are pending",
       );
     }
+
     await this.init(storage);
   }
 
@@ -133,6 +136,7 @@ class PersonaStore
         `[${caller}] Invalid persona index: ${index} (persona count: ${this.personas.length})`,
       );
     }
+
     return persona;
   }
 
@@ -176,9 +180,8 @@ class PersonaStore
     this.personas = next.length > 0 ? next : [createDefaultPersona()];
     if (this.activeIndex >= this.personas.length) {
       this.activeIndex = Math.max(0, this.personas.length - 1);
-    } else if (index < this.activeIndex) {
-      this.activeIndex -= 1;
-    }
+    } else if (index < this.activeIndex) this.activeIndex -= 1;
+
     this.markPersonasDirty();
     this.activeIndexDirty = true;
     await this.flush();
@@ -216,9 +219,11 @@ class PersonaStore
     if (personasChanged) {
       commit.root.upserts.push({ key: "personas", value: personas });
     }
+
     if (activeIndexChanged) {
       commit.root.upserts.push({ key: "selectedPersona", value: activeIndex });
     }
+
     await this.queue.enqueue(() => commitSqlChanges(storage, commit));
     this.committedPersonasFingerprint = personasFingerprint;
     this.committedActiveIndex = activeIndex;

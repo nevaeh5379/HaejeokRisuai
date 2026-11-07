@@ -67,6 +67,7 @@ function matchLoreRequest(
       })),
     );
   }
+
   if (request.regex) {
     for (const message of messageList) {
       for (const regexString of request.keys) {
@@ -89,6 +90,7 @@ function matchLoreRequest(
         }
       }
     }
+
     return { matched: false, logs };
   }
 
@@ -117,9 +119,7 @@ function matchLoreRequest(
             activated: key,
           });
           if (!allMode) return { matched: true, logs };
-        } else if (allMode) {
-          allModeMatched = false;
-        }
+        } else if (allMode) allModeMatched = false;
       }
     } else {
       text = text.replace(/ /g, "");
@@ -132,9 +132,7 @@ function matchLoreRequest(
             activated: key,
           });
           if (!allMode) return { matched: true, logs };
-        } else if (allMode) {
-          allModeMatched = false;
-        }
+        } else if (allMode) allModeMatched = false;
       }
     }
   }
@@ -149,8 +147,10 @@ function matchLoreBatch(
   if (!Array.isArray(messages) || !Array.isArray(requests)) {
     throw new TypeError("messages and requests must be arrays");
   }
-  if (requests.length > 4096)
+
+  if (requests.length > 4096) {
     throw new RangeError("Too many lore match requests");
+  }
   return requests.map((request?: any) =>
     matchLoreRequest(messages, request, options),
   );

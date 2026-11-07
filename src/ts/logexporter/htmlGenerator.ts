@@ -86,9 +86,7 @@ export function getRootCssVariables(colorPalette?: ColorPalette): string {
     for (const name of varNames) {
       const val =
         computed.getPropertyValue(name) || root.style.getPropertyValue(name);
-      if (val) {
-        vars.push(`  ${name}: ${val.trim()};`);
-      }
+      if (val) vars.push(`  ${name}: ${val.trim()};`);
     }
   }
 
@@ -99,6 +97,7 @@ export function getRootCssVariables(colorPalette?: ColorPalette): string {
   ) {
     vars.push(`  --risu-theme-bgcolor: ${colorPalette.background};`);
   }
+
   if (
     colorPalette?.text &&
     !vars.some((v) => v.includes("--risu-theme-textcolor"))
@@ -178,9 +177,8 @@ export function convertLogDataToMessages(
   return data.messages.map((m, idx) => {
     let msgData =
       m.rawMessage?.data ?? m.text ?? (m.html ? htmlToText(m.html) : "");
-    if (rules && rules.length > 0) {
-      msgData = applyRulesToString(msgData, rules);
-    }
+    if (rules && rules.length > 0) msgData = applyRulesToString(msgData, rules);
+
     return {
       role: m.role ?? (m.isUser ? "user" : "char"),
       data: msgData,
@@ -267,6 +265,7 @@ function waitForChatsRenderReady(
               await document.fonts.ready;
             } catch {}
           }
+
           // Short RAF tick to allow DOM layout to settle
           setTimeout(() => resolve(), 50);
           return;
@@ -331,9 +330,8 @@ export async function renderLogHtml(
 
   try {
     await waitForChatsRenderReady(container, chatMessages.length);
-    if (settings.embedImages !== false) {
-      await embedContainerImages(container);
-    }
+    if (settings.embedImages !== false) await embedContainerImages(container);
+
     return container.innerHTML;
   } finally {
     try {

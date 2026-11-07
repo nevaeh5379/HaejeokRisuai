@@ -109,6 +109,7 @@ function requireDatabaseObject(
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -118,6 +119,7 @@ function supportedDatabaseRecord(
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     return false;
   }
+
   return [
     "meta",
     "author-note",
@@ -160,6 +162,7 @@ function validatingInlayWriter(
       ) {
         throw new Error("Invalid inlay backup metadata length");
       }
+
       requiredPrefixBytes = 4 + metadataBytes;
     }
     if (prefixBytes >= requiredPrefixBytes) {
@@ -269,6 +272,7 @@ export class LocalBackupImportService {
     if (!Number.isSafeInteger(this.idleTimeoutMs) || this.idleTimeoutMs <= 0) {
       throw new TypeError("Local backup import idle timeout must be positive");
     }
+
     this.maxActiveImports =
       options.maxActiveImports ?? DEFAULT_MAX_ACTIVE_IMPORTS;
     if (
@@ -409,6 +413,7 @@ export class LocalBackupImportService {
           "Portable database fragment contains an unsupported record",
         );
       }
+
       if (recordCount === 0) {
         if (
           record.type !== "meta" ||
@@ -420,10 +425,12 @@ export class LocalBackupImportService {
             "Portable database stream must begin with valid metadata",
           );
         }
+
         sourceRevision = record.revision;
       } else if (record.type === "meta") {
         throw new Error("Portable database stream contains duplicate metadata");
       }
+
       counts[record.type] = (counts[record.type] ?? 0) + 1;
       recordCount++;
     }
@@ -440,6 +447,7 @@ export class LocalBackupImportService {
     if (active.database.mode !== "unknown" && active.deferredLegacy !== entry) {
       throw new Error("Backup mixes or duplicates database formats");
     }
+
     active.database.mode = "legacy";
     const decoded = requireDatabaseObject(
       decodeLegacyBackupDatabase(
@@ -503,6 +511,7 @@ export class LocalBackupImportService {
     if (active.database.mode === "legacy") {
       throw new Error("Backup mixes legacy and streaming database formats");
     }
+
     active.database.mode = "stream";
     const decoded = decodeLegacyBackupDatabase(
       new Uint8Array(await fs.readFile(entry.filePath)),
@@ -513,10 +522,12 @@ export class LocalBackupImportService {
       if (active.database.manifest) {
         throw new Error("Backup contains more than one streaming manifest");
       }
+
       const manifest = Manifest.read(decoded);
       if (!manifest) {
         throw new Error("Portable database stream manifest is invalid");
       }
+
       active.database.manifest = manifest;
       return;
     }
@@ -524,18 +535,21 @@ export class LocalBackupImportService {
     if (active.database.manifest) {
       throw new Error("Database stream fragment appears after the manifest");
     }
+
     const nameIndex = Fragment.parseName(entry.name);
     if (nameIndex !== active.database.expectedFragmentIndex) {
       throw new Error(
         `Streaming backup fragment order is incomplete; expected ${active.database.expectedFragmentIndex}, got ${String(nameIndex)}`,
       );
     }
+
     const fragment = Fragment.read(decoded, {
       expectedIndex: active.database.expectedFragmentIndex,
     });
     if (!fragment) {
       throw new Error(`Invalid portable database fragment: ${entry.name}`);
     }
+
     const records = fragment.records;
     const before = active.database.recordCount;
     this.acceptDatabaseRecords(active.database, records);
@@ -562,16 +576,18 @@ export class LocalBackupImportService {
         return;
       case "coldStorage": {
         const key = getColdStorageBackupKey(entry.name);
-        if (!key)
+        if (!key) {
           throw new Error(`Invalid cold storage backup entry '${entry.name}'`);
+        }
         const value: unknown = JSON.parse(
           await fs.readFile(entry.filePath, "utf8"),
         );
         const retained = `${entry.filePath}.${entry.index}.upstream`;
         await fs.rename(entry.filePath, retained);
         active.coldEntries.set(key, retained);
-        if (isColdStorageBackupData(value))
+        if (isColdStorageBackupData(value)) {
           await active.restore.stageColdStorage(key, value);
+        }
         this.update(id, "coldStorage", 1, 0, entry.name);
         return;
       }
@@ -588,9 +604,11 @@ export class LocalBackupImportService {
     if (state.mode === "unknown" || state.recordCount === 0) {
       throw new Error("Backup does not contain a database entry");
     }
+
     if (state.sourceRevision === null) {
       throw new Error("Backup database metadata is missing");
     }
+
     if (state.mode === "legacy") {
       return {
         sourceRevision: state.sourceRevision,
@@ -610,6 +628,7 @@ export class LocalBackupImportService {
         "Portable database stream manifest does not match its fragments",
       );
     }
+
     for (const [type, count] of Object.entries(manifest.counts)) {
       if ((state.counts[type] ?? 0) !== Number(count ?? 0)) {
         throw new Error(
@@ -617,6 +636,7 @@ export class LocalBackupImportService {
         );
       }
     }
+
     for (const [type, count] of Object.entries(state.counts)) {
       if (
         (manifest.counts as Record<string, number | undefined>)[type] !== count
@@ -626,6 +646,7 @@ export class LocalBackupImportService {
         );
       }
     }
+
     return {
       sourceRevision: state.sourceRevision,
       databaseRecordCount: state.recordCount,
@@ -659,8 +680,9 @@ export class LocalBackupImportService {
         {
           onBeforeFinish: async () => {
             const active = shell as ActiveImport;
-            if (active.deferredLegacy)
+            if (active.deferredLegacy) {
               await this.stageLegacyDatabase(id, active, active.deferredLegacy);
+            }
           },
           onBufferedEntry: async (entry: BufferedBackupEntry): Promise<void> =>
             await this.handleBufferedEntry(id, shell as ActiveImport, entry),
@@ -712,6 +734,7 @@ export class LocalBackupImportService {
           "Another local backup import is already active",
         );
       }
+
       active = this.createActive(id, totalBytes, sourceKind);
       this.active.set(id, active);
     }
@@ -727,6 +750,7 @@ export class LocalBackupImportService {
         "Local backup import upload mode cannot change after it starts",
       );
     }
+
     return resolved;
   }
 
@@ -751,6 +775,7 @@ export class LocalBackupImportService {
         "Local backup import has no active stream",
       );
     }
+
     const active = await activePromise;
     active.finalizing = true;
     try {
@@ -819,12 +844,14 @@ export class LocalBackupImportService {
     if (!this.uploads) {
       throw new Error("Chunked local backup uploads are not configured");
     }
+
     const status = this.jobs.progress(id).status;
     if (status !== "pending" && status !== "uploading") {
       throw new LocalBackupImportJobError(
         "Local backup import is not accepting upload chunks",
       );
     }
+
     if (status === "pending") this.beginUpload(id, totalBytes);
     this.clearIdleTimer(id);
 
@@ -865,6 +892,7 @@ export class LocalBackupImportService {
     if (!this.uploads) {
       throw new Error("Chunked local backup uploads are not configured");
     }
+
     const initialStatus = this.jobs.progress(id).status;
     if (
       initialStatus === "restoring" ||
@@ -873,6 +901,7 @@ export class LocalBackupImportService {
     ) {
       return await this.jobs.wait(id);
     }
+
     try {
       await this.uploads.finalize(id);
     } catch (error) {

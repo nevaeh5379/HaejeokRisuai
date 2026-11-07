@@ -10,11 +10,11 @@ export function stringlizeNAIChat(
   continued: boolean,
 ) {
   const db = settingsStore.state;
-  let seperator =
+  const seperator =
     presetStore.state.NAISettings.seperator.replaceAll("\\n", "\n") || "\n";
-  let starter =
+  const starter =
     presetStore.state.NAISettings.starter.replaceAll("\\n", "\n") || "⁂";
-  let resultString: string[] = [];
+  const resultString: string[] = [];
 
   for (const form of formated) {
     if (form.role === "system") {
@@ -24,35 +24,25 @@ export function stringlizeNAIChat(
         form.content === "[Start a new chat]"
       ) {
         resultString.push(starter);
-      } else {
-        resultString.push(form.content);
-      }
+      } else resultString.push(form.content);
     } else if (form.name || form.role === "assistant") {
-      if (!presetStore.state.NAIappendName) {
-        resultString.push(form.content);
-      } else {
-        resultString.push((form.name ?? char) + ": " + form.content);
-      }
+      if (!presetStore.state.NAIappendName) resultString.push(form.content);
+      else resultString.push((form.name ?? char) + ": " + form.content);
     } else if (form.role === "user") {
       let res = "";
-      if (presetStore.state.NAIadventure) {
-        res += "> ";
-      }
-      if (presetStore.state.NAIappendName) {
-        res += getUserName() + ": ";
-      }
+      if (presetStore.state.NAIadventure) res += "> ";
+
+      if (presetStore.state.NAIappendName) res += getUserName() + ": ";
+
       res += form.content;
       resultString.push(res);
-    } else {
-      resultString.push(form.content);
-    }
+    } else resultString.push(form.content);
   }
 
   let res = resultString.join(seperator);
 
-  if (!continued) {
-    res += `${seperator}${char}:`;
-  }
+  if (!continued) res += `${seperator}${char}:`;
+
   console.log(res);
   return res;
 }

@@ -54,6 +54,7 @@ export function requireChatTarget(target: ChatTarget): ResolvedChatTarget {
       `Chat target not found: ${target.characterId}/${target.chatId}`,
     );
   }
+
   return resolved;
 }
 
@@ -88,6 +89,7 @@ export function requireChatTargetFromIndexes(
       `Chat coordinates not found: ${characterIndex}/${chatIndex}`,
     );
   }
+
   return target;
 }
 

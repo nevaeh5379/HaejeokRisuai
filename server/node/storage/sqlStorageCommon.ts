@@ -90,16 +90,18 @@ function mergeLegacyModulesIntoPayload(
       !isLegacyModule(module) ||
       deleted.has(module.id) ||
       changed.has(module.id)
-    )
+    ) {
       return [];
+    }
     return [
       { id: module.id, position: positions.get(module.id) || 0, data: module },
     ];
   });
   payload.modules.upserts = [...migrated, ...payload.modules.upserts];
   payload.modules.order = order;
-  if (!payload.rootDeletes.includes("modules"))
+  if (!payload.rootDeletes.includes("modules")) {
     payload.rootDeletes.push("modules");
+  }
 }
 
 /** Settings snapshot plus its content hash, as each vendor returns it. */
@@ -156,8 +158,9 @@ class SqlStorageBase {
       !changedKeys.some((key) =>
         (BOOTSTRAP_SETTING_KEYS as readonly string[]).includes(key),
       )
-    )
+    ) {
       return;
+    }
     this.bootstrapCacheGeneration += 1;
     this.bootstrapCache = null;
     this.bootstrapCachePromise = null;
@@ -192,13 +195,15 @@ class SqlStorageBase {
     )
       .then(({ settings, hash }) => {
         const result: BootstrapSnapshot = { database: settings, hash };
-        if (generation === this.bootstrapCacheGeneration)
+        if (generation === this.bootstrapCacheGeneration) {
           this.bootstrapCache = result;
+        }
         return result;
       })
       .finally(() => {
-        if (this.bootstrapCachePromise === pending)
+        if (this.bootstrapCachePromise === pending) {
           this.bootstrapCachePromise = null;
+        }
       });
     this.bootstrapCachePromise = pending;
     return pending;
@@ -359,8 +364,9 @@ function createSqlStorageHelpers({
 
   function asArray(value: unknown, field?: string): unknown[] {
     if (value === undefined) return [];
-    if (!Array.isArray(value))
+    if (!Array.isArray(value)) {
       throw new PayloadError(`${field} must be an array`);
+    }
     return value;
   }
 
@@ -408,6 +414,7 @@ function createSqlStorageHelpers({
     if (typeof value !== "string" || !coldStorageKeyPattern.test(value)) {
       throw new PayloadError(`${field} must be a UUID`);
     }
+
     return value.toLowerCase();
   }
 
@@ -418,6 +425,7 @@ function createSqlStorageHelpers({
         "Cold storage data must be an array or an object containing character or message data",
       );
     }
+
     if ("character" in value) {
       const character = value.character;
       if (
@@ -426,10 +434,12 @@ function createSqlStorageHelpers({
       ) {
         throw new PayloadError("Cold storage character data is invalid");
       }
+
       const chats = Array.isArray(character.chats) ? character.chats : [];
       if (chats.length > MAX_COLD_STORAGE_CHATS_PER_CHARACTER) {
         throw new PayloadError("Cold storage character has too many chats");
       }
+
       for (const chat of chats) {
         if (
           !isRecord(chat) ||
@@ -437,6 +447,7 @@ function createSqlStorageHelpers({
         ) {
           throw new PayloadError("Cold storage character chat data is invalid");
         }
+
         validateMessages(Array.isArray(chat.message) ? chat.message : []);
       }
       // The checks above are the whole contract of the record form.
@@ -447,6 +458,7 @@ function createSqlStorageHelpers({
         "Cold storage data must be an array or an object containing character or message data",
       );
     }
+
     validateMessages(value.message);
     return value as ColdStorageRecordValue;
   }
@@ -455,6 +467,7 @@ function createSqlStorageHelpers({
     if (messages.length > MAX_COLD_STORAGE_MESSAGES_PER_CHAT) {
       throw new PayloadError("Cold storage chat has too many messages");
     }
+
     for (const message of messages) {
       if (!message || typeof message !== "object" || Array.isArray(message)) {
         throw new PayloadError("Cold storage message data is invalid");
@@ -473,6 +486,7 @@ function createSqlStorageHelpers({
         characterFields: [],
       };
     }
+
     if (value.character) {
       const { chats = [], ...characterData } = value.character;
       const normalizedChats: SplitColdStorageChat[] = [];
@@ -535,6 +549,7 @@ function createSqlStorageHelpers({
         `${field} exceeds the ${maxColdStorageKeys} key limit`,
       );
     }
+
     return Array.from(
       new Set(keys.map((key) => normalizeColdStorageKey(key, `${field}[]`))),
     );
@@ -547,20 +562,23 @@ function createSqlStorageHelpers({
       const entries = await fs.readdir(savePath, { withFileTypes: true });
       const candidates: LegacyColdStorageFile[] = [];
       for (const entry of entries) {
-        if (!entry.isFile() || !/^(?:[0-9a-f]{2})+$/i.test(entry.name))
+        if (!entry.isFile() || !/^(?:[0-9a-f]{2})+$/i.test(entry.name)) {
           continue;
+        }
         const logicalPath = Buffer.from(entry.name, "hex").toString("utf8");
         if (
           Buffer.from(logicalPath, "utf8").toString("hex") !==
           entry.name.toLowerCase()
-        )
+        ) {
           continue;
+        }
         const match = logicalPath.match(coldStoragePathPattern);
-        if (match)
+        if (match) {
           candidates.push({
             filename: entry.name,
             key: match[1].toLowerCase(),
           });
+        }
       }
       return candidates;
     } catch (error: unknown) {
@@ -583,6 +601,7 @@ function createSqlStorageHelpers({
         `${legacyUpsert.key} is a legacy persona mirror and cannot be persisted`,
       );
     }
+
     return payload;
   };
 
@@ -616,11 +635,8 @@ function createSqlStorageHelpers({
     const seen = new Set<string>();
     for (let index = payload.rootUpserts.length - 1; index >= 0; index--) {
       const key = payload.rootUpserts[index].key;
-      if (seen.has(key)) {
-        payload.rootUpserts.splice(index, 1);
-      } else {
-        seen.add(key);
-      }
+      if (seen.has(key)) payload.rootUpserts.splice(index, 1);
+      else seen.add(key);
     }
     return payload;
   };
@@ -861,6 +877,7 @@ function rebuildDatabaseGraph({
     for (const [name, grouped] of Object.entries(chatRelations)) {
       related[name] = grouped.get(row.id) || [];
     }
+
     const rebuilt = rebuildChat(row, related, { shallow });
     rebuilt.messagesLoaded = !shallow;
     rebuilt.detailsLoaded = !shallow;
@@ -876,6 +893,7 @@ function rebuildDatabaseGraph({
     for (const [name, grouped] of Object.entries(characterRelations)) {
       related[name] = grouped.get(row.id) || [];
     }
+
     const rebuilt = rebuildCharacter(row, related, { shallow });
     rebuilt.detailsLoaded = !shallow;
     return rebuilt;
@@ -951,10 +969,12 @@ function createDbExplorerIdentifierValidator(options: {
     if (typeof value !== "string" || value.length === 0 || value.length > 128) {
       throw new options.PayloadError(options.tooLong(field));
     }
+
     const parts = value.split(".");
     if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
       return value;
     }
+
     if (
       parts.length === 2 &&
       DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
@@ -962,6 +982,7 @@ function createDbExplorerIdentifierValidator(options: {
     ) {
       return value;
     }
+
     throw new options.PayloadError(options.invalid(field));
   };
 }
@@ -1001,12 +1022,15 @@ function createSettingColumnMappers<TBoolean>(options: {
         bool_val: options.encodeBool(value),
       };
     }
+
     if (typeof value === "number" && Number.isFinite(value)) {
       return { text_val: null, num_val: value, bool_val: null };
     }
+
     if (typeof value === "string") {
       return { text_val: value, num_val: null, bool_val: null };
     }
+
     return { text_val: null, num_val: null, bool_val: null };
   }
 
@@ -1019,6 +1043,7 @@ function createSettingColumnMappers<TBoolean>(options: {
         ? options.decodeNumber(row.num_val)
         : row.num_val;
     }
+
     if (row.text_val === null) return null;
     const text = row.text_val;
     if (text.startsWith("{") || text.startsWith("[") || text === "null") {
@@ -1028,6 +1053,7 @@ function createSettingColumnMappers<TBoolean>(options: {
         return text;
       }
     }
+
     return text;
   }
 
@@ -1127,6 +1153,7 @@ function invalidateSyncCaches(
   if (invalidation.pluginCustomStorage) {
     storage.invalidatePluginCustomStorageCache();
   }
+
   storage.invalidateBootstrapCache(invalidation.bootstrapKeys);
 }
 

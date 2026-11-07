@@ -45,8 +45,9 @@ export function handleDualAction(
       state.lastTap = currentTime; // First tap
       // Delayed single tap execution
       state.tapTimeout = window.setTimeout(() => {
-        if (state.lastTap === currentTime) {
-          // If no double tap occurred
+        if (state.lastTap === currentTime)
+        // If no double tap occurred
+        {
           params.onMainAction?.();
         }
       }, DOUBLE_TAP_DELAY);
@@ -54,18 +55,17 @@ export function handleDualAction(
   };
 
   const handleClick = (event: MouseEvent) => {
-    if (event.shiftKey) {
-      params.onAlternativeAction?.();
-    } else {
-      params.onMainAction?.();
-    }
+    if (event.shiftKey) params.onAlternativeAction?.();
+    else params.onMainAction?.();
   };
 
-  if ("ontouchend" in window) {
-    // Mobile environment
+  if ("ontouchend" in window)
+  // Mobile environment
+  {
     element.addEventListener("touchend", handleTouch);
-  } else {
-    // Desktop environment
+  } else
+  // Desktop environment
+  {
     element.addEventListener("click", handleClick);
   }
 
@@ -73,9 +73,7 @@ export function handleDualAction(
     destroy() {
       if ("ontouchend" in window) {
         element.removeEventListener("touchend", handleTouch);
-      } else {
-        element.removeEventListener("click", handleClick);
-      }
+      } else element.removeEventListener("click", handleClick);
 
       window.clearTimeout(state.tapTimeout); // Cleanup timeout
     },
@@ -138,15 +136,11 @@ export function shouldShowSummary(
   showImportantOnly: boolean,
   selectedCategoryFilter: string,
 ): boolean {
-  if (showImportantOnly && !summary.isImportant) {
-    return false;
-  }
+  if (showImportantOnly && !summary.isImportant) return false;
 
   if (selectedCategoryFilter !== "all") {
     const summaryCategory = summary.categoryId || "";
-    if (summaryCategory !== selectedCategoryFilter) {
-      return false;
-    }
+    if (summaryCategory !== selectedCategoryFilter) return false;
   }
 
   return true;
@@ -177,18 +171,14 @@ export function parseSelectionInput(
       if (!isNaN(start) && !isNaN(end) && start <= end) {
         for (let i = start; i <= end; i++) {
           const index = i - 1;
-          if (index >= 0 && index < totalCount) {
-            newSelection.add(index);
-          }
+          if (index >= 0 && index < totalCount) newSelection.add(index);
         }
       }
     } else {
       const num = parseInt(part);
       if (!isNaN(num)) {
         const index = num - 1;
-        if (index >= 0 && index < totalCount) {
-          newSelection.add(index);
-        }
+        if (index >= 0 && index < totalCount) newSelection.add(index);
       }
     }
   }

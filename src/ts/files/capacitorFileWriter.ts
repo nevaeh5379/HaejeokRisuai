@@ -29,6 +29,7 @@ function safeTextChunkEnd(value: string, start: number): number {
   if (left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff) {
     end--;
   }
+
   return end;
 }
 
@@ -49,6 +50,7 @@ export class CapacitorFileWriter {
     if (!nativeStreamFileWriter) {
       throw new Error("Native file writer is unavailable");
     }
+
     const opened = await nativeStreamFileWriter.open({ fileName, mimeType });
     if (opened.cancelled) return null;
     if (!opened.id) throw new Error("Native save destination is unavailable");
@@ -63,7 +65,7 @@ export class CapacitorFileWriter {
   }
 
   async writeText(data: string): Promise<void> {
-    for (let offset = 0; offset < data.length; ) {
+    for (let offset = 0; offset < data.length;) {
       const end = safeTextChunkEnd(data, offset);
       await this.plugin.writeText({
         id: this.id,

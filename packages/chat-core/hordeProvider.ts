@@ -4,9 +4,8 @@ const STABLE_HORDE_TEXT_STATUS_BASE_URL: "https://stablehorde.net/api/v2/generat
   "https://stablehorde.net/api/v2/generate/text/status/";
 
 function buildStableHordeStatusUrl(id: string): string | null {
-  if (typeof id !== "string" || id.length === 0 || id.length > 256) {
-    return null;
-  }
+  if (typeof id !== "string" || id.length === 0 || id.length > 256) return null;
+
   return STABLE_HORDE_TEXT_STATUS_BASE_URL + encodeURIComponent(id);
 }
 

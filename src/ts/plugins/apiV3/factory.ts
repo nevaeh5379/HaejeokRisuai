@@ -507,11 +507,8 @@ export class SandboxHost {
 
         if (data.type === "EXEC_RESULT" && data.reqId === reqId) {
           window.removeEventListener("message", handler);
-          if (data.error) {
-            reject(new Error(data.error));
-          } else {
-            resolve(data.result);
-          }
+          if (data.error) reject(new Error(data.error));
+          else resolve(data.result);
         }
       };
 
@@ -590,6 +587,7 @@ export class SandboxHost {
         value: val,
       };
     }
+
     return val;
   }
 
@@ -637,6 +635,7 @@ export class SandboxHost {
                     { once: true },
                   );
                 }
+
                 return ref;
               }
               return arg;
@@ -658,9 +657,7 @@ export class SandboxHost {
       if (arg && arg.__type === "REMOTE_REF") {
         const remoteRef = arg as RemoteRef;
         const instance = this.instanceRegistry.get(remoteRef.id);
-        if (instance) {
-          return instance;
-        }
+        if (instance) return instance;
       }
       if (arg && typeof arg === "object" && arg.constructor === Object) {
         let out: any = null;
@@ -677,6 +674,7 @@ export class SandboxHost {
             out[key] = controller.signal;
           }
         }
+
         if (out) return out;
       }
       return arg;
@@ -690,8 +688,9 @@ export class SandboxHost {
   } {
     const ports: MessagePort[] = [];
     const cleanups: (() => void)[] = [];
-    if (!obj || typeof obj !== "object")
+    if (!obj || typeof obj !== "object") {
       return { result: obj, ports, cleanups };
+    }
 
     const replace = (val: any): any => {
       if (!(val instanceof ReadableStream)) return val;
@@ -756,8 +755,9 @@ export class SandboxHost {
       return { __type: "STREAM_PORT", portIndex: ports.length - 1 };
     };
 
-    if (obj instanceof ReadableStream)
+    if (obj instanceof ReadableStream) {
       return { result: replace(obj), ports, cleanups };
+    }
     if (obj.constructor === Object) {
       const out: any = {};
       for (const k of Object.keys(obj)) out[k] = replace(obj[k]);
@@ -774,12 +774,14 @@ export class SandboxHost {
     if (!obj || typeof obj !== "object") return obj;
 
     const reconstruct = (val: any): any => {
-      if (val?.__type !== "STREAM_PORT" || typeof val.portIndex !== "number")
+      if (val?.__type !== "STREAM_PORT" || typeof val.portIndex !== "number") {
         return val;
+      }
 
       const port = ports[val.portIndex];
-      if (!port)
+      if (!port) {
         throw new Error(`Stream port at index ${val.portIndex} not received`);
+      }
 
       const cleanups = this.activeStreamCleanups;
       let cleanup: (() => void) | null = null;
@@ -799,9 +801,7 @@ export class SandboxHost {
               port.onmessage = null;
               port.close();
               unregister();
-            } else {
-              controller.enqueue(e.data.value);
-            }
+            } else controller.enqueue(e.data.value);
           };
           cleanup = () => {
             controller.error(new Error("Sandbox terminated"));
@@ -838,13 +838,13 @@ export class SandboxHost {
         cleanup();
       } catch (_) {}
     }
+
     this.activeStreamCleanups.clear();
   }
 
   public run(container: HTMLElement | HTMLIFrameElement, userCode: string) {
-    if (container instanceof HTMLIFrameElement) {
-      this.iframe = container;
-    } else {
+    if (container instanceof HTMLIFrameElement) this.iframe = container;
+    else {
       this.iframe = document.createElement("iframe");
       container.appendChild(this.iframe);
     }
@@ -879,6 +879,7 @@ export class SandboxHost {
               req.reject(e);
             }
           }
+
           this.pendingCallbacks.delete(data.reqId!);
         }
         return;
@@ -910,6 +911,7 @@ export class SandboxHost {
               cleanup();
             } catch (_) {}
           }
+
           streamCleanups = [];
         };
 
@@ -919,14 +921,16 @@ export class SandboxHost {
 
           if (data.type === "CALL_ROOT") {
             const fn = this.apiFactory[data.method!];
-            if (typeof fn !== "function")
+            if (typeof fn !== "function") {
               throw new Error(`API method ${data.method} not found`);
+            }
             result = await fn(...args);
           } else {
             const instance = this.instanceRegistry.get(data.id!);
             if (!instance) throw new Error("Instance not found or released");
-            if (typeof instance[data.method!] !== "function")
+            if (typeof instance[data.method!] !== "function") {
               throw new Error(`Method ${data.method} missing on instance`);
+            }
             result = await instance[data.method!](...args);
           }
 
@@ -942,9 +946,7 @@ export class SandboxHost {
                   const portIndex = ports.length;
                   ports.push(...stream.ports);
                   operations[i] = ["stream", operation[1], portIndex];
-                } else {
-                  operations[i] = ["native", operation[1], operation[2]];
-                }
+                } else operations[i] = ["native", operation[1], operation[2]];
               }
               const transfers = this.collectTransferables(operations, ports);
               try {
@@ -1056,9 +1058,8 @@ export class SandboxHost {
       window.removeEventListener("message", this.messageHandlerRef);
       this.messageHandlerRef = null;
     }
-    if (this.iframe) {
-      this.iframe.remove();
-    }
+    if (this.iframe) this.iframe.remove();
+
     this.closeActiveStreams();
     this.instanceRegistry.clear();
     this.pendingCallbacks.clear();

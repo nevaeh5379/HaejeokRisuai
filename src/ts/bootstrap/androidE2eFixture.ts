@@ -89,6 +89,7 @@ export async function prepareAndroidE2eFixture(): Promise<"ready" | "reload"> {
   if (!moduleStore.getById(moduleId)) {
     await moduleStore.installModule(fixtureModule);
   }
+
   if (!moduleStore.getById(promptModuleId)) {
     await moduleStore.installModule(promptFixtureModule);
   }
@@ -96,9 +97,8 @@ export async function prepareAndroidE2eFixture(): Promise<"ready" | "reload"> {
   const enabledModules = moduleStore.enabledModules.filter(
     (id) => id !== promptModuleId,
   );
-  if (!enabledModules.includes(moduleId)) {
-    enabledModules.push(moduleId);
-  }
+  if (!enabledModules.includes(moduleId)) enabledModules.push(moduleId);
+
   if (
     enabledModules.length !== moduleStore.enabledModules.length ||
     enabledModules.some((id, index) => id !== moduleStore.enabledModules[index])

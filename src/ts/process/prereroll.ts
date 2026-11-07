@@ -1,5 +1,5 @@
-let rerolls: { [key: string]: string[] } = {};
-let rerollIndex: { [key: string]: number } = {};
+const rerolls: { [key: string]: string[] } = {};
+const rerollIndex: { [key: string]: number } = {};
 
 export function Prereroll(genId: string) {
   if (rerolls[genId]) {
@@ -14,9 +14,8 @@ export function PreUnreroll(genId: string) {
   if (rerolls[genId]) {
     let index = rerollIndex[genId];
     index -= 1;
-    if (index < 0) {
-      return null;
-    }
+    if (index < 0) return null;
+
     rerollIndex[genId] = index;
     return rerolls[genId][index] ?? null;
   }

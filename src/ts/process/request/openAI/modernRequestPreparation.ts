@@ -171,9 +171,7 @@ export async function prepareModernOpenAIRequest(
     genTime: db.genTime,
   });
   body = postPolicies.body;
-  if (postPolicies.error) {
-    return { ok: false, error: postPolicies.error };
-  }
+  if (postPolicies.error) return { ok: false, error: postPolicies.error };
 
   const endpoint = resolveOpenAIRequestEndpoint({
     aiModel,

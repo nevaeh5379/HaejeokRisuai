@@ -14,9 +14,8 @@ const HEX_TABLE: string[] = Array.from({ length: 256 }, (_, i) =>
 function utf8ToHex(value: string): string {
   const bytes = SHARED_TEXT_ENCODER.encode(value);
   let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += HEX_TABLE[bytes[i]];
-  }
+  for (let i = 0; i < bytes.length; i++) hex += HEX_TABLE[bytes[i]];
+
   return hex;
 }
 
@@ -38,6 +37,7 @@ export class RemoteSyncAssetReader {
     if (!force && this.sizeCache && this.sizeCache.expiresAt > now) {
       return this.sizeCache.sizes;
     }
+
     if (this.sizePromise) return await this.sizePromise;
     this.sizePromise = (async () => {
       const details = await this.assetAdmin.getAssetDetails("active");
@@ -51,6 +51,7 @@ export class RemoteSyncAssetReader {
           sizes.set(asset.key, asset.size);
         }
       }
+
       this.sizeCache = { expiresAt: Date.now() + 30_000, sizes };
       return sizes;
     })();
@@ -65,10 +66,9 @@ export class RemoteSyncAssetReader {
     const sizes = await this.loadSizes();
     const result: string[] = [];
     for (const key of sizes.keys()) {
-      if (key.startsWith(prefix)) {
-        result.push(key);
-      }
+      if (key.startsWith(prefix)) result.push(key);
     }
+
     return result.sort(compareStorageSyncAssetKeys);
   }
 
@@ -82,6 +82,7 @@ export class RemoteSyncAssetReader {
         "asset_missing",
       );
     }
+
     return size;
   }
 
@@ -98,6 +99,7 @@ export class RemoteSyncAssetReader {
         "invalid_asset_range",
       );
     }
+
     const expected = Math.min(length, size - offset);
     const end = offset + expected - 1;
     const response = await this.apiClient.request(
@@ -125,6 +127,7 @@ export class RemoteSyncAssetReader {
         "asset_read_failed",
       );
     }
+
     const data = new Uint8Array(await response.arrayBuffer());
     if (data.byteLength !== expected) {
       throw new StorageSyncAssetReadError(
@@ -132,6 +135,7 @@ export class RemoteSyncAssetReader {
         "asset_changed",
       );
     }
+
     return data;
   }
 }

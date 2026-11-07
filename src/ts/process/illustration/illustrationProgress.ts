@@ -19,8 +19,9 @@ export function applyIllustrationProgress(
     incoming.branchId !== branchId ||
     incoming.sourceHash !== illustrationSourceHash(message) ||
     message.data.split(current.token).length !== 2
-  )
+  ) {
     return false;
+  }
   if (incoming.version === current.version) {
     if ((incoming.progress ?? 0) < (current.progress ?? 0)) return false;
     const images = new Set([
@@ -32,8 +33,9 @@ export function applyIllustrationProgress(
         ...(current.imageIds ?? []),
         ...(current.imageId ? [current.imageId] : []),
       ].some((id) => !images.has(id))
-    )
+    ) {
       return false;
+    }
   }
   message.data = message.data.replace(current.token, incoming.token);
   message.illustrations![index] = incoming;

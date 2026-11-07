@@ -32,6 +32,7 @@ function getLogLevel():
   if (["trace", "debug", "info", "warn", "error", "silent"].includes(value)) {
     return value as ReturnType<typeof getLogLevel>;
   }
+
   throw new Error(`Unsupported ANDROID_E2E_WDIO_LOG_LEVEL: ${value}`);
 }
 

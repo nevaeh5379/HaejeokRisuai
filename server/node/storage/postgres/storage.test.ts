@@ -51,14 +51,15 @@ describe("PostgreSQL storage sync finalize concurrency", () => {
         ) {
           return { rows: [{ revision, initialized: true }] };
         }
+
         if (
           sql.includes("SELECT id FROM system.revisions WHERE storage_revision")
         ) {
           return { rows: [{ id: "40" }] };
         }
-        if (sql.includes("WITH inserted AS")) {
-          return { rows: [{ id: "41" }] };
-        }
+
+        if (sql.includes("WITH inserted AS")) return { rows: [{ id: "41" }] };
+
         return { rows: [], rowCount: 1 };
       }),
       release: vi.fn(),
@@ -262,6 +263,7 @@ describe("PostgreSQL sync payload validation", () => {
             ],
           };
         }
+
         if (sql.includes("FROM system.plugin_values")) {
           return {
             rows: [
@@ -274,6 +276,7 @@ describe("PostgreSQL sync payload validation", () => {
             ],
           };
         }
+
         return { rows: [] };
       }),
       release: vi.fn(),
@@ -359,6 +362,7 @@ describe("PostgreSQL sync payload validation", () => {
                 ],
               };
             }
+
             if (sql === "SCHEMA SQL") {
               schemaPresent = true;
               return { rows: [] };
@@ -370,6 +374,7 @@ describe("PostgreSQL sync payload validation", () => {
                 ],
               };
             }
+
             return { rows: [{ ok: true }] };
           };
           const result = run();
@@ -419,6 +424,7 @@ describe("PostgreSQL sync payload validation", () => {
             ],
           };
         }
+
         if (sql.includes("FROM chat.chats ")) {
           return {
             rows: [
@@ -432,6 +438,7 @@ describe("PostgreSQL sync payload validation", () => {
             ],
           };
         }
+
         return { rows: [] };
       },
       release: () => {},
@@ -471,9 +478,11 @@ describe("PostgreSQL sync payload validation", () => {
             rows: [{ branch_id: "00000000-0000-4000-8000-000000000001:root" }],
           };
         }
+
         if (sql.includes("COUNT(message_id)::bigint AS total")) {
           return { rows: [{ total: 1 }] };
         }
+
         if (sql.includes("JOIN chat.messages messages")) {
           return {
             rows: [
@@ -494,6 +503,7 @@ describe("PostgreSQL sync payload validation", () => {
             ],
           };
         }
+
         return { rows: [] };
       },
       release: () => {},

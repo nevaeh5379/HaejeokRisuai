@@ -349,6 +349,7 @@ export const languageSettingsItems: SettingItem[] = [
               return;
             }
           }
+
           const confirmed = await alertConfirm(
             language.importTranslationCacheConfirm,
           );

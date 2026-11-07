@@ -46,6 +46,7 @@ export function resolveClaudeThinkingType(
   ) {
     return "adaptive";
   }
+
   return thinkingType;
 }
 

@@ -203,8 +203,9 @@ function requestUpstream(arg: UpstreamRequestArg): Promise<UpstreamResponse> {
       ...arg.headers,
       host: parsed.host,
     };
-    if (arg.bodyBuffer)
+    if (arg.bodyBuffer) {
       headers["content-length"] = String(arg.bodyBuffer.length);
+    }
     let settled = false;
     let upstreamResponse: Readable | null = null;
     const fail = (error: Error) => {
@@ -251,6 +252,7 @@ function requestUpstream(arg: UpstreamRequestArg): Promise<UpstreamResponse> {
     if (arg.bodyBuffer && arg.method !== "GET" && arg.method !== "HEAD") {
       req.write(arg.bodyBuffer);
     }
+
     req.end();
   });
 }
@@ -387,6 +389,7 @@ export function createModelJobManager({
     for (const record of overflow) {
       if (!protectedIds.has(record.id)) deleteIds.add(record.id);
     }
+
     if (deleteIds.size === 0) return;
     records = records.filter((record) => !deleteIds.has(record.id));
     for (const id of deleteIds) {
@@ -396,6 +399,7 @@ export function createModelJobManager({
         /* already gone */
       }
     }
+
     void persist();
   }
 
@@ -465,6 +469,7 @@ export function createModelJobManager({
     if (normalized.error) {
       return { error: normalized.error, httpStatus: normalized.httpStatus };
     }
+
     const request = normalized.value as NormalizedCreateModelJobRequest;
     const { chatId, recoverable } = request;
     if (recoverable) {
@@ -544,6 +549,7 @@ export function createModelJobManager({
         .map((record) => publicRecord(record))
         .filter((record): record is DurableModelJobRecord => record !== null);
     }
+
     if (filter === "active") {
       return records
         .filter(
@@ -554,6 +560,7 @@ export function createModelJobManager({
         .map((record) => publicRecord(record))
         .filter((record): record is DurableModelJobRecord => record !== null);
     }
+
     if (filter === "unclaimed") {
       return records
         .filter(
@@ -565,6 +572,7 @@ export function createModelJobManager({
         .map((record) => publicRecord(record))
         .filter((record): record is DurableModelJobRecord => record !== null);
     }
+
     return null;
   }
 
@@ -574,6 +582,7 @@ export function createModelJobManager({
     if (!TERMINAL.has(record.status)) {
       return { error: "Job is still running", httpStatus: 409 };
     }
+
     record.claimed = true;
     await persist();
     return { success: true };
@@ -628,6 +637,7 @@ export function createModelJobManager({
     if (record.upstreamStatus != null) {
       res.set("x-model-job-upstream-status", String(record.upstreamStatus));
     }
+
     res.flushHeaders();
 
     let handle: fsp.FileHandle;
@@ -662,6 +672,7 @@ export function createModelJobManager({
               res.once("close", settle);
             });
           }
+
           continue;
         }
         if (sawTerminal) break;
@@ -707,10 +718,11 @@ export function createModelJobManager({
           ? "unclaimed"
           : null;
       const jobs = filter ? listJobs(filter) : null;
-      if (!jobs)
+      if (!jobs) {
         return res
           .status(400)
           .send({ error: "active=1 or unclaimed=1 is required" });
+      }
       res.send({ jobs });
     });
 
@@ -729,20 +741,22 @@ export function createModelJobManager({
     app.post("/api/model-jobs/:id/claim", ...guards, async (req, res) => {
       if (!(await ensureAuth(req, res))) return;
       const result = await claimJob(req.params.id);
-      if ("error" in result)
+      if ("error" in result) {
         return res
           .status(result.httpStatus || 400)
           .send({ error: result.error });
+      }
       res.send(result);
     });
 
     app.delete("/api/model-jobs/:id", ...guards, async (req, res) => {
       if (!(await ensureAuth(req, res))) return;
       const result = await deleteJob(req.params.id);
-      if ("error" in result)
+      if ("error" in result) {
         return res
           .status(result.httpStatus || 400)
           .send({ error: result.error });
+      }
       res.send(result);
     });
   }

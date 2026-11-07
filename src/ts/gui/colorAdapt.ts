@@ -50,9 +50,7 @@ export function parseColor(colorStr: string): RGBA | null {
     dimgrey: "#696969",
     transparent: "rgba(0,0,0,0)",
   };
-  if (namedColors[str]) {
-    return parseColor(namedColors[str]);
-  }
+  if (namedColors[str]) return parseColor(namedColors[str]);
 
   // Hex (#rgb, #rgba, #rrggbb, #rrggbbaa)
   if (str.startsWith("#")) {
@@ -65,6 +63,7 @@ export function parseColor(colorStr: string): RGBA | null {
         a: 1,
       };
     }
+
     if (hex.length === 4) {
       return {
         r: parseInt(hex[0] + hex[0], 16),
@@ -73,6 +72,7 @@ export function parseColor(colorStr: string): RGBA | null {
         a: parseInt(hex[3] + hex[3], 16) / 255,
       };
     }
+
     if (hex.length === 6) {
       return {
         r: parseInt(hex.slice(0, 2), 16),
@@ -81,6 +81,7 @@ export function parseColor(colorStr: string): RGBA | null {
         a: 1,
       };
     }
+
     if (hex.length === 8) {
       return {
         r: parseInt(hex.slice(0, 2), 16),
@@ -101,12 +102,10 @@ export function parseColor(colorStr: string): RGBA | null {
     const b = Math.min(255, Math.max(0, parseFloat(rgbMatch[3])));
     let a = 1;
     if (rgbMatch[4]) {
-      if (rgbMatch[4].endsWith("%")) {
-        a = parseFloat(rgbMatch[4]) / 100;
-      } else {
-        a = parseFloat(rgbMatch[4]);
-      }
+      if (rgbMatch[4].endsWith("%")) a = parseFloat(rgbMatch[4]) / 100;
+      else a = parseFloat(rgbMatch[4]);
     }
+
     return { r, g, b, a: Math.min(1, Math.max(0, a)) };
   }
 
@@ -124,6 +123,7 @@ export function parseColor(colorStr: string): RGBA | null {
         ? parseFloat(hslMatch[4]) / 100
         : parseFloat(hslMatch[4]);
     }
+
     const rgb = hslToRgb({ h, s, l, a });
     return rgb;
   }
@@ -138,6 +138,7 @@ export function rgbaToString(rgba: RGBA): string {
   if (rgba.a < 0.999) {
     return `rgba(${r}, ${g}, ${b}, ${parseFloat(rgba.a.toFixed(3))})`;
   }
+
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
@@ -315,30 +316,21 @@ export function adaptColorOklch(
           oklch.l = 0.4; // Optimal 5.5:1 ~ 7:1 contrast ratio against white/light backgrounds
           oklch.c = Math.min(oklch.c * 1.1, 0.19); // Retain rich, eye-pleasing hue
         }
-      } else {
+      } else
         // Neutral text (white, light gray) -> Deep ink text
-        if (oklch.l > 0.4) {
-          oklch.l = 0.16;
-        }
-      }
+        if (oklch.l > 0.4) oklch.l = 0.16;
     }
-  } else {
-    if (role === "bg") {
-      if (oklch.l > 0.5) {
-        oklch.l = 0.12 + (1 - oklch.l) * 0.15;
-        oklch.c = Math.min(oklch.c * 0.6, 0.05);
-      }
-    } else if (role === "border") {
-      if (oklch.l > 0.6) {
-        oklch.l = 0.28 - (1 - oklch.l) * 0.1;
-        oklch.c = Math.min(oklch.c * 0.4, 0.03);
-      }
-    } else {
-      if (oklch.l < 0.5) {
-        oklch.l = 0.88 - oklch.l * 0.2;
-      }
+  } else if (role === "bg") {
+    if (oklch.l > 0.5) {
+      oklch.l = 0.12 + (1 - oklch.l) * 0.15;
+      oklch.c = Math.min(oklch.c * 0.6, 0.05);
     }
-  }
+  } else if (role === "border") {
+    if (oklch.l > 0.6) {
+      oklch.l = 0.28 - (1 - oklch.l) * 0.1;
+      oklch.c = Math.min(oklch.c * 0.4, 0.03);
+    }
+  } else if (oklch.l < 0.5) oklch.l = 0.88 - oklch.l * 0.2;
 
   return oklchToRgb(oklch);
 }
@@ -368,28 +360,16 @@ export function adaptColorColord(
           hsl.l = 0.36;
           hsl.s = Math.min(hsl.s, 0.8);
         }
-      } else {
-        if (hsl.l > 0.35) {
-          hsl.l = 0.15;
-        }
-      }
+      } else if (hsl.l > 0.35) hsl.l = 0.15;
     }
-  } else {
-    if (role === "bg") {
-      if (hsl.l > 0.5) {
-        hsl.l = 0.14 * (1 - hsl.l);
-        hsl.s = Math.min(hsl.s * 0.4, 0.3);
-      }
-    } else if (role === "border") {
-      if (hsl.l > 0.6) {
-        hsl.l = 0.28;
-      }
-    } else {
-      if (hsl.l < 0.5) {
-        hsl.l = 0.85 + (1 - hsl.l) * 0.1;
-      }
+  } else if (role === "bg") {
+    if (hsl.l > 0.5) {
+      hsl.l = 0.14 * (1 - hsl.l);
+      hsl.s = Math.min(hsl.s * 0.4, 0.3);
     }
-  }
+  } else if (role === "border") {
+    if (hsl.l > 0.6) hsl.l = 0.28;
+  } else if (hsl.l < 0.5) hsl.l = 0.85 + (1 - hsl.l) * 0.1;
 
   return hslToRgb(hsl);
 }
@@ -419,28 +399,16 @@ export function adaptColorLeonardo(
           oklch.l = 0.38;
           oklch.c = Math.min(oklch.c * 1.1, 0.18);
         }
-      } else {
-        if (oklch.l > 0.4) {
-          oklch.l = 0.16;
-        }
-      }
+      } else if (oklch.l > 0.4) oklch.l = 0.16;
     }
-  } else {
-    if (role === "bg") {
-      if (oklch.l > 0.5) {
-        oklch.l = 0.16;
-        oklch.c = Math.min(oklch.c * 0.4, 0.03);
-      }
-    } else if (role === "border") {
-      if (oklch.l > 0.6) {
-        oklch.l = 0.28;
-      }
-    } else {
-      if (oklch.l < 0.5) {
-        oklch.l = 0.92;
-      }
+  } else if (role === "bg") {
+    if (oklch.l > 0.5) {
+      oklch.l = 0.16;
+      oklch.c = Math.min(oklch.c * 0.4, 0.03);
     }
-  }
+  } else if (role === "border") {
+    if (oklch.l > 0.6) oklch.l = 0.28;
+  } else if (oklch.l < 0.5) oklch.l = 0.92;
 
   return oklchToRgb(oklch);
 }
@@ -459,37 +427,21 @@ export function adaptColorDarkReader(
         hsl.s = hsl.s * 0.6;
       }
     } else if (role === "border") {
-      if (hsl.l < 0.4) {
-        hsl.l = 1 - hsl.l * 0.5;
-      }
+      if (hsl.l < 0.4) hsl.l = 1 - hsl.l * 0.5;
     } else {
       const isColored = hsl.s > 0.15;
       if (isColored) {
-        if (hsl.l > 0.35) {
-          hsl.l = 0.35;
-        }
-      } else {
-        if (hsl.l > 0.35) {
-          hsl.l = 0.15;
-        }
-      }
+        if (hsl.l > 0.35) hsl.l = 0.35;
+      } else if (hsl.l > 0.35) hsl.l = 0.15;
     }
-  } else {
-    if (role === "bg") {
-      if (hsl.l > 0.5) {
-        hsl.l = (1 - hsl.l) * 0.85;
-        hsl.s = hsl.s * 0.6;
-      }
-    } else if (role === "border") {
-      if (hsl.l > 0.6) {
-        hsl.l = (1 - hsl.l) * 0.6;
-      }
-    } else {
-      if (hsl.l < 0.5) {
-        hsl.l = 1 - hsl.l * 0.75;
-      }
+  } else if (role === "bg") {
+    if (hsl.l > 0.5) {
+      hsl.l = (1 - hsl.l) * 0.85;
+      hsl.s = hsl.s * 0.6;
     }
-  }
+  } else if (role === "border") {
+    if (hsl.l > 0.6) hsl.l = (1 - hsl.l) * 0.6;
+  } else if (hsl.l < 0.5) hsl.l = 1 - hsl.l * 0.75;
 
   return hslToRgb(hsl);
 }
@@ -546,9 +498,7 @@ export function adaptCssValue(
   let cleanVal = val.replace(/!\s*important/gi, "").trim();
 
   // If it's a url(...) image without gradient, don't modify the URL part
-  if (cleanVal.includes("url(") && !cleanVal.includes("gradient")) {
-    return val;
-  }
+  if (cleanVal.includes("url(") && !cleanVal.includes("gradient")) return val;
 
   // 1. rgba? / hsla?
   cleanVal = cleanVal.replace(/rgba?\s*\([^)]+\)/gi, (match) => {
@@ -671,15 +621,19 @@ export function adaptFullCssText(
       ) {
         return `${prop}: ${adaptCssValue(val, "bg", toLight, engine)}`;
       }
+
       if (p === "color") {
         return `${prop}: ${adaptCssValue(val, "fg", toLight, engine)}`;
       }
+
       if (p.includes("border") || p.includes("outline")) {
         return `${prop}: ${adaptCssValue(val, "border", toLight, engine)}`;
       }
+
       if (p === "box-shadow" || p === "text-shadow") {
         return `${prop}: ${adaptCssValue(val, "border", toLight, engine)}`;
       }
+
       return fullMatch;
     },
   );

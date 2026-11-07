@@ -106,6 +106,7 @@ export async function requestChatData(
             if (!formated || !Array.isArray(formated)) {
               throw new Error("Invalid return");
             }
+
             arg.formated = formated;
             console.log("Trigger time", performance.now() - perf);
           }
@@ -131,6 +132,7 @@ export async function requestChatData(
             selectedModel,
           });
         }
+
         const response = await requestChatDataMain(
           {
             ...arg,

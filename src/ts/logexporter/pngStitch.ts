@@ -22,16 +22,18 @@ const crcTable = new Uint32Array(256);
 {
   for (let n = 0; n < 256; n++) {
     let c = n;
-    for (let k = 0; k < 8; k++)
+    for (let k = 0; k < 8; k++) {
       c = c & 1 ? (0xedb88320 ^ (c >>> 1)) >>> 0 : c >>> 1;
+    }
     crcTable[n] = c >>> 0;
   }
 }
 
 function crc32(bytes: Uint8Array, start: number, length: number): number {
   let c = 0xffffffff;
-  for (let i = start; i < start + length; i++)
+  for (let i = start; i < start + length; i++) {
     c = (crcTable[(c ^ bytes[i]) & 0xff] ^ (c >>> 8)) >>> 0;
+  }
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -78,16 +80,19 @@ export interface PngInfo {
 /** Parses the IHDR header and collects the IDAT payloads of a PNG. */
 export function parsePng(bytes: Uint8Array): PngInfo {
   for (let i = 0; i < 8; i++) {
-    if (bytes[i] !== PNG_SIGNATURE[i])
+    if (bytes[i] !== PNG_SIGNATURE[i]) {
       throw new PngStitchError("Not a PNG file");
+    }
   }
+
   let p = 8;
   let info: PngInfo | null = null;
   const idat: Uint8Array[] = [];
   while (p + 12 <= bytes.length) {
     const len = readUint32(bytes, p);
-    if (p + 12 + len > bytes.length)
+    if (p + 12 + len > bytes.length) {
       throw new PngStitchError("Corrupt PNG: chunk overruns file");
+    }
     let type = "";
     for (let i = 0; i < 4; i++) type += String.fromCharCode(bytes[p + 4 + i]);
     if (type === "IHDR") {
@@ -102,6 +107,7 @@ export function parsePng(bytes: Uint8Array): PngInfo {
     } else if (type === "IDAT" && len > 0) {
       idat.push(bytes.subarray(p + 8, p + 8 + len));
     }
+
     p += 12 + len;
     if (type === "IEND") break;
   }
@@ -182,10 +188,12 @@ export async function* unfilteredRows(
   const reader = ds.readable.getReader();
   // Awaiting the pump propagates write/close failures back to the caller.
   const pump = (async () => {
-    for (const chunk of idat) {
-      // copy into a fresh buffer: write() needs an ArrayBuffer-backed view
+    for (const chunk of idat)
+    // copy into a fresh buffer: write() needs an ArrayBuffer-backed view
+    {
       await writer.write(new Uint8Array(chunk));
     }
+
     await writer.close();
   })();
   let pending: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
@@ -205,8 +213,9 @@ export async function* unfilteredRows(
     if (!value) continue;
     pending = pending.length === 0 ? value : concatBytes(pending, value);
   }
-  if (pending.length !== 0)
+  if (pending.length !== 0) {
     throw new PngStitchError("Corrupt PNG: incomplete scanline data");
+  }
 }
 
 // ─── Vertical merge ──────────────────────────────────────────────────────────
@@ -264,8 +273,9 @@ export async function mergePngBlobsVertically(
   for (const blob of blobs) {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const info = parsePng(bytes);
-    if (info.width <= 0 || info.height <= 0)
+    if (info.width <= 0 || info.height <= 0) {
       throw new PngStitchError("Invalid PNG dimensions");
+    }
     if (width === 0) {
       width = info.width;
       colorType = info.colorType;
@@ -278,6 +288,7 @@ export async function mergePngBlobsVertically(
         `Section color type mismatch: expected ${colorType}, found ${info.colorType}`,
       );
     }
+
     sections.push(info);
     totalHeight += info.height;
   }
@@ -315,6 +326,7 @@ export async function mergePngBlobsVertically(
       wroteAnyRow = true;
     }
   }
+
   await compressWriter.close();
   await collectIdat;
   if (!wroteAnyRow) throw new PngStitchError("No pixel rows decoded");
@@ -326,8 +338,9 @@ export async function mergePngBlobsVertically(
     if (part.length === 0) continue;
     parts.push(makeChunk("IDAT", part));
   }
-  if (idatParts.length === 0)
+  if (idatParts.length === 0) {
     throw new PngStitchError("PNG compression produced no data");
+  }
   parts.push(makeChunk("IEND", new Uint8Array(0)));
   const blob = new Blob(parts as unknown as BlobPart[], { type: "image/png" });
   return { blob, width, height: totalHeight };

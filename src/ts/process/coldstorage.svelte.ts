@@ -46,9 +46,8 @@ function getActiveNodeStorage(): NodeStorage | null {
 async function decompress(data: Uint8Array) {
   return new Promise<Uint8Array>((resolve, reject) => {
     fflateDecompress(data, (err, decompressed) => {
-      if (err) {
-        return reject(err);
-      }
+      if (err) return reject(err);
+
       resolve(decompressed);
     });
   });
@@ -61,10 +60,10 @@ export async function getColdStorageItem(key: string) {
       if (nodeStorage.sql.isEnabled()) {
         return await nodeStorage.sql.coldStorage.get(key);
       }
+
       const f = await nodeStorage.getItem("coldstorage/" + key);
-      if (!f) {
-        return null;
-      }
+      if (!f) return null;
+
       const text = SHARED_TEXT_DECODER.decode(
         await decompress(new Uint8Array(f)),
       );
@@ -84,18 +83,17 @@ export async function getColdStorageItem(key: string) {
     } catch (error) {
       return null;
     }
-  } else {
-    //use opfs
+  } else
+  //use opfs
+  {
     try {
       const opfs = await navigator.storage.getDirectory();
       const file = await opfs.getFileHandle("coldstorage_" + key + ".json");
-      if (!file) {
-        return null;
-      }
+      if (!file) return null;
+
       const d = await file.getFile();
-      if (!d) {
-        return null;
-      }
+      if (!d) return null;
+
       const buf = await d.arrayBuffer();
       const text = SHARED_TEXT_DECODER.decode(
         await decompress(new Uint8Array(buf)),
@@ -114,9 +112,8 @@ async function compressColdStorageValue(
     const json = JSON.stringify(value);
     return await new Promise<Uint8Array>((resolve, reject) => {
       fflateCompress(SHARED_TEXT_ENCODER.encode(json), (err, result) => {
-        if (err) {
-          return reject(err);
-        }
+        if (err) return reject(err);
+
         resolve(result);
       });
     });
@@ -145,9 +142,7 @@ export async function setColdStorageItem(
   }
 
   const compressed = await compressColdStorageValue(value);
-  if (!compressed) {
-    return false;
-  }
+  if (!compressed) return false;
 
   if (nodeStorage) {
     try {
@@ -171,8 +166,9 @@ export async function setColdStorageItem(
       console.error("Cold storage Tauri write failed:", error);
       return false;
     }
-  } else {
-    //use opfs
+  } else
+  //use opfs
+  {
     try {
       const opfs = await navigator.storage.getDirectory();
       const file = await opfs.getFileHandle("coldstorage_" + key + ".json", {
@@ -195,6 +191,7 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
     if (nodeStorage.sql.isEnabled()) {
       return await nodeStorage.sql.coldStorage.list();
     }
+
     const fullKeys = await nodeStorage.keys();
     const keys = fullKeys
       .filter((k) => k.startsWith("coldstorage/"))
@@ -221,6 +218,7 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
         keys.push(name.slice(12, -5));
       }
     }
+
     return {
       items: keys,
     };
@@ -253,9 +251,8 @@ export async function cleanColdStorage() {
     unusedKeys,
   );
 
-  if (nodeStorage) {
-    await removeColdStorageItems(unusedKeys);
-  } else {
+  if (nodeStorage) await removeColdStorageItems(unusedKeys);
+  else {
     for (let i = 0; i < unusedKeys.length; i++) {
       const key = unusedKeys[i];
       alertWait(
@@ -291,8 +288,9 @@ async function removeColdStorageItems(keys: string[]) {
     } catch (error) {
       console.error(error);
     }
-  } else {
-    //use opfs
+  } else
+  //use opfs
+  {
     try {
       const opfs = await navigator.storage.getDirectory();
       for (let i = 0; i < keys.length; i++) {
@@ -369,9 +367,7 @@ export async function confirmIncompleteColdStorageOperation(
   operation: "backup" | "restore",
 ): Promise<boolean> {
   const uniqueUnavailableKeys = Array.from(new Set(unavailableKeys));
-  if (uniqueUnavailableKeys.length === 0) {
-    return true;
-  }
+  if (uniqueUnavailableKeys.length === 0) return true;
 
   const affected = getColdStorageAffectedCharacters(db, uniqueUnavailableKeys);
   const characterNames = affected.characterNames.join(", ");
@@ -398,9 +394,7 @@ export async function preLoadChat(
 ) {
   const chat = characterStore.characters?.[characterIndex]?.chats?.[chatIndex];
 
-  if (!chat) {
-    return;
-  }
+  if (!chat) return;
 
   if (
     (chat.messagesLoaded === false ||
@@ -444,8 +438,9 @@ export async function preLoadChat(
       ];
       chat.lastDate = Date.now();
     }
-    if (chat.id) {
-      // Restored before the chat becomes active-tracked; mark explicitly
+    if (chat.id)
+    // Restored before the chat becomes active-tracked; mark explicitly
+    {
       characterStore.markChatDirty(chat.id);
     }
   }

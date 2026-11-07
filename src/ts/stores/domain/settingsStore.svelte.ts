@@ -103,6 +103,7 @@ class SettingsStore
           "SettingsStore state properties must be configurable",
         );
       }
+
       return Reflect.defineProperty(this.stateData, prop, descriptor);
     },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
@@ -211,9 +212,8 @@ class SettingsStore
   }
 
   private scheduleCommit(): void {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+
     this.debounceTimer = setTimeout(() => {
       void this.flush();
     }, 300);
@@ -227,9 +227,8 @@ class SettingsStore
     const hasRootChanges =
       this.dirtyKeys.size > 0 || this.pendingDeletes.size > 0;
     const hasPluginChanges = this.pluginStorage.hasPendingChanges();
-    if (!hasRootChanges && !hasPluginChanges) {
-      return;
-    }
+    if (!hasRootChanges && !hasPluginChanges) return;
+
     const storage = this.storage || (await getSqlStorage());
     // Serialise at flush time — snapshots are never retained between commits
     const upserts: { key: string; value: unknown }[] = [];
@@ -354,6 +353,7 @@ class SettingsStore
         dirtyValues.set(key, $state.snapshot(this.stateData[key]));
       }
     }
+
     const pendingDeletes = new Set(this.pendingDeletes);
     // Tear down key effects so hydration mutations are not observed as changes,
     // then re-observe with a fresh initial pass that skips dirty marking.
@@ -396,9 +396,7 @@ class SettingsStore
     if (exists) {
       this.stateData[key] = value;
       this.observeKey(key);
-    } else {
-      delete this.stateData[key];
-    }
+    } else delete this.stateData[key];
   }
 
   /**

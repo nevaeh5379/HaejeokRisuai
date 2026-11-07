@@ -100,8 +100,9 @@ export class WorkflowNode {
     const definition = graph.definitions.get(source.type);
     if (definition) {
       this.isVirtualNode = true;
-      if (ancestors.has(source.type))
+      if (ancestors.has(source.type)) {
         throw new Error(`Recursive subgraph: ${source.type}`);
+      }
       this.subgraph = new WorkflowGraph(
         definition,
         info,
@@ -113,8 +114,9 @@ export class WorkflowNode {
     }
     if (source.type === "PrimitiveNode") {
       const values = source.widgets_values;
-      if (!Array.isArray(values) || !values.length)
+      if (!Array.isArray(values) || !values.length) {
         throw new Error(`Primitive node ${this.id} has no saved value.`);
+      }
       this.applyToGraph = () => this.propagatePrimitive(values[0]);
       return;
     }
@@ -122,13 +124,15 @@ export class WorkflowNode {
       this.isVirtualNode ||
       this.mode === LGraphEventMode.NEVER ||
       this.mode === LGraphEventMode.BYPASS
-    )
+    ) {
       return;
+    }
     const def = info[this.type];
-    if (!def?.input)
+    if (!def?.input) {
       throw new Error(
         `Node ${this.id} (${this.type}) is missing from ComfyUI /object_info.`,
       );
+    }
     const values = source.widgets_values;
     const named =
       source.widgets_values_named ??
@@ -154,8 +158,9 @@ export class WorkflowNode {
           !slot?.widget &&
           (slot ||
             (!hasPositionalValue && !Object.hasOwn(options ?? {}, "default")))
-        )
+        ) {
           continue;
+        }
         const value =
           named && Object.hasOwn(named, name)
             ? named[name]
@@ -173,8 +178,9 @@ export class WorkflowNode {
           type === "INT" &&
           (options?.control_after_generate ??
             ["seed", "noise_seed"].includes(name))
-        )
+        ) {
           index++;
+        }
       }
     }
     // Extra workflow-only widgets (e.g. image previews on VAEDecode) are not
@@ -189,8 +195,9 @@ export class WorkflowNode {
     map: Map<ExecutionId, ExecutableLGraphNode>,
     path: readonly NodeId[] = [],
   ): ExecutableLGraphNode[] {
-    if (!this.subgraph)
+    if (!this.subgraph) {
       return [new ExecutableNodeDTO(this, path, map, this.graph.owner)];
+    }
     const dto = new ExecutableNodeDTO(this, path, map, this.graph.owner);
     map.set(dto.id, dto);
     const inner: ExecutableLGraphNode[] = [];
@@ -223,8 +230,9 @@ export class WorkflowNode {
     value: unknown,
     visited = new Set<WorkflowNode>(),
   ) {
-    if (visited.has(this))
+    if (visited.has(this)) {
       throw new Error("Workflow contains a cyclic virtual connection.");
+    }
     visited.add(this);
     for (const link of this.graph.links.values()) {
       if (String(link.origin_id) !== String(this.id)) continue;
@@ -296,14 +304,16 @@ export class WorkflowGraph {
     root?: WorkflowGraph,
     ancestors = new Set<string>(),
   ) {
-    if (!Array.isArray(source.nodes) || !Array.isArray(source.links))
+    if (!Array.isArray(source.nodes) || !Array.isArray(source.links)) {
       throw new Error("Workflow nodes or links are missing.");
+    }
     this.id = source.id ?? `workflow-${this.instanceId}`;
     this.rootGraph = root ?? this;
     this.definitions = new Map(root?.definitions);
     for (const def of source.definitions?.subgraphs ?? []) {
       if (def.id) this.definitions.set(def.id, def);
     }
+
     for (const data of source.links) {
       const link = new WorkflowLink(data, this);
       this.links.set(String(link.id), link);

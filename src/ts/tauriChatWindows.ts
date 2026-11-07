@@ -74,6 +74,7 @@ export function resolveTauriOutsideTabDropAction(
   ) {
     return "move-current-window";
   }
+
   return "create-window";
 }
 
@@ -191,8 +192,9 @@ export function buildTauriChatWorkspaceWindowUrl(
     [WINDOW_KIND_PARAM]: WORKSPACE_WINDOW_KIND,
     [WINDOW_ID_PARAM]: windowId,
   });
-  if (presentation.characterName)
+  if (presentation.characterName) {
     params.set(CHARACTER_NAME_PARAM, presentation.characterName);
+  }
   if (presentation.chatName) params.set(CHAT_NAME_PARAM, presentation.chatName);
   return `${pathname || "/"}?${params.toString()}`;
 }
@@ -415,11 +417,13 @@ export async function updateTauriChatDockPreview(
       false,
     );
   }
+
   dockPreviewTargetWindowId = targetWindowId;
   dockPreviewTransferId = payload.transferId;
   if (targetWindowId) {
     await emitDockPreview(targetWindowId, payload.transferId, true);
   }
+
   return targetWindowId;
 }
 
@@ -447,8 +451,9 @@ function setCurrentWindowDockPreview(payload: TauriDockPreviewPayload): void {
     root.dataset.risuChatDockPreviewTransfer = payload.transferId;
     if (dockPreviewExpiryTimer) clearTimeout(dockPreviewExpiryTimer);
     dockPreviewExpiryTimer = setTimeout(() => {
-      if (root.dataset.risuChatDockPreviewTransfer !== payload.transferId)
+      if (root.dataset.risuChatDockPreviewTransfer !== payload.transferId) {
         return;
+      }
       delete root.dataset.risuChatDockPreview;
       delete root.dataset.risuChatDockPreviewTransfer;
       dockPreviewExpiryTimer = null;
@@ -783,8 +788,9 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
           !payload ||
           typeof payload.transferId !== "string" ||
           typeof payload.active !== "boolean"
-        )
+        ) {
           return;
+        }
         setCurrentWindowDockPreview(payload);
       },
     ),
@@ -798,8 +804,9 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
         if (
           !isTauriChatDragPayload(payload) ||
           payload.sourceWindowId === windowId
-        )
+        ) {
           return;
+        }
         void acceptTauriChatTabDrop(payload);
       },
     ),
@@ -816,6 +823,7 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
         /* ignore stale layout */
       }
     }
+
     const { getAllWebviewWindows } =
       await import("@tauri-apps/api/webviewWindow");
     const liveWindowIds = new Set(
@@ -827,6 +835,7 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
         removeStorage(`${WINDOW_STORAGE_PREFIX}${window.id}`);
       }
     }
+
     await publishCurrentTauriChatWorkspaceState();
     cleanups.push(
       await current.listen<TauriWorkspaceStatePayload>(
@@ -835,16 +844,18 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
           const payload = event.payload;
           if (!payload?.windowId?.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return;
           const existing = chatWindowManager.getWindow(payload.windowId);
-          if (existing)
+          if (existing) {
             chatWindowManager.updateTabs(payload.windowId, payload.tabs);
-          else
+          } else {
             chatWindowManager.registerAuxiliary(
               payload.windowId,
               payload.tabs,
               payload.bounds,
             );
-          if (payload.bounds)
+          }
+          if (payload.bounds) {
             chatWindowManager.updateBounds(payload.windowId, payload.bounds);
+          }
           persistWorkspaceManager();
         },
       ),
@@ -906,8 +917,9 @@ export async function requestTauriChatTabTransferToWindow(
     !isTauriChatDragPayload(payload) ||
     !isWorkspaceWindowId(targetWindowId) ||
     targetWindowId === payload.sourceWindowId
-  )
+  ) {
     return false;
+  }
 
   const { getCurrentWebviewWindow } =
     await import("@tauri-apps/api/webviewWindow");
@@ -959,8 +971,9 @@ export async function watchTauriChatTabTransferAck(
       if (
         ack.transferId !== payload.transferId ||
         ack.sourceWindowId !== payload.sourceWindowId
-      )
+      ) {
         return;
+      }
       if (ack.tab.id !== payload.tab.id) return;
       onAccepted();
     },
@@ -1017,6 +1030,7 @@ export async function acceptTauriChatTabDrop(
     ) {
       await navigateToChatTab(previousActiveId);
     }
+
     await publishCurrentTauriChatWorkspaceState();
     return false;
   }
@@ -1025,15 +1039,20 @@ export async function acceptTauriChatTabDrop(
 export async function completeCurrentTauriTabTransfer(
   payload: TauriChatDragPayload,
 ): Promise<boolean> {
-  if (!isTauri || getCurrentChatWorkspaceWindowId() !== payload.sourceWindowId)
+  if (
+    !isTauri ||
+    getCurrentChatWorkspaceWindowId() !== payload.sourceWindowId
+  ) {
     return false;
+  }
   const { chatTabsStore, navigateToChatTab } =
     await import("./chatTabs.svelte");
   const { selectedCharID } = await import("./stores.svelte");
   const result = chatTabsStore.detach(payload.tab.id);
   if (result.becameEmpty) selectedCharID.set(-1);
-  else if (result.activeChanged && result.activeTab)
+  else if (result.activeChanged && result.activeTab) {
     await navigateToChatTab(result.activeTab.id);
+  }
   await publishCurrentTauriChatWorkspaceState();
   if (
     result.becameEmpty &&

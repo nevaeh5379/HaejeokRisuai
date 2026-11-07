@@ -30,9 +30,8 @@ if (typeof window !== "undefined") {
   if (isTauriMacOS) {
     document.documentElement.classList.add("tauri-macos-vibrancy");
   }
-  if (isTauriWindows) {
-    applyWindowsTransparencyToDocument();
-  }
+
+  if (isTauriWindows) applyWindowsTransparencyToDocument();
 }
 
 window.addEventListener("vite:preloadError", (event) => {
@@ -47,6 +46,7 @@ async function start() {
   if (isTauri && !(await waitForTauriRuntimeReady())) {
     throw new Error("Tauri runtime initialization timed out");
   }
+
   await Promise.all([
     initializeWindowsTransparency(),
     initializeLinuxWindowIntegration(),

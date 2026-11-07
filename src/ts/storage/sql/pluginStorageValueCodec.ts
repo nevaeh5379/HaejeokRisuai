@@ -40,6 +40,7 @@ function requiresEncoding(
       return true;
     }
   }
+
   return false;
 }
 

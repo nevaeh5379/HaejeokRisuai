@@ -8,9 +8,7 @@ export async function doLossyCompression(
     image.onload = () => {
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
-      if (!context) {
-        throw new Error("Unable to get 2D context");
-      }
+      if (!context) throw new Error("Unable to get 2D context");
 
       // Compute the new dimensions while maintaining aspect ratio
       let { width, height } = image;

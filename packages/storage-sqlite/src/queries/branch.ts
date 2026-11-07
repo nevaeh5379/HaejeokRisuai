@@ -312,6 +312,7 @@ function sqliteMessageStatements(
       ),
     );
   }
+
   return statements;
 }
 
@@ -340,6 +341,7 @@ export function buildLegacyMigrationStatements(
   for (const message of plan.messages) {
     statements.push(...sqliteMessageStatements(chatId, message));
   }
+
   for (const branch of plan.branches) {
     statements.push({
       sql: `INSERT INTO chat_branches
@@ -356,6 +358,7 @@ export function buildLegacyMigrationStatements(
       ],
     });
   }
+
   for (const link of plan.links) {
     statements.push({
       sql: `INSERT INTO message_branch_links
@@ -369,6 +372,7 @@ export function buildLegacyMigrationStatements(
       ],
     });
   }
+
   statements.push({
     sql: "INSERT INTO chat_active_branches (chat_id,branch_id) VALUES (?,?)",
     bind: [chatId, plan.activeBranchId],

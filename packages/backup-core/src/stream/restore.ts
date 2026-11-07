@@ -48,14 +48,14 @@ export class PortableDatabaseStreamRestoreCoordinator<
   async acceptEntry(name: string, value: unknown): Promise<void> {
     if (name === MANIFEST_NAME) {
       const manifest: Manifest | null = Manifest.read(value);
-      if (!manifest) {
-        throw new Error("Unsupported streaming database manifest");
-      }
+      if (!manifest) throw new Error("Unsupported streaming database manifest");
+
       await this.#ensureTarget();
       if (this.#mode === "sink") {
         if (this.#manifest) {
           throw new Error("Duplicate streaming database manifest");
         }
+
         this.#manifest = manifest;
         return;
       }
@@ -67,6 +67,7 @@ export class PortableDatabaseStreamRestoreCoordinator<
     if (expectedIndex === null) {
       throw new Error(`Invalid streaming database entry name: ${name}`);
     }
+
     const fragment: Fragment | null = Fragment.read(value, { expectedIndex });
     if (!fragment) {
       throw new Error(`Invalid streaming database fragment: ${name}`);
@@ -112,6 +113,7 @@ export class PortableDatabaseStreamRestoreCoordinator<
     if (!this.#sink) {
       throw new Error("Streaming database sink is not initialized");
     }
+
     return this.#sink;
   }
 
@@ -119,6 +121,7 @@ export class PortableDatabaseStreamRestoreCoordinator<
     if (!this.#collector) {
       throw new Error("Streaming database collector is not initialized");
     }
+
     return this.#collector;
   }
 }

@@ -83,6 +83,7 @@ async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> 
       allowInsecureHttp: true,
     };
   }
+
   if (isNodeServer) {
     return {
       version: 1,
@@ -91,6 +92,7 @@ async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> 
       allowInsecureHttp: location.protocol === "http:",
     };
   }
+
   const stored = loadStorageProfile();
   if (stored) {
     if (stored.mode === "remote") {
@@ -103,6 +105,7 @@ async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> 
         }),
       };
     }
+
     return stored;
   }
   const local = { version: 1, mode: "local" } as const;
@@ -190,9 +193,8 @@ export async function loadData() {
       // ── Step 1: Initialise SQL storage backend ────────────────────
       await androidDiagnosticCheckpoint("startup:sql-init");
       const storage = await initSqlStorageOrGate();
-      if (!storage) {
-        return;
-      }
+      if (!storage) return;
+
       installActiveStorageRuntime(
         new ActiveStorageRuntime({
           profile: storageProfile,
@@ -206,9 +208,7 @@ export async function loadData() {
       LoadingStatusState.text = "Loading Database...";
       await androidDiagnosticCheckpoint("startup:sql-domains");
       let startup = await storage.loadStartupData();
-      if (!startup) {
-        throw new Error("SQL storage returned no startup data");
-      }
+      if (!startup) throw new Error("SQL storage returned no startup data");
 
       if (startup.status === "empty") {
         // ── Step 3: Check for legacy migration ──────────────────────
@@ -235,6 +235,7 @@ export async function loadData() {
           );
         });
       }
+
       await androidDiagnosticCheckpoint("startup:presets");
       await initPresetDomain(storage);
 
@@ -252,17 +253,14 @@ export async function loadData() {
       await androidDiagnosticCheckpoint("startup:drive-sync");
       const { checkDriverInit } = await import("../drive/drive");
       const isDriverMode = await checkDriverInit();
-      if (isDriverMode) {
-        return;
-      }
+      if (isDriverMode) return;
 
       await androidDiagnosticCheckpoint("startup:thumbnails");
       await prepareAndroidCharacterThumbnails();
 
       applyStartupAppearance();
-      if (settingsStore.state.botSettingAtStart) {
-        botMakerMode.set(true);
-      }
+      if (settingsStore.state.botSettingAtStart) botMakerMode.set(true);
+
       // Reset the initial selection before the shell becomes interactive.
       // Doing this later can overwrite a character the user selected while
       // the remaining startup work is still loading.
@@ -285,7 +283,6 @@ export async function loadData() {
         if (urlParams.has("realm") || urlParams.has("charahub")) {
           const { characterURLImport } = await import("../characterCards");
           void characterURLImport();
-         
         }
       }
 
@@ -331,14 +328,13 @@ export async function loadData() {
           await getCurrentWebviewWindow().close();
           return;
         }
-         await listen<string[]>("tauri-opened-files", async (event) => {
-            await enqueueFiles(event.payload)
-          })
+        await listen<string[]>("tauri-opened-files", async (event) => {
+          await enqueueFiles(event.payload);
+        });
         await initializeTauriChatWorkspaceRuntime();
         if (!auxiliaryChatWindow) {
-          const { initializeWindowsChatShortcutRuntime } = await import(
-            "../windowsShortcut"
-          );
+          const { initializeWindowsChatShortcutRuntime } =
+            await import("../windowsShortcut");
           await initializeWindowsChatShortcutRuntime();
         }
         const { initializeTauriAppMenu } = await import("../tauriAppMenu");

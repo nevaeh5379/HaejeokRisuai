@@ -78,6 +78,7 @@ describe("Manifest.read", () => {
     for (const value of [null, undefined, "manifest", [], {}]) {
       expect(Manifest.read(value)).toBeNull();
     }
+
     for (const patch of [
       { format: { toString: () => valid.format } },
       { format: "nope" },
@@ -154,6 +155,7 @@ describe("Fragment.read", () => {
     for (const value of [null, undefined, "fragment", [], {}]) {
       expect(Fragment.read(value)).toBeNull();
     }
+
     for (const patch of [
       { format: "nope" },
       { format: { toString: () => valid.format } },
@@ -166,6 +168,7 @@ describe("Fragment.read", () => {
     ]) {
       expect(Fragment.read({ ...valid, ...patch })).toBeNull();
     }
+
     const atBound = Array<LegacyBackupSqlRecord>(MAX_FRAGMENT_RECORDS).fill(
       records[0],
     );

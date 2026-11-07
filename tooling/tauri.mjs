@@ -21,7 +21,13 @@ const tauriConfigPath = join(projectRoot, "src-tauri", "tauri.conf.json");
 function ensureLinuxDevDesktopEntry() {
   const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
   const identifier = tauriConfig.identifier;
-  const binaryPath = join(projectRoot, "src-tauri", "target", "debug", "risuai");
+  const binaryPath = join(
+    projectRoot,
+    "src-tauri",
+    "target",
+    "debug",
+    "risuai",
+  );
   const waylandAppId = basename(binaryPath);
 
   const dataHome =
@@ -81,8 +87,9 @@ const tauriEnvironment = {
     : { HAEJEOK_BUILD_NUMBER: String(version.buildNumber) }),
 };
 
-if (process.platform === "linux" && command === "build") {
-  // linuxdeploy bundles an older strip that cannot read Arch Linux RELR sections.
+if (process.platform === "linux" && command === "build")
+// linuxdeploy bundles an older strip that cannot read Arch Linux RELR sections.
+{
   tauriEnvironment.NO_STRIP ??= "1";
 }
 
@@ -103,10 +110,7 @@ if (needsVersionConfig) {
       : {}),
   };
 
-  args.push(
-    "--config",
-    JSON.stringify(config),
-  );
+  args.push("--config", JSON.stringify(config));
 }
 
 console.log(

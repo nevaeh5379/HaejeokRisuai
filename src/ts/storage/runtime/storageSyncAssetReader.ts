@@ -34,9 +34,8 @@ const HEX_TABLE: string[] = Array.from({ length: 256 }, (_, i) =>
 
 function digestToHex(value: Uint8Array): string {
   let hex = "";
-  for (let i = 0; i < value.length; i++) {
-    hex += HEX_TABLE[value[i]];
-  }
+  for (let i = 0; i < value.length; i++) hex += HEX_TABLE[value[i]];
+
   return hex;
 }
 
@@ -58,6 +57,7 @@ export function createStorageSyncAssetReader(
       },
     };
   }
+
   throw new StorageSyncAssetReadError(
     "This local asset backend cannot provide bounded reads. Migrate browser assets to OPFS before syncing.",
     "bounded_asset_read_unsupported",
@@ -81,6 +81,7 @@ export async function hashStorageSyncAsset(
         "invalid_asset_chunk",
       );
     }
+
     hash.update(chunk);
     offset += chunk.byteLength;
   }
@@ -98,9 +99,7 @@ function extractSortedUniquePrefixKeys(
   const keySet = new Set<string>();
   for (let i = 0; i < rawKeys.length; i++) {
     const key = rawKeys[i];
-    if (key.startsWith(prefix)) {
-      keySet.add(key);
-    }
+    if (key.startsWith(prefix)) keySet.add(key);
   }
   return Array.from(keySet).sort(compareStorageSyncAssetKeys);
 }
@@ -130,9 +129,8 @@ export async function summarizeStorageSyncAssets(
     }
   };
   const workers = new Array(workerCount);
-  for (let i = 0; i < workerCount; i++) {
-    workers[i] = worker();
-  }
+  for (let i = 0; i < workerCount; i++) workers[i] = worker();
+
   await Promise.all(workers);
   return { count: keys.length, sizeBytes };
 }
@@ -157,9 +155,8 @@ export async function buildStorageSyncAssetManifest(
   };
   const workerCount = Math.min(STORAGE_SYNC_ASSET_MAX_CONCURRENCY, keys.length);
   const workers = new Array(workerCount);
-  for (let i = 0; i < workerCount; i++) {
-    workers[i] = worker();
-  }
+  for (let i = 0; i < workerCount; i++) workers[i] = worker();
+
   await Promise.all(workers);
   return manifest;
 }

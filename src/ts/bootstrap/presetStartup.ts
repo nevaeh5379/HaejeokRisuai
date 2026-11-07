@@ -19,6 +19,7 @@ export async function initPresetDomain(storage: ISqlStorage): Promise<void> {
     ) {
       await presetStore.retryActive();
     }
+
     settingsStore.releasePresetOwnedState();
     performance.mark("active-preset-ready");
   } catch (error) {

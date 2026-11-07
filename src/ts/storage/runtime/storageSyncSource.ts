@@ -55,6 +55,7 @@ async function assertAuthoritativeRevision(
   if (!summary || current !== expectedRevision) {
     throw new StorageSyncSourceRevisionChangedError(expectedRevision, current);
   }
+
   return summary;
 }
 async function* iterateSettings(
@@ -66,6 +67,7 @@ async function* iterateSettings(
       "This SQL backend cannot enumerate persisted setting keys.",
     );
   }
+
   const keys = [...new Set(await storage.setting.keys())].sort();
   for (let offset = 0; offset < keys.length; offset += SETTING_BATCH_SIZE) {
     assertCachedRevision(storage, expectedRevision);
@@ -75,6 +77,7 @@ async function* iterateSettings(
       for (const key of batch) {
         yield { type: "setting", key, value: values.get(key) };
       }
+
       continue;
     }
     for (const key of batch) {
@@ -104,8 +107,9 @@ async function* iteratePlugins(
   for (const { id, position, ...data } of plugins) {
     assertCachedRevision(storage, expectedRevision);
     const script = await storage.plugin.script.load(id);
-    if (!script)
+    if (!script) {
       throw new Error(`Plugin script disappeared during backup: ${id}`);
+    }
     yield { type: "plugin", id, position, data, script: script.script };
   }
 }
@@ -115,8 +119,9 @@ async function* iterateModules(
   const modules = await storage.module.list();
   for (let position = 0; position < modules.length; position++) {
     const module = modules[position];
-    if (!module?.id)
+    if (!module?.id) {
       throw new Error("Storage sync encountered a module without an id.");
+    }
     yield { type: "module", position, id: module.id, data: module };
   }
 }
@@ -130,8 +135,9 @@ async function* iteratePresets(
   );
   for (const summary of summaries) {
     const preset = await storage.preset.load(summary.id);
-    if (!preset)
+    if (!preset) {
       throw new Error(`Storage sync preset disappeared: ${summary.id}`);
+    }
     const { id: _id, ...data } = preset;
     yield { type: "preset", position: summary.position, id: summary.id, data };
   }
@@ -156,6 +162,7 @@ function requireBranchPageLoader(storage: ISqlStorage) {
       "This SQL backend cannot page branch graph messages. Upgrade the storage implementation before syncing.",
     );
   }
+
   return storage.branch.graphPage.bind(storage.branch);
 }
 
@@ -179,9 +186,11 @@ async function* iterateChatGraph(
       for (const branch of page.branches) {
         yield { type: "branch", chatId, data: branch };
       }
+
       if (page.activeBranchId) {
         yield { type: "active-branch", chatId, branchId: page.activeBranchId };
       }
+
       emittedMetadata = true;
     }
     if (
@@ -193,24 +202,28 @@ async function* iterateChatGraph(
         `Storage sync branch page is invalid for chat ${chatId}.`,
       );
     }
+
     const links = linkByMessageId(page.links);
     for (let index = 0; index < page.messages.length; index++) {
       const message = page.messages[index];
       const id = message.chatId;
-      if (!id)
+      if (!id) {
         throw new Error(
           `Storage sync encountered a message without an id in chat ${chatId}.`,
         );
+      }
       const link = links.get(id);
-      if (!link)
+      if (!link) {
         throw new Error(
           `Storage sync branch link is missing for message ${id}.`,
         );
+      }
       if (!Number.isSafeInteger(link.position) || Number(link.position) < 0) {
         throw new Error(
           "The storage backend does not expose branch message positions required for lossless sync. Upgrade it before syncing.",
         );
       }
+
       yield {
         type: "message",
         chatId,
@@ -228,6 +241,7 @@ async function* iterateChatGraph(
         `Storage sync branch paging did not advance for chat ${chatId}.`,
       );
     }
+
     offset = nextOffset;
   }
 }
@@ -242,11 +256,13 @@ async function* iterateEntities(
   for (let position = 0; position < characters.length; position++) {
     assertCachedRevision(storage, expectedRevision);
     const id = characters[position].chaId;
-    if (!id)
+    if (!id) {
       throw new Error("Storage sync encountered a character without an id.");
+    }
     const character = await storage.character.document(id);
-    if (!character)
+    if (!character) {
       throw new Error(`Storage sync character disappeared: ${id}`);
+    }
     yield {
       type: "character",
       position,
@@ -258,10 +274,11 @@ async function* iterateEntities(
     for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
       assertCachedRevision(storage, expectedRevision);
       const chatId = chats[chatPosition].id;
-      if (!chatId)
+      if (!chatId) {
         throw new Error(
           `Storage sync encountered a chat without an id for character ${id}.`,
         );
+      }
       const chat = await storage.chat.load(chatId, { messageLimit: 1 });
       if (!chat) throw new Error(`Storage sync chat disappeared: ${chatId}`);
       yield {
@@ -297,8 +314,9 @@ export async function* iterateStorageSyncSqlRecords(
   for (const note of await storage.authorNote.list()) {
     assertCachedRevision(storage, options.expectedRevision);
     const data = await storage.authorNote.read(note.id);
-    if (!data)
+    if (!data) {
       throw new Error(`Author note disappeared during backup: ${note.id}`);
+    }
     yield { type: "author-note", data };
   }
   yield {

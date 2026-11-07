@@ -56,9 +56,8 @@ async function writeInlayStorage(
     if (storage) {
       await putRemoteInlayAsset(id, asset);
       await writeCachedInlay(id, asset);
-    } else {
-      await writeCachedInlay(id, asset, true);
-    }
+    } else await writeCachedInlay(id, asset, true);
+
     return;
   }
   await writeCachedInlay(id, asset);
@@ -74,6 +73,7 @@ async function writeInlayStorage(
         error,
       );
     }
+
     remoteWriteFailed = true;
   }
 }
@@ -89,6 +89,7 @@ export async function migrateLocalInlaysToServer(): Promise<{
       "Inlay server storage is only available on the node server",
     );
   }
+
   const stored = await readAllCachedInlays();
   const remoteIds = new Set(await listRemoteInlayIds());
   let migrated = 0;
@@ -104,9 +105,9 @@ export async function migrateLocalInlaysToServer(): Promise<{
       console.warn(`Failed to upload inlay ${id} to server`, error);
     }
   }
-  if (migrated > 0 && failed === 0) {
-    resetInlayRemoteWriteState();
-  }
+
+  if (migrated > 0 && failed === 0) resetInlayRemoteWriteState();
+
   return { migrated, total: pending.length, failed };
 }
 
@@ -206,9 +207,8 @@ export async function writeInlayImage(
   let drawWidth = 0;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("2D canvas context is unavailable");
-  }
+  if (!ctx) throw new Error("2D canvas context is unavailable");
+
   try {
     await new Promise((resolve, reject) => {
       /**
@@ -251,11 +251,8 @@ export async function writeInlayImage(
     });
     const imageBlob = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error("Failed to encode inlay image"));
-        }
+        if (blob) resolve(blob);
+        else reject(new Error("Failed to encode inlay image"));
       }, "image/png"),
     );
 
@@ -304,18 +301,15 @@ export async function saveInlayedSignature(
 
 function base64ToBlob(b64: string): Blob {
   const separatorIndex = b64.indexOf(",");
-  if (separatorIndex === -1) {
-    throw new Error("Invalid base64 data URI");
-  }
+  if (separatorIndex === -1) throw new Error("Invalid base64 data URI");
+
   const header = b64.slice(0, separatorIndex);
   const byteString = atob(b64.slice(separatorIndex + 1));
   const mimeString = header.split(":")[1]?.split(";")[0] ?? "";
 
   const ab = new ArrayBuffer(byteString.length);
   const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
+  for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
 
   return new Blob([ab], { type: mimeString });
 }
@@ -334,16 +328,11 @@ function blobToBase64(blob: Blob): Promise<string> {
 // Returns with base64 data URI
 export async function getInlayAsset(id: string) {
   const img = await getInlayStorageItem(id);
-  if (img === null) {
-    return null;
-  }
+  if (img === null) return null;
 
   let data: string;
-  if (img.data instanceof Blob) {
-    data = await blobToBase64(img.data);
-  } else {
-    data = img.data as string;
-  }
+  if (img.data instanceof Blob) data = await blobToBase64(img.data);
+  else data = img.data as string;
 
   return { ...img, data };
 }
@@ -351,25 +340,20 @@ export async function getInlayAsset(id: string) {
 // Returns media data as Blob; signature data remains text.
 export async function getInlayAssetBlob(id: string) {
   const img = await getInlayStorageItem(id);
-  if (img === null) {
-    return null;
-  }
+  if (img === null) return null;
 
-  if (img.type === "signature") {
-    return img;
-  }
+  if (img.type === "signature") return img;
 
   let data: Blob;
   if (typeof img.data === "string") {
     if (!img.data.startsWith("data:")) {
       throw new Error(`Invalid inlay data URI: ${id}`);
     }
+
     // Migrate legacy data URI to Blob
     data = base64ToBlob(img.data);
     await setInlayAsset(id, { ...img, data });
-  } else {
-    data = img.data;
-  }
+  } else data = img.data;
 
   return { ...img, data };
 }
@@ -377,9 +361,7 @@ export async function getInlayAssetBlob(id: string) {
 export async function listInlayAssets(): Promise<[id: string, InlayAsset][]> {
   const localEntries = await readAllCachedInlays();
   const remoteStorage = await getRemoteNodeStorage();
-  if (!remoteStorage) {
-    return localEntries;
-  }
+  if (!remoteStorage) return localEntries;
 
   const results: [id: string, InlayAsset][] = [];
   const seen = new Set<string>();
@@ -418,9 +400,8 @@ export async function removeInlayAsset(id: string) {
 
 async function getInlayStorageItem(id: string): Promise<InlayAsset | null> {
   const cached = await readCachedInlay(id);
-  if (cached !== null) {
-    return cached;
-  }
+  if (cached !== null) return cached;
+
   try {
     return await fetchRemoteInlayAsset(id);
   } catch (error) {
@@ -439,9 +420,8 @@ export function supportsInlayImage() {
 }
 
 export async function reencodeImage(img: Uint8Array) {
-  if (getImageType(img) === "PNG") {
-    return img;
-  }
+  if (getImageType(img) === "PNG") return img;
+
   const canvas = document.createElement("canvas");
   const imgObj = new Image();
   const objectUrl = URL.createObjectURL(
@@ -450,8 +430,8 @@ export async function reencodeImage(img: Uint8Array) {
   imgObj.src = objectUrl;
   try {
     await imgObj.decode();
-    let drawHeight = imgObj.height;
-    let drawWidth = imgObj.width;
+    const drawHeight = imgObj.height;
+    const drawWidth = imgObj.width;
     canvas.width = drawWidth;
     canvas.height = drawHeight;
     const ctx = canvas.getContext("2d");

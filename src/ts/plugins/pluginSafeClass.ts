@@ -35,9 +35,7 @@ export class SafeLocalStorage {
 
   clear(): void {
     const keys = this.keys();
-    for (const key of keys) {
-      this.removeItem(key);
-    }
+    for (const key of keys) this.removeItem(key);
   }
 
   get length(): number {
@@ -67,9 +65,7 @@ export class SafeLocalPluginStorage {
   }
   async clear(): Promise<void> {
     const keys = await this.keys();
-    for (const key of keys) {
-      await this.removeItem(key);
-    }
+    for (const key of keys) await this.removeItem(key);
   }
 }
 
@@ -83,9 +79,7 @@ export const SafeIdbFactory = {
           name: db.name!.substring("safe_plugin_".length),
           version: db.version,
         }));
-    } else {
-      return [];
-    }
+    } else return [];
   },
   deleteDatabase: async (name: string): Promise<IDBOpenDBRequest> => {
     return indexedDB.deleteDatabase(`safe_plugin_${name}`);
@@ -300,6 +294,7 @@ export const SafeDocument = {
         `Creation of <${tagName}> elements is not allowed in plugin context.`,
       );
     }
+
     if (tagName.toLowerCase() === "a") {
       console.error(`
                 Creation of <a> elements is restricted. due to potential security risks. Creating a <div> instead.
@@ -320,6 +315,7 @@ export const SafeDocument = {
         `Creation of <${qualifiedName}> elements is not allowed in plugin context.`,
       );
     }
+
     if (qualifiedName.toLowerCase() === "a") {
       console.error(`
                 Creation of <a> elements is restricted. due to potential security risks. Creating a <div> instead.
@@ -341,6 +337,7 @@ export const SafeDocument = {
           `Only http and https links are allowed for anchor elements in plugin context.`,
         );
       }
+
       new URL(href);
     } catch {
       throw new Error(

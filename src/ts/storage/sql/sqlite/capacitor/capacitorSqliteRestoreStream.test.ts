@@ -68,6 +68,7 @@ describe("CapacitorSqliteRestoreStream", () => {
         statementProgress[index - 1],
       );
     }
+
     expect(chunks.length).toBeGreaterThan(10);
     expect(Math.max(...chunks.map((chunk) => chunk.length))).toBeLessThan(
       256 * 1024,

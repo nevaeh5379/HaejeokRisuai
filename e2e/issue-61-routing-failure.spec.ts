@@ -104,6 +104,7 @@ async function seed(page: Page) {
           subModelRequestRules: [],
         });
       }
+
       await moduleStore.installModule({
         id: BACKEND,
         name: "Shared E2E Backend",

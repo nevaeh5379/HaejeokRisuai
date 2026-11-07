@@ -166,11 +166,13 @@ describe("ComfyUI Export (API) runtime", () => {
       if (scenario === "conversion failure") {
         value.nodes.find((node) => node.type === "VAEDecode")!.inputs![0].link =
           999999;
-      } else if (scenario === "loading failure") {
-        // The subgraph at the end of the fixture registers its promoted widget
-        // before loading this additional node fails.
+      } else if (scenario === "loading failure")
+      // The subgraph at the end of the fixture registers its promoted widget
+      // before loading this additional node fails.
+      {
         value.nodes.push({ id: 11, type: "MissingBackend" });
       }
+
       const registrations = vi.spyOn(widgetValueStore, "setWidget");
       try {
         if (scenario === "success") {
@@ -186,6 +188,7 @@ describe("ComfyUI Export (API) runtime", () => {
             "/object_info",
           );
         }
+
         expect(registrations).toHaveBeenCalled();
         for (const [id] of registrations.mock.calls) {
           expect(widgetValueStore.getWidget(id)).toBeUndefined();

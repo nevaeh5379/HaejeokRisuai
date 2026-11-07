@@ -16,9 +16,7 @@ export function getProtectedChatIds(
     if (chatId) protectedIds.add(chatId);
   }
 
-  for (const chatId of additionalChatIds) {
-    if (chatId) protectedIds.add(chatId);
-  }
+  for (const chatId of additionalChatIds) if (chatId) protectedIds.add(chatId);
 
   return protectedIds;
 }

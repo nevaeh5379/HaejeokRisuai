@@ -21,9 +21,8 @@ export function getProviderModeOverride<T>(
   overrides: Partial<Record<ProviderFeatureMode, T>> | null | undefined,
   mode?: ModelModeExtended,
 ): T | undefined {
-  if (!enabled || !isProviderFeatureMode(mode)) {
-    return undefined;
-  }
+  if (!enabled || !isProviderFeatureMode(mode)) return undefined;
+
   return overrides?.[mode];
 }
 
@@ -56,9 +55,8 @@ export function resolveProviderRoleModelForMode(
   mode?: ModelModeExtended,
   modeOverride?: string | null | undefined,
 ): string {
-  if (isAuxiliaryProviderMode(mode) && modeOverride) {
-    return modeOverride;
-  }
+  if (isAuxiliaryProviderMode(mode) && modeOverride) return modeOverride;
+
   return resolveProviderRoleModel(mainModel, subModel, mode);
 }
 
@@ -75,5 +73,6 @@ export function resolveProviderRoleSettingForMode<T>(
   ) {
     return modeOverride;
   }
+
   return resolveProviderRoleSetting(mainValue, auxiliaryValue, mode);
 }

@@ -47,6 +47,7 @@ function decodeRisuDb(data: Uint8Array): any {
       break;
     }
   }
+
   if (isCompressed) {
     const raw = data.slice(magicCompressedHeader.length);
     const decompressed = fflate.decompressSync(raw);
@@ -60,6 +61,7 @@ function decodeRisuDb(data: Uint8Array): any {
       break;
     }
   }
+
   if (isRaw) {
     const raw = data.slice(magicHeader.length);
     return unpackr.decode(raw);
@@ -105,12 +107,12 @@ function parseBackupArchiveFromBuffer(buf: Buffer): {
     if (name === "database.risudat") {
       dbData = buf.subarray(offset, offset + dataLen);
     }
+
     entryCount++;
     offset += dataLen;
   }
-  if (!dbData) {
-    throw new Error("database.risudat not found in archive");
-  }
+  if (!dbData) throw new Error("database.risudat not found in archive");
+
   return { dbData: Buffer.from(dbData), entryCount };
 }
 
@@ -327,17 +329,21 @@ describe("Oracle Backup Archive Sync Test", () => {
         if (sql.includes("SELECT revision FROM system_storage_meta")) {
           return { rows: [{ REVISION: 0 }] };
         }
+
         if (sql.includes("SELECT id FROM character_characters")) {
           return { rows: [] };
         }
+
         if (
           sql.includes("SELECT preset_id, position FROM system_bot_presets")
         ) {
           return { rows: [] };
         }
+
         if (sql.includes("INSERT INTO system_revisions")) {
           return { outBinds: { 6: [1] } };
         }
+
         return {};
       }),
       executeMany: vi.fn(async () => ({})),
@@ -391,12 +397,15 @@ describe("Oracle Backup Archive Sync Test", () => {
         ) {
           return { rows: [{ REVISION: 1, INITIALIZED: 1 }] };
         }
+
         if (sql.includes("FROM system_settings")) {
           return { rows: allSettingRows };
         }
+
         if (sql.includes("FROM system_setting_values")) {
           return { rows: allSettingValueRows };
         }
+
         if (sql.includes("FROM character_characters")) {
           return {
             rows: [
@@ -410,6 +419,7 @@ describe("Oracle Backup Archive Sync Test", () => {
             ],
           };
         }
+
         if (sql.includes("FROM chat_chats")) {
           return {
             rows: [
@@ -423,6 +433,7 @@ describe("Oracle Backup Archive Sync Test", () => {
             ],
           };
         }
+
         return { rows: [] };
       }),
       rollback: vi.fn(async () => {}),

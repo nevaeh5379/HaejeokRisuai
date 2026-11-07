@@ -97,9 +97,7 @@ async function createChatGenerationPlan(
   const formated: any[] = input.formated.map((chat?: any) => ({ ...chat }));
   const tokenCounts: number[] = await runtime.tokenizeChatsDetailed(formated);
   let inputTokens = 0;
-  for (let i = 0; i < tokenCounts.length; i++) {
-    inputTokens += tokenCounts[i];
-  }
+  for (let i = 0; i < tokenCounts.length; i++) inputTokens += tokenCounts[i];
 
   if (inputTokens > input.maxContextTokens) {
     let pointer = 0;

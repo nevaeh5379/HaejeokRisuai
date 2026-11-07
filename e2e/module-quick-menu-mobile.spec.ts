@@ -22,6 +22,7 @@ async function boot(page: Page) {
   ) {
     await skip.click();
   }
+
   await expect(page.getByText("Welcome to Haejeok RisuAI")).toHaveCount(0, {
     timeout: 30_000,
   });
@@ -49,9 +50,9 @@ async function enableMobileGui(page: Page) {
     )) as { settingsStore: { state: { betaMobileGUI: boolean } } };
     settingsStore.state.betaMobileGUI = true;
     const storesUrl = "/src/ts/stores.svelte.ts";
-    const { syncMobileGUI } = (await import(
-      /* @vite-ignore */ storesUrl
-    )) as { syncMobileGUI: () => void };
+    const { syncMobileGUI } = (await import(/* @vite-ignore */ storesUrl)) as {
+      syncMobileGUI: () => void;
+    };
     syncMobileGUI();
   });
 }

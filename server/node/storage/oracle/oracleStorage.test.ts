@@ -86,9 +86,8 @@ describe("Oracle connection wrapper", () => {
       // oracledb와 동일하게 arguments.length로 바인드 여부를 판별
       // (2개 이상 인자면 binds가 배열이어야 함 — NJS-005 모방)
       execute: vi.fn(async function (sql, binds, options) {
-        if (arguments.length >= 2) {
-          expect(Array.isArray(binds)).toBe(true);
-        }
+        if (arguments.length >= 2) expect(Array.isArray(binds)).toBe(true);
+
         return { rows: [], rowsAffected: 0 };
       }),
       executeMany: vi.fn(async function (sql, binds, options) {
@@ -424,6 +423,7 @@ describe("Oracle plugin schema migration", () => {
           "ORA-00955: name is already used by an existing object",
         );
       }
+
       return { rows: [], rowsAffected: 0 };
     });
     const commit = vi.fn(async () => undefined);
@@ -484,14 +484,17 @@ describe("Oracle storage sync finalize concurrency", () => {
         ) {
           return { rows: [{ REVISION: revision, INITIALIZED: 1 }] };
         }
+
         if (
           sql.includes("SELECT id FROM system_revisions WHERE storage_revision")
         ) {
           return { rows: [{ ID: 40 }] };
         }
+
         if (sql.includes("INSERT INTO system_revisions")) {
           return { outBinds: { "6": [41] } };
         }
+
         return { rows: [] };
       }),
       commit: vi.fn(async () => {}),

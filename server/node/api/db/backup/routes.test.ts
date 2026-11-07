@@ -120,8 +120,9 @@ async function withBackupApi(
   await once(server, "listening");
   try {
     const address = server.address();
-    if (!address || typeof address === "string")
+    if (!address || typeof address === "string") {
       throw new Error("No TCP address");
+    }
     await run(`http://127.0.0.1:${address.port}`, {
       deps,
       setSecure: (nextSecure: boolean): void => {

@@ -3,9 +3,7 @@ import { getImageType } from "../imageType";
 import { doLossyCompression } from "./lossyCompression";
 
 export async function compressImage(data: Uint8Array) {
-  if (!settingsStore.state.imageCompression) {
-    return data;
-  }
+  if (!settingsStore.state.imageCompression) return data;
 
   const type = getImageType(data);
   if (type !== "Unknown" && type !== "WEBP" && type !== "AVIF") {

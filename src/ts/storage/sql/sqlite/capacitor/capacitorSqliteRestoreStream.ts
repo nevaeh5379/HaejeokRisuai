@@ -14,6 +14,7 @@ function safeSliceEnd(value: string, start: number, requestedEnd: number) {
   if (left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff) {
     end--;
   }
+
   return end;
 }
 
@@ -123,20 +124,23 @@ export class CapacitorSqliteRestoreStream {
     options: Parameters<NativeSqlitePlugin["restoreOpen"]>[0],
     onProgress?: (completed: number, stage?: string) => void,
   ) {
-    if (this.id)
+    if (this.id) {
       throw new Error("Native SQLite restore stream is already open");
+    }
     const opened = await this.plugin.restoreOpen(options);
     this.id = opened.id;
     this.sink = new ChunkSink(opened.id, this.plugin);
     try {
-      if (onProgress)
+      if (onProgress) {
         this.progressListener = await this.plugin.addListener(
           "restoreProgress",
           (event) => {
-            if (event.id === opened.id)
+            if (event.id === opened.id) {
               onProgress(event.completed, event.stage);
+            }
           },
         );
+      }
       await this.sink.write("[");
     } catch (error) {
       await this.abort().catch(() => {});
@@ -149,8 +153,9 @@ export class CapacitorSqliteRestoreStream {
     bind: unknown[] = [],
     onProgress?: (fraction: number) => void,
   ) {
-    if (!this.sink || !this.id)
+    if (!this.sink || !this.id) {
       throw new Error("Native SQLite restore stream is not open");
+    }
     const totalSourceCharacters = Math.max(
       1,
       Math.max(1, sql.length) +
@@ -182,8 +187,9 @@ export class CapacitorSqliteRestoreStream {
   }
 
   async finish(): Promise<number> {
-    if (!this.sink || !this.id)
+    if (!this.sink || !this.id) {
       throw new Error("Native SQLite restore stream is not open");
+    }
     const id = this.id;
     let finished = false;
     try {

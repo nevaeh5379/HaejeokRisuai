@@ -24,9 +24,8 @@ export async function processMultiCommand(
   let quoteDepth = false;
   for (let i = 0; i < command.length; i++) {
     const char = command[i];
-    if (char === '"') {
-      quoteDepth = !quoteDepth;
-    } else if (char === "|" && quoteDepth === false) {
+    if (char === '"') quoteDepth = !quoteDepth;
+    else if (char === "|" && quoteDepth === false) {
       splited.push(command.slice(lastIndex, i));
       lastIndex = i + 1;
     }
@@ -36,11 +35,8 @@ export async function processMultiCommand(
   for (let i = 0; i < splited.length; i++) {
     const result = await processCommand(splited[i].trim(), pipe, target);
     console.log(pipe);
-    if (result === false) {
-      return false;
-    } else {
-      pipe = result;
-    }
+    if (result === false) return false;
+    else pipe = result;
   }
   return pipe;
 }
@@ -60,9 +56,7 @@ async function processCommand(
     chatTargetFromIndexes(characterIndex, chatIndex) ?? undefined;
   let { commandName, arg, namedArg } = commandParser(command, pipe);
 
-  if (!arg) {
-    arg = pipe;
-  }
+  if (!arg) arg = pipe;
 
   arg = risuChatParser(arg, {
     chara: currentChar.type === "character" ? currentChar : null,
@@ -101,11 +95,10 @@ async function processCommand(
       if (namedArg.labels) {
         try {
           const JSONLabels = JSON.parse(namedArg.labels);
-          if (Array.isArray(JSONLabels)) {
-            pipe = await alertSelect(JSONLabels);
-          }
+          if (Array.isArray(JSONLabels)) pipe = await alertSelect(JSONLabels);
         } catch (error) {}
       }
+
       return pipe;
     }
     case "setinput": {
@@ -117,10 +110,12 @@ async function processCommand(
         await sayTTS(currentChar, arg);
         return pipe;
       }
-      if (currentChar.type === "group") {
-        //NOT IMPLEMENTED
+      if (currentChar.type === "group")
+      //NOT IMPLEMENTED
+      {
         return pipe;
       }
+
       return pipe;
     }
     case "send": {
@@ -170,14 +165,13 @@ async function processCommand(
           currentChat.message.length - size,
         );
       }
+
       return pipe;
     }
     case "len": {
       try {
         const parsed = JSON.parse(arg);
-        if (Array.isArray(parsed)) {
-          pipe = parsed.length.toString();
-        }
+        if (Array.isArray(parsed)) pipe = parsed.length.toString();
       } catch (error) {}
       return pipe;
     }
@@ -189,9 +183,8 @@ async function processCommand(
         splited.shift();
       }
       for (const e of splited) {
-        if (clearMode) {
-          currentChat.message = [];
-        }
+        if (clearMode) currentChat.message = [];
+
         currentChat.message.push({
           role: "user",
           data: e,
@@ -242,17 +235,15 @@ async function processCommand(
     }
     case "trigger": {
       const currentChar = characterStore.currentCharacter;
-      if (!currentChar || currentChar.type === "group") {
-        return;
-      }
+      if (!currentChar || currentChar.type === "group") return;
+
       const triggerResult = await runTrigger(currentChar, "manual", {
         chat: characterStore.currentChat,
         manualName: arg,
       });
 
-      if (triggerResult) {
-        characterStore.setCurrentChat(triggerResult.chat);
-      }
+      if (triggerResult) characterStore.setCurrentChat(triggerResult.chat);
+
       return;
     }
     case "?": {
@@ -318,21 +309,19 @@ async function processCommand(
 }
 
 function commandParser(command: string, pipe: string) {
-  if (command.startsWith("/")) {
-    command = command.slice(1);
-  }
+  if (command.startsWith("/")) command = command.slice(1);
+
   const sliced = command.split(" ").filter((e) => e != "");
   const commandName = sliced[0];
-  let argArray: string[] = [];
-  let namedArg: { [key: string]: string } = {};
+  const argArray: string[] = [];
+  const namedArg: { [key: string]: string } = {};
   for (let i = 1; i < sliced.length; i++) {
     if (sliced[i].includes("=")) {
       const [key, value] = sliced[i].split("=");
       namedArg[key] = value;
-    } else {
-      argArray.push(sliced[i]);
-    }
+    } else argArray.push(sliced[i]);
   }
+
   const arg = argArray
     .join(" ")
     .replace("{{pipe}}", pipe) //STScript compatibility

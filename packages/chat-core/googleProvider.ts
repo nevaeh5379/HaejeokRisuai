@@ -126,9 +126,8 @@ function selectGoogleGenerationParameters(
     "presence_penalty",
     "frequency_penalty",
   ];
-  if (options.thinking) {
-    candidates.push("thinking_tokens", "reasoning_effort");
-  }
+  if (options.thinking) candidates.push("thinking_tokens", "reasoning_effort");
+
   return candidates.filter((parameter?: any) =>
     supportedParameters.includes(parameter),
   );
@@ -147,6 +146,7 @@ function selectGoogleVertexRegion(modelId?: any, configuredRegion?: any): any {
   ) {
     return "global";
   }
+
   return configuredRegion;
 }
 
@@ -161,11 +161,8 @@ function formatGoogleTextResponse(textParts?: any, options: any = {}): any {
     const text: any = options.transformText
       ? options.transformText(part.text)
       : part.text;
-    if (part.thought) {
-      thoughts.push(text);
-    } else {
-      content.push(text);
-    }
+    if (part.thought) thoughts.push(text);
+    else content.push(text);
   }
 
   const thoughtText: any = thoughts.join("\n\n");
@@ -184,6 +181,7 @@ function collectGoogleFunctionCalls(parts?: any): any {
   for (const part of parts) {
     if (part?.functionCall) calls.push(part.functionCall);
   }
+
   return calls;
 }
 
@@ -246,6 +244,7 @@ system:${chat.content}`;
           parts: [{ text: `${chat.role}:${chat.content}` }],
         });
       }
+
       continue;
     }
 
@@ -300,6 +299,7 @@ function finalizeGoogleGenerationConfig(
       ) {
         generationConfig.thinkingConfig.thinkingLevel = "low";
       }
+
       generationConfig.thinkingConfig.includeThoughts = true;
     }
   }
@@ -354,9 +354,8 @@ function mergeGoogleConsecutiveChats(chats?: any): any {
     if (previousLastPart?.text && currentFirstPart?.text) {
       previousLastPart.text += `\n\n${currentFirstPart.text}`;
       previous.parts.push(...current.parts.slice(1));
-    } else {
-      previous.parts.push(...current.parts);
-    }
+    } else previous.parts.push(...current.parts);
+
     chats.splice(index, 1);
   }
   return chats;

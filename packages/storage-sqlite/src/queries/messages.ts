@@ -25,9 +25,8 @@ export function buildRowsQuery(
   let selectedSql =
     "SELECT chat_id, id, position, role, content_text, content_encoded, sender_name, sent_time, generation_model, input_tokens, output_tokens FROM messages WHERE chat_id = ?";
   const bind: unknown[] = [chatId];
-  if (limit === undefined) {
-    selectedSql += " ORDER BY position";
-  } else if (newest) {
+  if (limit === undefined) selectedSql += " ORDER BY position";
+  else if (newest) {
     selectedSql = `SELECT * FROM (${selectedSql} ORDER BY position DESC LIMIT ?) ORDER BY position`;
     bind.push(limit);
   } else {
@@ -399,16 +398,15 @@ export function rebuildRows<TMessage extends object = HydratedMessage>(
         core.message_content_encoded as string | null,
       );
     }
+
     if (core.message_sender_name != null) {
       message.name = String(core.message_sender_name);
-    } else {
-      delete message.name;
-    }
+    } else delete message.name;
+
     if (core.message_sent_time != null) {
       message.time = Number(core.message_sent_time);
-    } else {
-      delete message.time;
-    }
+    } else delete message.time;
+
     message.chatId = id;
 
     if (
@@ -420,9 +418,11 @@ export function rebuildRows<TMessage extends object = HydratedMessage>(
       if (core.message_generation_model != null) {
         message.generationInfo.model = String(core.message_generation_model);
       }
+
       if (core.message_input_tokens != null) {
         message.generationInfo.inputTokens = Number(core.message_input_tokens);
       }
+
       if (core.message_output_tokens != null) {
         message.generationInfo.outputTokens = Number(
           core.message_output_tokens,
@@ -447,5 +447,6 @@ export function rebuildGraphMessages<TMessage extends object = HydratedMessage>(
       message.isComment = comments.get(message.chatId)!;
     }
   }
+
   return messages;
 }

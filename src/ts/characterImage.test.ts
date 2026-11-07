@@ -164,9 +164,7 @@ describe("getCharImagesBatch", () => {
       display: true,
       transient: true,
     });
-    expect(result.get("assets/native-0.png")).toBe(
-      "blob:assets/native-0.png",
-    );
+    expect(result.get("assets/native-0.png")).toBe("blob:assets/native-0.png");
   });
 
   it("never falls back to one direct request per local image", async () => {
@@ -253,6 +251,7 @@ describe("getCharImagesBatch", () => {
     for (let index = 0; index < 9; index++) {
       fullImageBlobCache.set(`assets/full-${index}.png`, `blob:full-${index}`);
     }
+
     expect(fullImageBlobCache.size).toBe(8);
     expect(fullImageBlobCache.has("assets/full-8.png")).toBe(true);
 
@@ -260,6 +259,7 @@ describe("getCharImagesBatch", () => {
     for (let index = 9; index < 13; index++) {
       fullImageBlobCache.set(`assets/full-${index}.png`, `blob:full-${index}`);
     }
+
     expect(fullImageBlobCache.size).toBe(12);
 
     mocks.settingsState.fullResolutionImageCacheEntries = 4;

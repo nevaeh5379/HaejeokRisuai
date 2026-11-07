@@ -34,6 +34,7 @@ async function boot(page: Page) {
   ) {
     await skip.click();
   }
+
   await expect(page.getByText("Welcome to Haejeok RisuAI")).toHaveCount(0);
   // The module store hydrates asynchronously from SQLite; reading modules
   // before hydration completes races init() overwriting the in-memory module

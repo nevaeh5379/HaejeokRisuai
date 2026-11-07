@@ -35,6 +35,7 @@ export async function processStreamingRerollValues(
     if (settingsStore.state.removeIncompleteResponse) {
       result = trimUntilPunctuation(result);
     }
+
     const processed = await processScriptFull(
       options.nowChatroom,
       options.reformatContent(options.prefix + result),
@@ -171,6 +172,7 @@ function normalizeChunk(value: Record<string, string>) {
   if (settingsStore.state.removeIncompleteResponse) {
     result = trimUntilPunctuation(result);
   }
+
   return result;
 }
 
@@ -229,6 +231,7 @@ async function readStreamingChunks(
         scheduleFlush,
       );
     }
+
     if (read.done) break;
   }
 }
@@ -263,6 +266,7 @@ async function finishStreamingDisplay(
       state.flushError ??= error;
     }
   }
+
   if (state.flushError !== null) throw state.flushError;
   if (deferPostProcessing && state.receivedResult) {
     await applyFinalPostProcessing(options, state);
@@ -318,9 +322,10 @@ export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
       deferPostProcessing,
       controller.schedule,
     );
-    if (!state.streamAborted && !options.abortSignal.aborted) {
-      // Final display scripts and output triggers may call auxiliary models.
-      // They belong to post-processing, after the main response has ended.
+    if (!state.streamAborted && !options.abortSignal.aborted)
+    // Final display scripts and output triggers may call auxiliary models.
+    // They belong to post-processing, after the main response has ended.
+    {
       options.onModelComplete?.();
     }
   } finally {

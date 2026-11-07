@@ -48,6 +48,7 @@ export function coldStorageExportEntryName(key: string): string {
   if (getColdStorageBackupKey(name) !== key) {
     throw new Error(`Invalid cold storage backup key '${key}'`);
   }
+
   return name;
 }
 
@@ -67,6 +68,7 @@ export async function streamColdStorageExportEntries(
         `Cold storage backup payload is not serializable: ${key}`,
       );
     }
+
     const data = SHARED_TEXT_ENCODER.encode(serialized);
     await writeEntry(coldStorageExportEntryName(key), data, data.byteLength);
     onProgress?.({

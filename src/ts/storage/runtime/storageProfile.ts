@@ -33,21 +33,25 @@ function assertRemoteUrlIsAllowed(
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new StorageProfileError("The storage server must use HTTPS or HTTP.");
   }
+
   if (url.username || url.password) {
     throw new StorageProfileError(
       "The storage server URL must not contain credentials.",
     );
   }
+
   if (url.pathname !== "/" || url.search || url.hash) {
     throw new StorageProfileError(
       "The storage server URL must contain only an origin, without a path, query, or fragment.",
     );
   }
+
   if (url.protocol === "http:" && !allowInsecureHttp) {
     throw new StorageProfileError(
       "HTTP storage servers require explicit insecure HTTP approval.",
     );
   }
+
   if (
     platform === "web" &&
     pageProtocol === "https:" &&
@@ -68,9 +72,7 @@ export function normalizeRemoteBaseUrl(
   },
 ): string {
   const value = input.trim();
-  if (!value) {
-    throw new StorageProfileError("Enter a storage server URL.");
-  }
+  if (!value) throw new StorageProfileError("Enter a storage server URL.");
 
   let url: URL;
   try {
@@ -91,9 +93,8 @@ export function parseStorageProfile(value: unknown): StorageProfile | null {
   if (!value || typeof value !== "object") return null;
   const profile = value as Record<string, unknown>;
   if (profile.version !== 1) return null;
-  if (profile.mode === "local") {
-    return { version: 1, mode: "local" };
-  }
+  if (profile.mode === "local") return { version: 1, mode: "local" };
+
   if (
     profile.mode !== "remote" ||
     typeof profile.baseUrl !== "string" ||
@@ -101,6 +102,7 @@ export function parseStorageProfile(value: unknown): StorageProfile | null {
   ) {
     return null;
   }
+
   try {
     return {
       version: 1,
@@ -136,6 +138,7 @@ export function saveStorageProfile(
   if (!parsed) {
     throw new StorageProfileError("Cannot save an invalid storage profile.");
   }
+
   store.setItem(STORAGE_PROFILE_KEY, JSON.stringify(parsed));
 }
 

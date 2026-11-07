@@ -126,6 +126,7 @@ export async function translateStackTrace(
               if (originalPosition.name) {
                 return `    at ${originalPosition.name} (${originalPosition.source}:${originalPosition.line}:${originalPosition.column})`;
               }
+
               return `    at ${originalPosition.source}:${originalPosition.line}:${originalPosition.column}`;
             }
           }
@@ -136,9 +137,7 @@ export async function translateStackTrace(
     newStackLines.push(...processedLines);
   } finally {
     // Clean up all cached consumers
-    for (const consumer of consumerCache.values()) {
-      consumer.destroy();
-    }
+    for (const consumer of consumerCache.values()) consumer.destroy();
   }
 
   if (translatedFrameCount === 0) {

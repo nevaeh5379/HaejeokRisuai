@@ -23,7 +23,7 @@ export async function stableDiff(
   prompt: string,
   chatTarget?: ChatExecutionTarget,
 ) {
-  let db = settingsStore.state;
+  const db = settingsStore.state;
 
   if (db.sdProvider === "") {
     alertError("Stable diffusion is not set in settings.");
@@ -108,6 +108,7 @@ export async function generateAIImage(
         ),
       };
     }
+
     const image = await executeImageGeneration(
       settings,
       browserImageRuntime,
@@ -141,9 +142,7 @@ export function applyImageOrientation(
   height: number,
   orientation?: ImageOrientation,
 ) {
-  if (!orientation) {
-    return { height, width };
-  }
+  if (!orientation) return { height, width };
 
   const longerEdge = Math.max(height, width);
   const shorterEdge = Math.min(height, width);

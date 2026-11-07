@@ -11,9 +11,7 @@ import { personaStore } from "./stores/domain/personaStore.svelte";
 
 export async function selectUserImg() {
   const selected = await selectSingleFile(["png"]);
-  if (!selected) {
-    return;
-  }
+  if (!selected) return;
 
   await personaStore.ensureLoaded();
   const persona = personaStore.requireActive(selectUserImg.name);
@@ -50,9 +48,7 @@ export async function exportUserPersona() {
     const dataUrl = canvas.toDataURL("image/png");
     const base64 = dataUrl.split(",")[1];
     img = new Uint8Array(Buffer.from(base64, "base64"));
-  } else {
-    img = await readImage(persona.icon);
-  }
+  } else img = await readImage(persona.icon);
 
   const card: PersonaCard = {
     name: persona.name,
@@ -88,9 +84,8 @@ export async function exportUserPersona() {
 export async function importUserPersona() {
   try {
     const v = await selectSingleFile(["png"]);
-    if (!v) {
-      return;
-    }
+    if (!v) return;
+
     const readGenerator = PngChunk.readGenerator(v.data);
     let decoded: string | undefined;
 
@@ -122,9 +117,7 @@ export async function importUserPersona() {
         id: v4(),
       });
       alertNormal(language.successImport);
-    } else {
-      alertError(language.errors.noData);
-    }
+    } else alertError(language.errors.noData);
   } catch (error) {
     alertError(error);
     return;

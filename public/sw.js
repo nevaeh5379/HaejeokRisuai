@@ -20,8 +20,9 @@ function waitForStreamRegistration(id) {
     const startedAt = Date.now();
     const poll = () => {
       if (downloadStreams.has(id)) return resolve(true);
-      if (Date.now() - startedAt >= PENDING_REGISTER_GRACE_MS)
+      if (Date.now() - startedAt >= PENDING_REGISTER_GRACE_MS) {
         return resolve(false);
+      }
       setTimeout(poll, 25);
     };
     poll();
@@ -158,6 +159,7 @@ self.addEventListener("push", (event) => {
       ) {
         return;
       }
+
       await self.registration.showNotification(payload.title || "RisuAI", {
         body: payload.body,
         tag: payload.generationId
@@ -191,8 +193,9 @@ self.addEventListener("notificationclick", (event) => {
         if (client.focus) await client.focus().catch(() => {});
         return;
       }
-      if (self.clients.openWindow)
+      if (self.clients.openWindow) {
         await self.clients.openWindow("/").catch(() => {});
+      }
     })(),
   );
 });
@@ -232,14 +235,15 @@ self.addEventListener("message", (event) => {
       const readable = new ReadableStream({
         start(controller) {
           streamPort.onmessage = (e) => {
-            if (e.data?.done) {
-              // The producer finished writing. Closing the
-              // stream flushes the buffered chunks; the entry
-              // must STAY in downloadStreams until the download
-              // request actually consumes it (the /sw/download
-              // handler deletes it). Deleting here raced the
-              // browser's download request and produced silent
-              // empty backup files.
+            if (e.data?.done)
+            // The producer finished writing. Closing the
+            // stream flushes the buffered chunks; the entry
+            // must STAY in downloadStreams until the download
+            // request actually consumes it (the /sw/download
+            // handler deletes it). Deleting here raced the
+            // browser's download request and produced silent
+            // empty backup files.
+            {
               try {
                 controller.close();
               } catch {}
@@ -292,12 +296,14 @@ self.addEventListener("fetch", (event) => {
                   status: 404,
                 });
               }
+
               const item = downloadStreams.get(id);
               if (!item) {
                 return new Response("Download stream not found or expired", {
                   status: 404,
                 });
               }
+
               downloadStreams.delete(id);
               const rawFilename = item.filename || "backup.bin";
               const encodedFilename = encodeURIComponent(rawFilename);
@@ -316,9 +322,8 @@ self.addEventListener("fetch", (event) => {
           let targetUrl = url;
           const headers = event.request.headers;
           const headerUrl = headers.get("x-register-url");
-          if (headerUrl) {
-            targetUrl.pathname = decodeURIComponent(headerUrl);
-          }
+          if (headerUrl) targetUrl.pathname = decodeURIComponent(headerUrl);
+
           event.respondWith(checkCache(targetUrl));
           break;
         }
@@ -330,9 +335,8 @@ self.addEventListener("fetch", (event) => {
           let targetUrl = url;
           const headers = event.request.headers;
           const headerUrl = headers.get("x-register-url");
-          if (headerUrl) {
-            targetUrl.pathname = decodeURIComponent(headerUrl);
-          }
+          if (headerUrl) targetUrl.pathname = decodeURIComponent(headerUrl);
+
           const noContentType = headers.get("x-no-content-type") === "true";
           const customContentType =
             headers.get("content-type") || headers.get("x-content-type");
@@ -388,14 +392,13 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(new Response(`${error}`));
     }
   }
+
   if (path[1] === "tf") {
-    {
-      event.respondWith(
-        new Response("Cannot find resource from cache", {
-          status: 404,
-        }),
-      );
-    }
+    event.respondWith(
+      new Response("Cannot find resource from cache", {
+        status: 404,
+      }),
+    );
   }
 });
 
@@ -424,6 +427,7 @@ function hexToKey(hex) {
     for (let i = 0; i < hex.length; i += 2) {
       str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
     }
+
     return str;
   } catch (e) {
     return "";
@@ -472,9 +476,7 @@ function getMimeFromPath(path) {
 async function getSource(url, request) {
   const cache = await caches.open("risuCache");
   const cached = await cache.match(url);
-  if (!cached) {
-    return new Response("Not found", { status: 404 });
-  }
+  if (!cached) return new Response("Not found", { status: 404 });
 
   const rangeHeader = request?.headers?.get("range");
   if (rangeHeader) {
@@ -534,9 +536,8 @@ async function registerCache(
     "accept-ranges": "bytes",
     "content-type": contentType || "application/octet-stream",
   };
-  if (noContentType) {
-    delete headers["content-type"];
-  }
+  if (noContentType) delete headers["content-type"];
+
   await cache.put(
     url,
     new Response(buf, {

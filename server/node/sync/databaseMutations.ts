@@ -259,6 +259,7 @@ function createDatabaseMutations({
         if (!summary) {
           throw new Error("SQL storage is unavailable for backup restore");
         }
+
         const targetRevision = Number(summary.revision);
         const syncSession = {
           serverRevision: targetRevision,

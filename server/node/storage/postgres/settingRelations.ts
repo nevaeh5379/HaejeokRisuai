@@ -574,13 +574,14 @@ function projectSettings(upserts?: any): any {
         ) {
           const characterId = charIdsArr[refPosition];
           const projected: any = text(characterId);
-          if (projected !== null)
+          if (projected !== null) {
             rows["system.loadout_character_refs"].push({
               setting_key: key,
               loadout_position: position,
               position: refPosition,
               character_id: projected,
             });
+          }
         }
         const modulesArr = array(loadout.modules);
         for (
@@ -590,13 +591,14 @@ function projectSettings(upserts?: any): any {
         ) {
           const moduleId = modulesArr[refPosition];
           const projected: any = text(moduleId);
-          if (projected !== null)
+          if (projected !== null) {
             rows["system.loadout_module_refs"].push({
               setting_key: key,
               loadout_position: position,
               position: refPosition,
               module_id: projected,
             });
+          }
         }
         const globalVars = record(loadout.globalVariables);
         const varKeys = Object.keys(globalVars);
@@ -605,13 +607,14 @@ function projectSettings(upserts?: any): any {
           const variableValue = globalVars[variableKey];
           const projectedKey: any = text(variableKey);
           const projectedValue: any = text(variableValue);
-          if (projectedKey !== null && projectedValue !== null)
+          if (projectedKey !== null && projectedValue !== null) {
             rows["system.loadout_variables"].push({
               setting_key: key,
               loadout_position: position,
               key: projectedKey,
               value: projectedValue,
             });
+          }
         }
         const iconsArr = array(loadout.icons);
         for (
@@ -621,13 +624,14 @@ function projectSettings(upserts?: any): any {
         ) {
           const assetId = iconsArr[iconPosition];
           const projected: any = text(assetId);
-          if (projected !== null)
+          if (projected !== null) {
             rows["system.loadout_icons"].push({
               setting_key: key,
               loadout_position: position,
               position: iconPosition,
               asset_id: projected,
             });
+          }
         }
       }
       continue;
@@ -653,12 +657,13 @@ function projectSettings(upserts?: any): any {
       for (let position = 0; position < textArr.length; position++) {
         const item = textArr[position];
         const projected: any = text(item);
-        if (projected !== null)
+        if (projected !== null) {
           rows["system.ordered_text_settings"].push({
             setting_key: key,
             position,
             value: projected,
           });
+        }
       }
       continue;
     }
@@ -667,12 +672,13 @@ function projectSettings(upserts?: any): any {
       for (let position = 0; position < flagsArr.length; position++) {
         const item = flagsArr[position];
         const projected: any = number(item);
-        if (projected !== null)
+        if (projected !== null) {
           rows["system.ordered_number_settings"].push({
             setting_key: key,
             position,
             value: projected,
           });
+        }
       }
       continue;
     }
@@ -684,12 +690,13 @@ function projectSettings(upserts?: any): any {
         const mapValue = mapRec[mapKey];
         const projectedKey: any = text(mapKey);
         const projectedValue: any = text(mapValue);
-        if (projectedKey !== null && projectedValue !== null)
+        if (projectedKey !== null && projectedValue !== null) {
           rows["system.string_map_settings"].push({
             setting_key: key,
             key: projectedKey,
             value: projectedValue,
           });
+        }
       }
       continue;
     }
@@ -700,13 +707,14 @@ function projectSettings(upserts?: any): any {
         const itemArr = array(item);
         const phrase: any = text(itemArr[0]);
         const bias: any = number(itemArr[1]);
-        if (phrase !== null && bias !== null)
+        if (phrase !== null && bias !== null) {
           rows["system.bias_entries"].push({
             setting_key: key,
             position,
             phrase,
             bias,
           });
+        }
       }
       continue;
     }
@@ -717,13 +725,14 @@ function projectSettings(upserts?: any): any {
         const itemArr = array(item);
         const parameterKey: any = text(itemArr[0]);
         const parameterValue: any = text(itemArr[1]);
-        if (parameterKey !== null && parameterValue !== null)
+        if (parameterKey !== null && parameterValue !== null) {
           rows["system.additional_parameters"].push({
             setting_key: key,
             position,
             key: parameterKey,
             value: parameterValue,
           });
+        }
       }
       continue;
     }
@@ -739,13 +748,14 @@ function projectSettings(upserts?: any): any {
         for (let position = 0; position < modelsArr.length; position++) {
           const model = modelsArr[position];
           const projectedModel: any = text(model);
-          if (projectedModel !== null)
+          if (projectedModel !== null) {
             rows["system.fallback_models"].push({
               setting_key: key,
               category: projectedCategory,
               position,
               model: projectedModel,
             });
+          }
         }
       }
       continue;
@@ -763,13 +773,14 @@ function projectSettings(upserts?: any): any {
         for (let position = 0; position < provArr.length; position++) {
           const provider = provArr[position];
           const projectedProvider: any = text(provider);
-          if (projectedProvider !== null)
+          if (projectedProvider !== null) {
             rows["system.openrouter_provider_rules"].push({
               setting_key: key,
               rule_type: projectedType,
               position,
               provider: projectedProvider,
             });
+          }
         }
       }
     }

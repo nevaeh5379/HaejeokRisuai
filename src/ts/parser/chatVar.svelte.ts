@@ -13,9 +13,8 @@ function resolveVariableTarget(target?: ChatExecutionTarget) {
 
 export function getChatVar(key: string, target?: ChatExecutionTarget): string {
   const resolved = resolveVariableTarget(target);
-  if (!resolved) {
-    return "null";
-  }
+  if (!resolved) return "null";
+
   const { character: char, chat } = resolved;
   const state = chat.scriptstate?.["$" + key];
   if (state === undefined || state === null) {
@@ -25,9 +24,8 @@ export function getChatVar(key: string, target?: ChatExecutionTarget): string {
     const findResult = defaultVariables.find((f) => {
       return f[0] === key;
     });
-    if (findResult) {
-      return findResult[1];
-    }
+    if (findResult) return findResult[1];
+
     return "null";
   }
   return state.toString();
@@ -39,16 +37,13 @@ export function setChatVar(
   target?: ChatExecutionTarget,
 ): boolean {
   const resolved = resolveVariableTarget(target);
-  if (!resolved) {
-    return false;
-  }
+  if (!resolved) return false;
+
   const { chat } = resolved;
   chat.scriptstate ??= {};
 
   const stateKey = "$" + key;
-  if (chat.scriptstate[stateKey] === value) {
-    return false;
-  }
+  if (chat.scriptstate[stateKey] === value) return false;
 
   chat.scriptstate[stateKey] = value;
   return true;
@@ -71,13 +66,11 @@ export function setGLChatVar(
   target?: ChatExecutionTarget,
 ): boolean {
   const chat = getCurrentChatForVars(target);
-  if (!chat) {
-    return false;
-  }
+  if (!chat) return false;
+
   chat.GLGlobalVariables ??= {};
-  if (chat.GLGlobalVariables[key] === value) {
-    return false;
-  }
+  if (chat.GLGlobalVariables[key] === value) return false;
+
   chat.GLGlobalVariables[key] = value;
   return true;
 }
@@ -89,9 +82,8 @@ export function getGlobalChatVar(
   const requestValue = target?.globalVariables?.[key];
   if (requestValue !== undefined) return requestValue;
   const localValue = getGLChatVar(key, target);
-  if (localValue !== undefined) {
-    return localValue;
-  }
+  if (localValue !== undefined) return localValue;
+
   return settingsStore.state.globalChatVariables?.[key] ?? "null";
 }
 
@@ -110,9 +102,8 @@ export function setGlobalChatVar(
   }
 
   settingsStore.state.globalChatVariables ??= {};
-  if (settingsStore.state.globalChatVariables[key] === value) {
-    return false;
-  }
+  if (settingsStore.state.globalChatVariables[key] === value) return false;
+
   settingsStore.state.globalChatVariables[key] = value;
   return true;
 }
@@ -132,6 +123,7 @@ export function removeLocallyHandledGlobalChatVar(
   if (!chat?.GLGlobalVariables || !(key in chat.GLGlobalVariables)) {
     return false;
   }
+
   delete chat.GLGlobalVariables[key];
   return true;
 }

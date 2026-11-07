@@ -28,9 +28,7 @@ export async function saveAsFile(
   try {
     if (content instanceof Blob) {
       await downloadFile(filename, await content.arrayBuffer());
-    } else {
-      await downloadFile(filename, content);
-    }
+    } else await downloadFile(filename, content);
   } catch (err) {
     console.error(`[logexporter] File save failed (${filename}):`, err);
     alertError(`파일 저장에 실패했습니다: ${filename}`);
@@ -113,13 +111,11 @@ export async function copyToClipboard(
   options: ClipboardCopyOptions = {},
 ): Promise<boolean> {
   if (isClipboardApiSupported()) {
-    if (await copyViaClipboardApi(text, options.plainTextFallback)) {
-      return true;
-    }
+    if (await copyViaClipboardApi(text, options.plainTextFallback)) return true;
   }
-  if (copyViaDomFallback(text)) {
-    return true;
-  }
+
+  if (copyViaDomFallback(text)) return true;
+
   console.error("[logexporter] All clipboard copy methods failed");
   return false;
 }

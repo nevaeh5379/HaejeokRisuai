@@ -39,6 +39,7 @@ export function vectorDescriptorRevision(
       hashes,
     );
   }
+
   return formatRevision(descriptors.length, hashes);
 }
 
@@ -50,5 +51,6 @@ export function vectorTextRevision(texts: string[]): string {
       hashes,
     );
   }
+
   return formatRevision(texts.length, hashes);
 }

@@ -34,8 +34,9 @@ export function trackDeep(value: unknown, seen = new WeakSet<object>()): void {
     value instanceof ArrayBuffer ||
     value instanceof Blob ||
     value instanceof Date
-  )
+  ) {
     return;
+  }
   if (value instanceof Map) {
     for (const [key, item] of value) {
       trackDeep(key, seen);
@@ -52,8 +53,10 @@ export function trackDeep(value: unknown, seen = new WeakSet<object>()): void {
     for (let index = 0; index < value.length; index++) {
       trackDeep(value[index], seen);
     }
+
     return;
   }
-  for (const key of Object.keys(value))
+  for (const key of Object.keys(value)) {
     trackDeep((value as Record<string, unknown>)[key], seen);
+  }
 }

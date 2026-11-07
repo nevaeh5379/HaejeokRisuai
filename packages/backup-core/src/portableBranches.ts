@@ -99,6 +99,7 @@ async function loadPortableBranchGraphForExport(
   if (!graph) {
     throw new Error(`Branch export could not load graph for ${chatId}`);
   }
+
   if (!Array.isArray(graph.branches) || graph.branches.length === 0) {
     return graph;
   }
@@ -120,6 +121,7 @@ async function loadPortableBranchGraphForExport(
         `Branch export encountered a message without an id in ${chatId}`,
       );
     }
+
     const fullMessage = fullMessagesById.get(message.chatId);
     if (!fullMessage) missingMessageIds.push(message.chatId);
     return fullMessage || message;
@@ -129,6 +131,7 @@ async function loadPortableBranchGraphForExport(
       `Branch export could not load full message data for ${missingMessageIds.join(", ")}`,
     );
   }
+
   return { ...graph, messages };
 }
 
@@ -146,6 +149,7 @@ async function attachPortableDatabaseBranchGraphs(database, loadGraph) {
       }
     }
   }
+
   if (Object.keys(graphs).length > 0) result[NATIVE_BRANCH_GRAPHS_KEY] = graphs;
   else delete result[NATIVE_BRANCH_GRAPHS_KEY];
   return result;
@@ -180,6 +184,7 @@ function preparePortableDatabaseForBranchRestore(source) {
       }
     }
   }
+
   return { database, branchGraphs };
 }
 
@@ -199,6 +204,7 @@ function remapBookmarks(chat, idMap) {
   if (Array.isArray(chat.bookmarks)) {
     chat.bookmarks = chat.bookmarks.map((id) => idMap.get(id)).filter(Boolean);
   }
+
   if (chat.bookmarkNames && typeof chat.bookmarkNames === "object") {
     chat.bookmarkNames = Object.fromEntries(
       Object.entries(chat.bookmarkNames)
@@ -238,6 +244,7 @@ function expandChatBranchGraphForCompatibility(
       activeIndex: 0,
     };
   }
+
   const root = branchRoot(graph);
   const ordered = branches.sort((left, right) => {
     if (left.id === root?.id) return -1;
@@ -291,6 +298,7 @@ function expandPortableDatabaseBranchGraphsForCompatibility(
       if (index === Number(character.chatPage || 0)) {
         nextChatPage = nextChats.length + expanded.activeIndex;
       }
+
       nextChats.push(...expanded.chats);
     }
     character.chats = nextChats;

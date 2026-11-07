@@ -53,9 +53,11 @@ function createExecutionTarget(
         options.generation?.chatVariables ?? options.chatTarget.globalVariables,
     };
   }
+
   if (!options.currentChar.chaId || !options.currentChat.id) {
     throw new Error("Generation target requires stable character and chat IDs");
   }
+
   return {
     characterId: options.currentChar.chaId,
     chatId: options.currentChat.id,
@@ -126,9 +128,8 @@ async function buildHistoryStage(
     chatTarget,
     generation: options.generation,
   });
-  if (history.stopSending) {
-    return { ok: false as const };
-  }
+  if (history.stopSending) return { ok: false as const };
+
   return {
     ok: true as const,
     renderContext,

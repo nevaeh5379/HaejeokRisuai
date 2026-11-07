@@ -55,6 +55,7 @@ export async function tryCreateNodeChatGenerationPlan(
     if (remotePlan.ok === false) {
       return { ok: false, requiredTokens: remotePlan.requiredTokens };
     }
+
     return {
       ...remotePlan,
       formated: remotePlan.keptIndexes.map((index) => options.formated[index]),
@@ -77,6 +78,7 @@ export async function tryCreateNodeAutoContinuationDecision(
   if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) {
     return null;
   }
+
   const encoding = getServerTiktokenEncoding();
   if (!encoding) return null;
   try {

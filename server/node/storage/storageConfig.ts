@@ -29,21 +29,20 @@ function resolveVendor(options: any = {}): any {
   if (options.vendor && SUPPORTED_VENDORS.includes(options.vendor)) {
     return options.vendor;
   }
+
   if (
     process.env.DB_VENDOR &&
     SUPPORTED_VENDORS.includes(process.env.DB_VENDOR)
   ) {
     return process.env.DB_VENDOR;
   }
-  if (process.env.AZURE_HOST || process.env.AZURE_DATABASE) {
-    return "azure";
-  }
-  if (process.env.ORACLE_TNS_ALIAS) {
-    return "oracle";
-  }
-  if (process.env.DATABASE_URL) {
-    return "postgres";
-  }
+
+  if (process.env.AZURE_HOST || process.env.AZURE_DATABASE) return "azure";
+
+  if (process.env.ORACLE_TNS_ALIAS) return "oracle";
+
+  if (process.env.DATABASE_URL) return "postgres";
+
   return "postgres";
 }
 
@@ -71,9 +70,8 @@ function loadVendorEnvFile(filename?: any, customPath: any = null): any {
       ) {
         value = value.slice(1, -1);
       }
-      if (!(key in process.env)) {
-        process.env[key] = value;
-      }
+
+      if (!(key in process.env)) process.env[key] = value;
     }
     return envPath;
   }
@@ -132,6 +130,7 @@ function readStoredDbConfig(savePath?: any): any {
       backup: null,
     };
   }
+
   try {
     const parsed: any = JSON.parse(fs.readFileSync(configPath, "utf8"));
     return {
@@ -176,12 +175,10 @@ const DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES: any = 60;
 // 백업 설정 섹션 정규화 (부족한 필드는 기본값으로 채움).
 // 지원 vendor가 없으면 null (비활성 섹션).
 function normalizeBackupConfigSection(raw?: any): any {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  if (!SUPPORTED_VENDORS.includes(raw.vendor)) {
-    return null;
-  }
+  if (!raw || typeof raw !== "object") return null;
+
+  if (!SUPPORTED_VENDORS.includes(raw.vendor)) return null;
+
   const rawInterval: any = Number.parseInt(raw.snapshot?.intervalMinutes, 10);
   const intervalMinutes: any =
     Number.isFinite(rawInterval) && rawInterval > 0
@@ -216,10 +213,9 @@ function normalizeVendorParams(vendor?: any, rawParams: any = {}): any {
     ) {
       params.connectionString = rawParams.connectionString.trim();
     }
+
     const poolMax: any = Number.parseInt(rawParams.poolMax || "10", 10);
-    if (Number.isSafeInteger(poolMax) && poolMax > 0) {
-      params.poolMax = poolMax;
-    }
+    if (Number.isSafeInteger(poolMax) && poolMax > 0) params.poolMax = poolMax;
   } else if (vendor === "oracle") {
     for (const key of [
       "user",
@@ -232,56 +228,53 @@ function normalizeVendorParams(vendor?: any, rawParams: any = {}): any {
         params[key] = rawParams[key].trim();
       }
     }
+
     const poolMax: any = Number.parseInt(rawParams.poolMax || "10", 10);
-    if (Number.isSafeInteger(poolMax) && poolMax > 0) {
-      params.poolMax = poolMax;
-    }
+    if (Number.isSafeInteger(poolMax) && poolMax > 0) params.poolMax = poolMax;
   } else if (vendor === "azure") {
     for (const key of ["server", "database", "user", "password"]) {
       if (typeof rawParams[key] === "string" && rawParams[key].trim()) {
         params[key] = rawParams[key].trim();
       }
     }
+
     const port: any = Number.parseInt(rawParams.port || "1433", 10);
-    if (Number.isSafeInteger(port) && port > 0) {
-      params.port = port;
-    }
+    if (Number.isSafeInteger(port) && port > 0) params.port = port;
+
     const poolMax: any = Number.parseInt(rawParams.poolMax || "10", 10);
-    if (Number.isSafeInteger(poolMax) && poolMax > 0) {
-      params.poolMax = poolMax;
-    }
+    if (Number.isSafeInteger(poolMax) && poolMax > 0) params.poolMax = poolMax;
   }
   return params;
 }
 
 // vendor가 활성화 가능한지 (필수 파라미터 모두 존재)
 function isVendorConfigComplete(vendor?: any, params: any = {}): any {
-  if (vendor === "postgres") {
-    return Boolean(params.connectionString);
-  }
+  if (vendor === "postgres") return Boolean(params.connectionString);
+
   if (vendor === "oracle") {
     return Boolean(params.tnsAlias && params.user && params.password);
   }
+
   if (vendor === "azure") {
     return Boolean(
       params.server && params.database && params.user && params.password,
     );
   }
+
   return false;
 }
 
 // 환경 변수 기반 설정인지 (브라우저에서 변경 불가)
 // 세 vendor 모두 환경 변수로 설정된 경우 true.
 function isStorageManagedByEnvironment(vendor?: any): any {
-  if (vendor === "postgres") {
-    return Boolean(process.env.DATABASE_URL);
-  }
-  if (vendor === "oracle") {
-    return Boolean(process.env.ORACLE_TNS_ALIAS);
-  }
+  if (vendor === "postgres") return Boolean(process.env.DATABASE_URL);
+
+  if (vendor === "oracle") return Boolean(process.env.ORACLE_TNS_ALIAS);
+
   if (vendor === "azure") {
     return Boolean(process.env.AZURE_HOST || process.env.AZURE_DATABASE);
   }
+
   return false;
 }
 

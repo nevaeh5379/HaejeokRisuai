@@ -24,7 +24,8 @@ describe("v2026.10.210 models", () => {
       "gemini-flash-lite-latest",
       "gemini-3.8-flash",
       "gemini-4-argon",
-    ])
+    ]) {
       expect(ids).toContain(id);
+    }
   });
 });

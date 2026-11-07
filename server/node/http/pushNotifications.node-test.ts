@@ -163,6 +163,7 @@ test("retries transient failures before dropping an endpoint", async () => {
   for (let i = 0; i < 3; i++) {
     await manager.notifyChatResponse({ body: "attempt" });
   }
+
   assert.equal(manager.size, 0, "third consecutive failure drops endpoint");
   assert.equal(sendCalls.length, 3);
 });

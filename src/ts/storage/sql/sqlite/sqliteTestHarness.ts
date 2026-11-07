@@ -189,9 +189,11 @@ export function makeWebStorage(database: DatabaseSync): WebSqliteStorage {
               : undefined,
           };
         }
+
         if (transform === "messages") {
           return { value: rebuildMessagesFromRows(rows) };
         }
+
         return { rows, columns: rows.length ? Object.keys(rows[0]) : [] };
       }),
     select: async (sql: string, bind: unknown[] = []) => ({
@@ -249,6 +251,7 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
       if (command !== "sqlite_execute_transaction") {
         throw new Error(`Unexpected invoke: ${command}`);
       }
+
       // Mirror the Rust-side contract: verify revision inside a transaction,
       // run all statements, commit. Conflicts reject with the marker string.
       db.run("BEGIN IMMEDIATE");
@@ -265,6 +268,7 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
         for (const statement of payload.statements) {
           db.run(statement.sql, statement.bind ?? []);
         }
+
         db.run("COMMIT");
       } catch (error) {
         try {
@@ -315,6 +319,7 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
       if (current !== expectedRevision) {
         throw new Error(`RISU_SQL_REVISION_CONFLICT:${current}`);
       }
+
       const revision = await task(async (sql, bind = []) => {
         db.run(sql, bind);
       });
@@ -358,6 +363,7 @@ export function makeCapacitorStorage(
       for (const row of db.selectRows(query.sql, query.bind ?? [])) {
         yield JSON.stringify({ type: "row", queryIndex, row }) + "\n";
       }
+
       yield JSON.stringify({ type: "end", queryIndex }) + "\n";
     }
   }
@@ -447,6 +453,7 @@ export function makeCapacitorStorage(
       for (const statement of statements) {
         db.run(statement.sql, statement.bind ?? []);
       }
+
       return { statements: statements.length };
     },
     restoreOpen: async ({ transactionId: id }: { transactionId: string }) => {
@@ -462,16 +469,18 @@ export function makeCapacitorStorage(
     },
     restoreFinish: async ({ id }: { id: string }) => {
       const stream = statementStreams.get(id);
-      if (!stream || stream.transactionId !== transactionId)
+      if (!stream || stream.transactionId !== transactionId) {
         throw new Error("Inactive transaction");
+      }
       try {
         // Test-only decoder. The Android parser consumes the pipe statement
         // by statement; this mock checks the real SQL and transaction contract.
         const statements = JSON.parse(
           Buffer.concat(stream.chunks).toString("utf8"),
         );
-        for (const statement of statements)
+        for (const statement of statements) {
           db.run(statement.sql, statement.bind);
+        }
         return { statements: statements.length };
       } catch (error) {
         db.run("ROLLBACK");

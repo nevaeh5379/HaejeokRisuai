@@ -92,9 +92,7 @@ function attachGenerationInfoToLastMessage(
   const messages =
     characterStore.characters[selectedChar].chats[selectedChat].message;
   const lastMessage = messages.at(-1);
-  if (lastMessage?.generationInfo) {
-    lastMessage.generationInfo = generationInfo;
-  }
+  if (lastMessage?.generationInfo) lastMessage.generationInfo = generationInfo;
 }
 
 function commitRecentMessages(selectedChar: number, selectedChat: number) {

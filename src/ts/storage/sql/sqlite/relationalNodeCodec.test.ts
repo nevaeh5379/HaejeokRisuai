@@ -68,8 +68,9 @@ describe("typed relational node codec", () => {
 
   it("enforces depth and row limits before persistence", () => {
     let value: unknown = null;
-    for (let index = 0; index <= nodeCodec.MAX_NODE_DEPTH; index++)
+    for (let index = 0; index <= nodeCodec.MAX_NODE_DEPTH; index++) {
       value = [value];
+    }
     expect(() => nodeCodec.flatten(value)).toThrow(/maximum depth/);
     expect(() => nodeCodec.flatten([1, 2, 3], { maxRows: 3 })).toThrow(
       /maximum row count/,

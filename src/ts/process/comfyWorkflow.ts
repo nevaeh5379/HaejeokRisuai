@@ -20,8 +20,9 @@ function keepNodeTitle(api: ApiWorkflow): ApiWorkflow {
     if (
       !record(node._meta) ||
       !Object.keys(node._meta).some((key) => key !== "title")
-    )
+    ) {
       continue;
+    }
     const meta = Object.hasOwn(node._meta, "title")
       ? { title: node._meta.title }
       : {};
@@ -49,6 +50,7 @@ export function readApiWorkflow(value: unknown): ApiWorkflow | undefined {
       "Invalid workflow JSON. Import a workflow or Export (API) JSON from ComfyUI.",
     );
   }
+
   return keepNodeTitle(prompt as ApiWorkflow);
 }
 

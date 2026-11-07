@@ -60,6 +60,7 @@ export function buildBackupImportPlan(
         "duplicate_entry",
       );
     }
+
     names.add(entry.name);
 
     switch (entry.kind) {
@@ -78,6 +79,7 @@ export function buildBackupImportPlan(
             "invalid_stream_fragment_order",
           );
         }
+
         fragments.push({ index, entry });
         break;
       }
@@ -99,12 +101,14 @@ export function buildBackupImportPlan(
       "duplicate_entry",
     );
   }
+
   if (legacy.length > 0 && (fragments.length > 0 || manifests.length > 0)) {
     throw new BackupImportPlanError(
       "Backup mixes legacy and streaming database formats",
       "mixed_database_formats",
     );
   }
+
   if (legacy.length === 0 && fragments.length === 0 && manifests.length === 0) {
     throw new BackupImportPlanError(
       "Backup does not contain a database entry",
@@ -131,6 +135,7 @@ export function buildBackupImportPlan(
       "missing_stream_manifest",
     );
   }
+
   if (manifests.length > 1) {
     throw new BackupImportPlanError(
       "Backup contains more than one streaming manifest",
@@ -149,6 +154,7 @@ export function buildBackupImportPlan(
         "invalid_stream_fragment_order",
       );
     }
+
     streamFragments[position] = fragment.entry;
   }
 

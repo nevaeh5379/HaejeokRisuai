@@ -88,6 +88,7 @@ export async function loadModules<TModule extends object>(
         TModule[] | undefined) ?? []
     );
   }
+
   const nodeRows = await selectRows(
     `SELECT module_id, node_id, parent_node_id, node_order, object_key,
             object_key_encoded, value_type, text_value, encoded_text_value,

@@ -113,6 +113,7 @@ test(
             if (liveWebview) {
               await driver?.switchContext(liveWebview).catch(() => undefined);
             }
+
             return false;
           }
         },
@@ -193,6 +194,7 @@ test(
             ) {
               return true;
             }
+
             document
               .querySelector<HTMLButtonElement>(
                 'button[risu-btn="android-e2e-module-action"]',

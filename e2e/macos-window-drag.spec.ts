@@ -63,8 +63,9 @@ async function clickUnmarkedHeader(page: Page) {
         target &&
         !target.closest(interactive) &&
         !target.hasAttribute("data-tauri-drag-region")
-      )
+      ) {
         return { x, y: 16 };
+      }
     }
     return null;
   });

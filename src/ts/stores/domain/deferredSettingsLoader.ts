@@ -110,10 +110,9 @@ class DeferredSettingsLoader {
 
     const unresolved: string[] = [];
     for (const key of this.unloadedKeys) {
-      if (key !== "pluginCustomStorage") {
-        unresolved.push(key);
-      }
+      if (key !== "pluginCustomStorage") unresolved.push(key);
     }
+
     if (unresolved.length > 0) {
       throw new Error(
         `Cannot create a complete backup because deferred settings failed to load: ${unresolved.join(", ")}`,
@@ -153,6 +152,7 @@ class DeferredSettingsLoader {
       for (const key of domainKeys) {
         if (this.isLoaded(key)) loadedKeys.push(key);
       }
+
       if (loadedKeys.length === 0) continue;
       const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
 
@@ -219,6 +219,7 @@ class DeferredSettingsLoader {
           if (Object.prototype.hasOwnProperty.call(prompts, key)) {
             hydrateSettingKey(key, (prompts as Record<string, unknown>)[key]);
           }
+
           this.markLoaded([key]);
         }
       } catch (error) {
@@ -248,6 +249,7 @@ class DeferredSettingsLoader {
     ) {
       throw new Error("DeferredSettingsLoader is not initialized");
     }
+
     return {
       storage: this.storage,
       hydrateSettingKey: this.hydrateSettingKey,

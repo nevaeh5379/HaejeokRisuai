@@ -12,9 +12,8 @@ export const cbs = (op: string, ...args: string[]): string =>
  */
 export const resetChatVariables = (): void => {
   for (const char of characterStore.characters) {
-    for (const chat of char.chats ?? []) {
-      chat.scriptstate = {};
-    }
+    for (const chat of char.chats ?? []) chat.scriptstate = {};
+
     char.defaultVariables = "";
   }
 
@@ -23,17 +22,11 @@ export const resetChatVariables = (): void => {
 };
 
 export const trimVarPrefix = (key: unknown): string => {
-  if (typeof key !== "string") {
-    return "null";
-  }
+  if (typeof key !== "string") return "null";
 
-  if (key.startsWith("$")) {
-    return key.slice(1);
-  }
+  if (key.startsWith("$")) return key.slice(1);
 
-  if (key.startsWith("toggle_")) {
-    return key.slice("toggle_".length);
-  }
+  if (key.startsWith("toggle_")) return key.slice("toggle_".length);
 
   return "null";
 };

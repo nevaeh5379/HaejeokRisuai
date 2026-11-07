@@ -19,6 +19,7 @@ function validateEncryptionKey(value: unknown): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error("The backup encryption service returned an invalid key");
   }
+
   return value;
 }
 

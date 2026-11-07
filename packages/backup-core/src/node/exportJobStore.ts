@@ -113,6 +113,7 @@ export class LocalBackupExportJobStore {
         "job_not_found",
       );
     }
+
     return job;
   }
 
@@ -130,6 +131,7 @@ export class LocalBackupExportJobStore {
         "job_already_started",
       );
     }
+
     job.status = "streaming";
     job.expiresAt = Number.POSITIVE_INFINITY;
     return publicJob(job);
@@ -167,6 +169,7 @@ export class LocalBackupExportJobStore {
     if (job.status === "pending" || job.status === "streaming") {
       await job.completion;
     }
+
     return {
       status: job.status,
       error: job.error,

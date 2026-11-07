@@ -36,6 +36,7 @@ describe("module sandbox group storage", () => {
           },
         ];
       }
+
       return [];
     });
 

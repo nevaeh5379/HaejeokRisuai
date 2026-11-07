@@ -12,6 +12,7 @@ function prepareValue(value?: any, key?: any): any {
   ) {
     return value.toJSON(key);
   }
+
   return value;
 }
 
@@ -58,6 +59,7 @@ function* serializeValue(
   if (ancestors.has(value)) {
     throw new TypeError("Converting circular structure to JSON");
   }
+
   // Most database rows are small, shallow objects. Let V8 serialize each row
   // in native code while retaining streaming for large collections/graphs.
   if (canSerializeAtomically(value)) {
@@ -81,8 +83,9 @@ function* serializeValue(
             candidate &&
             typeof candidate === "object" &&
             !canSerializeAtomically(candidate)
-          )
+          ) {
             break;
+          }
           batchEnd += 1;
         }
         if (batchEnd > index) {
@@ -146,19 +149,20 @@ function* stringifyJsonChunks(
   let buffered: any = [];
   let bufferedBytes: any = 0;
   for (const part of serializeValue(value, "", new Set())) {
-    if (part === undefined) {
-      // JSON.stringify(undefined) returns undefined. Readable.from cannot emit it.
+    if (part === undefined)
+    // JSON.stringify(undefined) returns undefined. Readable.from cannot emit it.
+    {
       return;
     }
+
     const partBytes: any = Buffer.byteLength(part);
     if (bufferedBytes > 0 && bufferedBytes + partBytes >= chunkBytes) {
       yield buffered.join("");
       buffered = [];
       bufferedBytes = 0;
     }
-    if (partBytes >= chunkBytes) {
-      yield part;
-    } else {
+    if (partBytes >= chunkBytes) yield part;
+    else {
       buffered.push(part);
       bufferedBytes += partBytes;
     }

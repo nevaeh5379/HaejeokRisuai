@@ -35,7 +35,7 @@ export async function interpretOpenAINonStreamingResponse(
   const db = settingsStore.state;
   function processTextResponse(dat: any): string {
     if (dat?.choices[0]?.text) {
-      let text = dat.choices[0].text as string;
+      const text = dat.choices[0].text as string;
       if (
         arg.extractJson &&
         (presetStore.state.jsonSchemaEnabled || arg.schema)
@@ -53,6 +53,7 @@ export async function interpretOpenAINonStreamingResponse(
           return text;
         }
       }
+
       return text;
     }
     if (
@@ -65,6 +66,7 @@ export async function interpretOpenAINonStreamingResponse(
         resolveRequestParserContext(arg),
       );
     }
+
     return formatOpenAIReasoningText(dat, {
       deepSeekThinkingOutput: arg.modelInfo.flags.includes(
         LLMFlags.deepSeekThinkingOutput,
@@ -110,6 +112,7 @@ export async function interpretOpenAINonStreamingResponse(
           ) {
             continue;
           }
+
           try {
             const functionArgs = toolCall.function.arguments
               ? JSON.parse(toolCall.function.arguments)
@@ -180,9 +183,7 @@ export async function interpretOpenAINonStreamingResponse(
           attempt++;
           resRec = await retry();
 
-          if (resRec.type != "fail") {
-            break;
-          }
+          if (resRec.type != "fail") break;
         } while (attempt <= db.requestRetrys); // Retry up to db.requestRetrys times
 
         const callCode = callCodes.join("\n\n");

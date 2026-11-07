@@ -30,6 +30,7 @@ function makeRecords() {
   for (let index = 0; index < 300; index++) {
     records.push({ type: "setting", key: `setting-${index}`, value: index });
   }
+
   records.push({
     type: "cold-storage",
     key: "12345678-1234-1234-1234-123456789abc",
@@ -56,6 +57,7 @@ function makeRecords() {
       data: { role: "user", data: `message ${index}` },
     });
   }
+
   return records;
 }
 
@@ -65,6 +67,7 @@ function staging(records: any[]) {
       for (let index = 0; index < records.length; index++) {
         await options.onRecord(records[index], index);
       }
+
       return {
         recordCount: records.length,
         sourceRevision: 4,
@@ -87,11 +90,11 @@ function fakeStorage(log: string[]) {
       storageSyncImport: true,
     });
     if (payload.replaceAll) log.push("sync:clear");
-    else if (payload.root)
+    else if (payload.root) {
       log.push(`sync:setting:${payload.root.upserts.length}`);
-    else if (payload.messages)
+    } else if (payload.messages) {
       log.push(`sync:message:${payload.messages.length}`);
-    else log.push("sync:other");
+    } else log.push("sync:other");
     return { revision: 8 };
   });
   return {

@@ -34,6 +34,7 @@ function validateAssetId(assetId?: any): any {
   if (typeof assetId !== "string" || !/^[0-9a-f]{64}$/.test(assetId)) {
     throw new StorageSyncAssetError("Invalid storage sync asset id");
   }
+
   return assetId;
 }
 
@@ -43,6 +44,7 @@ function normalizeManifest(assets?: any): any {
       "Storage sync asset manifest is invalid or too large",
     );
   }
+
   const seenKeys: any = new Set();
   const normalized: any = assets.map((asset?: any) => {
     const key: any = typeof asset?.key === "string" ? asset.key : "";
@@ -59,11 +61,13 @@ function normalizeManifest(assets?: any): any {
         "Storage sync asset manifest contains an invalid entry",
       );
     }
+
     if (seenKeys.has(key)) {
       throw new StorageSyncAssetError(
         `Duplicate storage sync asset key: ${key}`,
       );
     }
+
     seenKeys.add(key);
     return { id: assetIdForKey(key), key, size, sha256 };
   });
@@ -76,6 +80,7 @@ function normalizeManifest(assets?: any): any {
       "Storage sync asset manifest total size is too large",
     );
   }
+
   return normalized;
 }
 
@@ -83,9 +88,8 @@ async function hashReadable(source?: any): Promise<any> {
   const hash: any = crypto.createHash("sha256");
   if (Buffer.isBuffer(source) || source instanceof Uint8Array) {
     hash.update(source);
-  } else {
-    for await (const chunk of source) hash.update(chunk);
-  }
+  } else for await (const chunk of source) hash.update(chunk);
+
   return hash.digest("hex");
 }
 async function hashActiveAsset(storage?: any, asset?: any): Promise<any> {
@@ -100,6 +104,7 @@ async function hashActiveAsset(storage?: any, asset?: any): Promise<any> {
   if (Number.isSafeInteger(contentLength) && contentLength !== asset.size) {
     return null;
   }
+
   const source: any = opened.stream ?? opened.buffer;
   if (!source) return null;
   return await hashReadable(source);
@@ -118,13 +123,10 @@ function serializeAssetPlan(session?: any): any {
   for (let i = 0; i < keys.length; i++) {
     const asset = assetsObj[keys[i]];
     assets[i] = asset;
-    if (asset.state === "skipped") {
-      skippedCount++;
-    } else {
+    if (asset.state === "skipped") skippedCount++;
+    else {
       missingCount++;
-      if (asset.state !== "ready") {
-        allReadyOrSkipped = false;
-      }
+      if (asset.state !== "ready") allReadyOrSkipped = false;
     }
     const size = asset.size || 0;
     const offset = asset.offset || 0;
@@ -152,6 +154,7 @@ class StorageSyncStagingStore {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
       throw new StorageSyncAssetError("Invalid storage sync session id");
     }
+
     return path.join(this.rootPath, sessionId);
   }
 
@@ -185,6 +188,7 @@ class StorageSyncStagingStore {
         "Only target sync sessions accept asset manifests",
       );
     }
+
     if (session.assets) return serializeAssetPlan(session);
     const manifest: any = normalizeManifest(assets);
     const plannedAssets: any = Object.create(null);
@@ -231,6 +235,7 @@ class StorageSyncStagingStore {
               "asset_checksum_mismatch",
             );
           }
+
           await fs.promises.writeFile(
             this.assetPath(session.id, asset.id),
             Buffer.alloc(0),
@@ -267,6 +272,7 @@ class StorageSyncStagingStore {
         "Storage sync asset is not part of this session",
       );
     }
+
     if (
       !(data instanceof Uint8Array) ||
       data.byteLength > STORAGE_SYNC_CHUNK_SIZE_BYTES
@@ -276,6 +282,7 @@ class StorageSyncStagingStore {
         "chunk_too_large",
       );
     }
+
     const asset: any = session.assets[validatedAssetId];
     if (asset.state === "skipped" || asset.state === "ready") return asset;
     if (asset.uploading) {
@@ -284,6 +291,7 @@ class StorageSyncStagingStore {
         "asset_upload_in_progress",
       );
     }
+
     if (
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
@@ -294,17 +302,20 @@ class StorageSyncStagingStore {
         "offset_mismatch",
       );
     }
+
     if (offset + data.byteLength > asset.size) {
       throw new StorageSyncAssetError(
         "Storage sync asset chunk exceeds declared size",
       );
     }
+
     if ((session.activeUploads || 0) >= STORAGE_SYNC_MAX_CONCURRENCY) {
       throw new StorageSyncAssetError(
         "Storage sync upload concurrency limit exceeded",
         "too_many_uploads",
       );
     }
+
     session.activeUploads = (session.activeUploads || 0) + 1;
     asset.uploading = true;
     try {
@@ -330,6 +341,7 @@ class StorageSyncStagingStore {
               "asset_write_failed",
             );
           }
+
           written += result.bytesWritten;
         }
       } finally {
@@ -459,13 +471,12 @@ class StorageSyncStagingStore {
     if (session.role !== "target" || !session.assets) {
       throw new StorageSyncAssetError("Storage sync assets are not planned");
     }
+
     const assets: any[] = [];
     const sessionAssetKeys = Object.keys(session.assets);
     for (let i = 0; i < sessionAssetKeys.length; i++) {
       const asset = session.assets[sessionAssetKeys[i]];
-      if (asset?.state === "ready") {
-        assets.push(asset);
-      }
+      if (asset?.state === "ready") assets.push(asset);
     }
     if (assets.length === 0) return { applied: 0 };
     if (typeof activeStorage?.createWriteStream !== "function") {
@@ -474,6 +485,7 @@ class StorageSyncStagingStore {
         "asset_finalize_write_unsupported",
       );
     }
+
     let cursor: any = 0;
     const workers: any = Array.from(
       { length: Math.min(STORAGE_SYNC_MAX_CONCURRENCY, assets.length) },
@@ -511,6 +523,7 @@ class StorageSyncStagingStore {
         "Storage sync asset manifest has not been planned",
       );
     }
+
     return serializeAssetPlan(session);
   }
 
@@ -520,13 +533,12 @@ class StorageSyncStagingStore {
         "Storage sync asset manifest has not been planned",
       );
     }
+
     const skipped: any[] = [];
     const sessionAssetKeys = Object.keys(session.assets);
     for (let i = 0; i < sessionAssetKeys.length; i++) {
       const asset = session.assets[sessionAssetKeys[i]];
-      if (asset?.state === "skipped") {
-        skipped.push(asset);
-      }
+      if (asset?.state === "skipped") skipped.push(asset);
     }
     let cursor: any = 0;
     const workers: any = Array.from(

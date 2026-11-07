@@ -145,6 +145,7 @@ export class BackupImportStreamSession {
         "invalid_entry",
       );
     }
+
     const name = classification.normalized;
     if (this.seenNameDigests.size >= BACKUP_IMPORT_MAX_ENTRIES) {
       throw new BackupImportStagingError(
@@ -152,6 +153,7 @@ export class BackupImportStreamSession {
         "entry_limit_exceeded",
       );
     }
+
     const nameDigest = createHash("sha256").update(name).digest("base64url");
     if (this.seenNameDigests.has(nameDigest)) {
       throw new BackupImportStagingError(
@@ -159,6 +161,7 @@ export class BackupImportStreamSession {
         "duplicate_entry",
       );
     }
+
     this.seenNameDigests.add(nameDigest);
 
     if (classification.kind === "encryption") {
@@ -167,6 +170,7 @@ export class BackupImportStreamSession {
         "encrypted_backup_unsupported",
       );
     }
+
     if (classification.kind === "extension") {
       this.ignoredExtensionEntries++;
       this.active = {
@@ -258,6 +262,7 @@ export class BackupImportStreamSession {
         `Backup entry ${current.entry.name} lost its destination`,
       );
     }
+
     current.fileWriter.end();
     await current.fileDone;
     try {
@@ -275,6 +280,7 @@ export class BackupImportStreamSession {
     if (this.finished) {
       throw new BackupImportStagingError("Backup parser is already finished");
     }
+
     this.bytesRead += chunk.byteLength;
     await this.parser.write(chunk);
     this.handlers.onProgress?.({
@@ -298,6 +304,7 @@ export class BackupImportStreamSession {
     if (this.finished) {
       throw new BackupImportStagingError("Backup parser is already finished");
     }
+
     this.parser.finish();
     await this.handlers.onBeforeFinish?.();
     this.finished = true;
@@ -358,6 +365,7 @@ export class BackupImportStagingStore {
         "A backup parser session already exists for this job",
       );
     }
+
     const directory = join(this.rootPath, randomUUID());
     await fs.mkdir(directory, { recursive: true });
     this.jobDirectories.set(id, directory);
@@ -377,8 +385,6 @@ export class BackupImportStagingStore {
     this.validateJobId(id);
     const directory = this.jobDirectories.get(id);
     this.jobDirectories.delete(id);
-    if (directory) {
-      await fs.rm(directory, { recursive: true, force: true });
-    }
+    if (directory) await fs.rm(directory, { recursive: true, force: true });
   }
 }

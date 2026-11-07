@@ -43,6 +43,7 @@ describe("backup asset catalog batching", () => {
       for (let i = 0; i < count; i++) {
         await batch.add({ key: `assets/${i}.png`, size: i });
       }
+
       expect(batches).toHaveLength(Math.floor(count / 256));
       await batch.flush();
       await batch.flush();
@@ -64,6 +65,7 @@ describe("backup asset catalog batching", () => {
     for (let i = 0; i < 50_000; i++) {
       await batch.add({ key: `assets/${i}.png`, size: 1 });
     }
+
     await batch.flush();
     expect(sizes).toEqual([...Array<number>(195).fill(256), 80]);
   });

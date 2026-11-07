@@ -48,15 +48,12 @@ function formatThinkingOutput(thinking: string, content: string): string {
 function normalizeFetchHeaders(headers?: HeadersInit): {
   [key: string]: string;
 } {
-  if (!headers) {
-    return {};
-  }
-  if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
-  }
-  if (Array.isArray(headers)) {
-    return Object.fromEntries(headers);
-  }
+  if (!headers) return {};
+
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries());
+
+  if (Array.isArray(headers)) return Object.fromEntries(headers);
+
   return headers as { [key: string]: string };
 }
 
@@ -87,9 +84,7 @@ async function ollamaCloudFetch(
 }
 
 export function normalizeOllamaStreamResponse(response: Response): Response {
-  if (!response.body) {
-    return response;
-  }
+  if (!response.body) return response;
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -120,9 +115,8 @@ export function normalizeOllamaStreamResponse(response: Response): Response {
             inString = !inString;
             continue;
           }
-          if (inString) {
-            continue;
-          }
+          if (inString) continue;
+
           if (char === "{") {
             depth++;
             continue;
@@ -136,13 +130,9 @@ export function normalizeOllamaStreamResponse(response: Response): Response {
           }
         }
 
-        if (lastFlush < len) {
-          out += text.slice(lastFlush);
-        }
+        if (lastFlush < len) out += text.slice(lastFlush);
 
-        if (out) {
-          controller.enqueue(encoder.encode(out));
-        }
+        if (out) controller.enqueue(encoder.encode(out));
       },
     }),
   );
@@ -209,7 +199,7 @@ export async function requestOllama(
     }
   }
 
-  let customHeaders: Record<string, string> =
+  const customHeaders: Record<string, string> =
     isCloud && db.ollamaApiKey
       ? { Authorization: "Bearer " + db.ollamaApiKey }
       : {};
@@ -281,6 +271,7 @@ export async function requestOllama(
         model: arg.aiModel,
       };
     }
+
     const response: any =
       remoteTransport?.data ?? (await ollama.chat(requestBody));
 

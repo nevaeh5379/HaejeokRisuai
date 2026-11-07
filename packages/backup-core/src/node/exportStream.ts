@@ -59,6 +59,7 @@ function normalizeFragmentRecords(value: unknown): number {
   if (!Number.isFinite(numeric)) {
     return PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS;
   }
+
   return Math.max(
     1,
     Math.min(
@@ -88,6 +89,7 @@ export class PortableDatabaseExportWriter {
     if (!Number.isSafeInteger(options.revision) || options.revision < 0) {
       throw new TypeError("Portable database revision must be non-negative");
     }
+
     this.fragmentRecordLimit = normalizeFragmentRecords(
       options.fragmentRecords,
     );
@@ -126,6 +128,7 @@ export class PortableDatabaseExportWriter {
         `Unsupported portable database record type '${String(record?.type)}'`,
       );
     }
+
     this.fragmentRecords.push(record);
     this.totalRecords++;
     this.counts[record.type] = (this.counts[record.type] ?? 0) + 1;

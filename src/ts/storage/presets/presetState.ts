@@ -36,6 +36,7 @@ export function createPresetSettingsState(
       ignore: [],
     };
   }
+
   const state = createPresetSettings(input);
   state.promptTemplate = normalizePromptTemplate(state.promptTemplate);
   return state;
@@ -64,9 +65,11 @@ export function applyPresetSettings(
       Object.assign(state, { [key]: clone(previous[key]) });
     }
   }
+
   if (policy.doNotChangeSeperateModels) {
     Object.assign(state, clone(getSeparateModelSettings(previous)));
   }
+
   if (policy.doNotChangeFallbackModels) {
     state.fallbackModels = clone(previous.fallbackModels);
     state.fallbackWhenBlankResponse = previous.fallbackWhenBlankResponse;
@@ -74,6 +77,7 @@ export function applyPresetSettings(
   if (policy.disableSeperateParameterChangeOnPresetChange) {
     state.seperateParameters = clone(previous.seperateParameters);
   }
+
   return state;
 }
 

@@ -20,9 +20,8 @@ export function buildOpenAILegacyInstructPrompt(
       .filter((message) => message.content?.trim())
       .map((message) => {
         let author = "";
-        if (message.role === "system") {
-          message.content = message.content.trim();
-        }
+        if (message.role === "system") message.content = message.content.trim();
+
         console.log(message.role + ":" + message.content);
         switch (message.role) {
           case "user":
@@ -85,11 +84,12 @@ export async function requestOpenAILegacyInstruct(
   );
 
   const requestURL = arg.customURL ?? DEFAULT_OPENAI_COMPLETIONS_URL;
-  if (arg.previewBody)
+  if (arg.previewBody) {
     return {
       type: "success",
       result: JSON.stringify({ url: requestURL, body, headers }),
     };
+  }
 
   const remoteTransport =
     requestURL === DEFAULT_OPENAI_COMPLETIONS_URL &&
@@ -115,6 +115,7 @@ export async function requestOpenAILegacyInstruct(
       result: language.errors.httpError + `${JSON.stringify(response.data)}`,
     };
   }
+
   const text: string = response.data.choices[0].text;
   return { type: "success", result: text.replace(/##\n/g, "") };
 }

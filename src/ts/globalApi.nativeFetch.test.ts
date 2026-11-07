@@ -76,6 +76,7 @@ function respond(
         ),
       });
     }
+
     native.listener?.({ type: "end", id });
     return { success: true, error: "" };
   });

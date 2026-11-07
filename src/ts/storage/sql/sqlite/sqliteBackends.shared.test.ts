@@ -128,6 +128,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     })) {
       records.push(record);
     }
+
     expect(records[0]).toMatchObject({
       type: "meta",
       revision: storage.getRevision(),
@@ -173,9 +174,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     const session =
       await targetHarness.storage.beginPortableDatabaseStreamRestore();
-    for (const fragment of fragments) {
-      await session.writeFragment(fragment);
-    }
+    for (const fragment of fragments) await session.writeFragment(fragment);
+
     await session.finish(manifest);
 
     const restored = await targetHarness.storage.exportDatabaseSnapshot();
@@ -324,6 +324,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     for (const key of LEGACY_PERSONA_MIRROR_KEYS) {
       expect(Object.prototype.hasOwnProperty.call(db, key)).toBe(false);
     }
+
     expect(db.personas).toEqual(source.personas);
     expect(db.modules).toEqual(source.modules);
     expect(db.language).toBe("en");
@@ -462,6 +463,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
         `shallow load must defer startup settings, got: ${query.sql}`,
       ).toBe(true);
     }
+
     expect(queryLog.touching("plugin_custom_storage")).toBe(0);
 
     // Per-message chat node hydration must not happen during shallow load.
@@ -497,6 +499,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
         `non-settings key '${key}' must be absent from startup settings`,
       ).toBe(false);
     }
+
     database.close();
   });
 
@@ -504,9 +507,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     const db = buildFullDatabase();
     // Give every deferred key a distinctive payload to detect leakage.
-    for (const key of PROMPT_SETTING_KEYS) {
-      (db as any)[key] = `leaky-${key}`;
-    }
+    for (const key of PROMPT_SETTING_KEYS) (db as any)[key] = `leaky-${key}`;
+
     await seed(storage, db);
 
     const startup = await storage.loadStartupData();
@@ -598,9 +600,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     // Reconstruct the full history the way the UI does: newest page first,
     // then prepend each older page.
     const reconstructed = [...pages[0]];
-    for (let i = 1; i < pages.length; i++) {
-      reconstructed.unshift(...pages[i]);
-    }
+    for (let i = 1; i < pages.length; i++) reconstructed.unshift(...pages[i]);
+
     expect(reconstructed.map((m) => m.data)).toEqual([
       "p0",
       "p1",
@@ -833,6 +834,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
         )
         .run(`legacy-${i}`, i + 2, `Legacy ${i}`);
     }
+
     database.exec(
       "INSERT INTO chats (id, character_id, position, name) VALUES ('recent-char-2', 'char-2', 0, 'Recent')",
     );
@@ -1147,6 +1149,7 @@ describe.each(backendFactories)("$name N+1 defense", ({ make }) => {
         `${(storage as any).backendKind}: loadCharacterForSelection missing (Phase 3 contract)`,
       );
     }
+
     const character = await loader("char-1");
     expect(character?.name).toBe("Alpha");
     expect(character?.chats.map((c) => c.id)).toEqual(["chat-1", "chat-2"]);

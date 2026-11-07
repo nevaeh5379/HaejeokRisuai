@@ -8,10 +8,7 @@ export async function downloadFile(
   name: string,
   dat: Uint8Array | ArrayBuffer | string,
 ): Promise<boolean> {
-  const data =
-    typeof dat === "string"
-      ? dat
-      : new Uint8Array(dat);
+  const data = typeof dat === "string" ? dat : new Uint8Array(dat);
 
   if (isTauri) {
     const bytes =
@@ -26,11 +23,8 @@ export async function downloadFile(
     const writer = await CapacitorFileWriter.open(name, getMimeType(name));
     if (!writer) return false;
     try {
-      if (typeof data === "string") {
-        await writer.writeText(data);
-      } else {
-        await writer.write(data);
-      }
+      if (typeof data === "string") await writer.writeText(data);
+      else await writer.write(data);
     } finally {
       await writer.close();
     }

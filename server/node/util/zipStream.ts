@@ -13,6 +13,7 @@ for (let index: any = 0; index < 256; index++) {
   for (let bit: any = 0; bit < 8; bit++) {
     value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
   }
+
   crcTable[index] = value >>> 0;
 }
 
@@ -21,6 +22,7 @@ function updateCrc32(crc?: any, chunk?: any): any {
   for (let index: any = 0; index < chunk.length; index++) {
     value = crcTable[(value ^ chunk[index]) & 0xff] ^ (value >>> 8);
   }
+
   return value >>> 0;
 }
 
@@ -44,6 +46,7 @@ function createZip64Extra(values?: any): any {
   for (let index: any = 0; index < values.length; index++) {
     extra.writeBigUInt64LE(values[index], 4 + index * 8);
   }
+
   return extra;
 }
 
@@ -51,9 +54,8 @@ async function writeWithBackpressure(output?: any, chunk?: any): Promise<any> {
   if (output.destroyed || output.writableEnded) {
     throw new Error("ZIP output was closed");
   }
-  if (!output.write(chunk)) {
-    await once(output, "drain");
-  }
+
+  if (!output.write(chunk)) await once(output, "drain");
 }
 
 function asAsyncIterable(source?: any): any {
@@ -62,8 +64,10 @@ function asAsyncIterable(source?: any): any {
       yield Buffer.from(source.buffer, source.byteOffset, source.byteLength);
     })();
   }
-  if (source && typeof source[Symbol.asyncIterator] === "function")
+
+  if (source && typeof source[Symbol.asyncIterator] === "function") {
     return source;
+  }
   throw new Error("ZIP entry source is not streamable");
 }
 
@@ -89,13 +93,16 @@ async function streamZip(
     if (name.length === 0 || name.length > UINT16_MAX) {
       throw new Error(`Invalid ZIP entry name length: ${entry.name}`);
     }
+
     let opened: any;
     if (entry.size === undefined && typeof entry.open === "function") {
       opened = await entry.open();
     }
+
     const expectedSize: any = BigInt(entry.size ?? opened?.size);
-    if (expectedSize < 0n)
+    if (expectedSize < 0n) {
       throw new Error(`Invalid ZIP entry size: ${entry.name}`);
+    }
 
     const entryOffset: any = offset;
     const usesZip64Size: any = expectedSize > UINT32_MAX;
@@ -139,6 +146,7 @@ async function streamZip(
       if (actualSize > expectedSize) {
         throw new Error(`ZIP entry exceeded declared size: ${entry.name}`);
       }
+
       await write(chunk);
     }
     if (actualSize !== expectedSize) {
@@ -146,6 +154,7 @@ async function streamZip(
         `ZIP entry size mismatch for ${entry.name}: expected ${expectedSize}, received ${actualSize}`,
       );
     }
+
     crc = (crc ^ 0xffffffff) >>> 0;
 
     const descriptor: any = Buffer.alloc(usesZip64Size ? 24 : 16);

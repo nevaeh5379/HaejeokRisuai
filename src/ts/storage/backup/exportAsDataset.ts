@@ -6,11 +6,10 @@ import { createBackupDatabaseSnapshot } from "../../drive/backuplocal";
 export async function exportAsDataset() {
   const db = await createBackupDatabaseSnapshot();
 
-  let dataset = [];
+  const dataset = [];
   for (const char of db.characters) {
-    if (char.type === "group") {
-      continue;
-    }
+    if (char.type === "group") continue;
+
     for (const chat of char.chats) {
       dataset.push({
         name: char.name,

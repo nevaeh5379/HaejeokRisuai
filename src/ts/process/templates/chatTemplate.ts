@@ -38,9 +38,7 @@ function getOrCompileTemplate(key: string, source: string): Template {
     template = new Template(source);
     if (templateCache.size >= MAX_TEMPLATE_CACHE_SIZE) {
       const oldestKey = templateCache.keys().next().value;
-      if (oldestKey !== undefined) {
-        templateCache.delete(oldestKey);
-      }
+      if (oldestKey !== undefined) templateCache.delete(oldestKey);
     }
     templateCache.set(key, template);
   }
@@ -58,20 +56,18 @@ export const applyChatTemplate = (
 ) => {
   const currentChar = arg.currentChar ?? characterStore.currentCharacter;
   const type = arg.type ?? presetStore.state.instructChatTemplate;
-  if (!type) {
-    throw new Error("Template type is not set");
-  }
+  if (!type) throw new Error("Template type is not set");
+
   const templateSource =
     type === "jinja"
       ? (arg.custom ?? presetStore.state.JinjaTemplate)
       : chatTemplates[type as keyof typeof chatTemplates];
-  if (!templateSource) {
-    throw new Error(`Template not found for type: ${type}`);
-  }
+  if (!templateSource) throw new Error(`Template not found for type: ${type}`);
+
   const cacheKey =
     type === "jinja" ? `custom:${templateSource}` : `prebuilt:${type}`;
   const template = getOrCompileTemplate(cacheKey, templateSource);
-  let formatedMessages: {
+  const formatedMessages: {
     role: "user" | "assistant" | "system";
     content: string;
   }[] = [];
@@ -85,9 +81,8 @@ export const applyChatTemplate = (
     const message = messages[i];
     let role = message.role;
     let content = message.content;
-    if (role !== "user" && role !== "assistant" && role !== "system") {
-      continue;
-    }
+    if (role !== "user" && role !== "assistant" && role !== "system") continue;
+
     if (noSystemMessages && role === "system") {
       role = "user";
       content = "System: " + content;
@@ -103,25 +98,23 @@ export const applyChatTemplate = (
           formatedMessages[formatedMessages.length - 1].content +=
             "\n" + content;
         }
-      } else {
-        if (
-          formatedMessages.length % 2 === 1 ||
-          formatedMessages.length === 0
-        ) {
-          if (formatedMessages.length === 0) {
-            formatedMessages.push({
-              role: "user",
-              content: "",
-            });
-          }
+      } else if (
+        formatedMessages.length % 2 === 1 ||
+        formatedMessages.length === 0
+      ) {
+        if (formatedMessages.length === 0) {
           formatedMessages.push({
-            role: "assistant",
-            content,
+            role: "user",
+            content: "",
           });
-        } else {
-          formatedMessages[formatedMessages.length - 1].content +=
-            "\n" + content;
         }
+
+        formatedMessages.push({
+          role: "assistant",
+          content,
+        });
+      } else {
+        formatedMessages[formatedMessages.length - 1].content += "\n" + content;
       }
     } else {
       formatedMessages.push({

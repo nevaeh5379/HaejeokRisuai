@@ -39,20 +39,20 @@ export async function tokenizePreset(
         if (prompt.innerFormat) {
           total += await tokenizeAccurate(prompt.innerFormat, consti);
         }
+
         break;
       }
     }
   }
+
   return total;
 }
 
 function normalizeImportedPromptRole(role: unknown): PromptRole {
-  if (role === "user" || role === "bot" || role === "system") {
-    return role;
-  }
-  if (role === "assistant" || role === "char") {
-    return "bot";
-  }
+  if (role === "user" || role === "bot" || role === "system") return role;
+
+  if (role === "assistant" || role === "char") return "bot";
+
   return "system";
 }
 
@@ -112,16 +112,15 @@ type InstData = {
 
 export function stChatConvert(pre: any) {
   //ST preset
-  let promptTemplate = [];
+  const promptTemplate = [];
 
   function findPrompt(identifier: number) {
     return pre.prompts.find((p: any) => p.identifier === identifier);
   }
 
   for (const prompt of pre?.prompt_order?.[0]?.order ?? []) {
-    if (!prompt?.enabled) {
-      continue;
-    }
+    if (!prompt?.enabled) continue;
+
     const p = findPrompt(prompt?.identifier ?? "");
     if (p) {
       switch (p.identifier) {
@@ -188,9 +187,7 @@ export function stChatConvert(pre: any) {
           });
         }
       }
-    } else {
-      console.log("Prompt not found", prompt);
-    }
+    } else console.log("Prompt not found", prompt);
   }
   if (pre?.assistant_prefill) {
     promptTemplate.push({
@@ -246,7 +243,7 @@ export const OobaParams = [
 export async function promptConvertion(
   files: { name: string; content: string; type: string }[],
 ) {
-  let preset = safeStructuredClone(presetTemplate);
+  const preset = safeStructuredClone(presetTemplate);
   let instData = {
     system_prompt: "",
     input_sequence: "",
@@ -279,9 +276,8 @@ export async function promptConvertion(
       return typePriority.indexOf(a.type) - typePriority.indexOf(b.type);
     });
 
-  if (files.findIndex((x) => x.type === "STINST") !== -1) {
-    type = "STINST";
-  }
+  if (files.findIndex((x) => x.type === "STINST") !== -1) type = "STINST";
+
   if (files.findIndex((x) => x.type === "STCHAT") !== -1) {
     if (type !== "") {
       alertError(`Both ${type} and STCHAT are not supported together.`);
@@ -292,7 +288,7 @@ export async function promptConvertion(
 
   let samplers: string[] = [];
 
-  let oobaData: OobaChatCompletionRequestParams = {
+  const oobaData: OobaChatCompletionRequestParams = {
     mode: "instruct",
   };
 
@@ -307,21 +303,20 @@ export async function promptConvertion(
         multiplier?: number;
       } = {},
     ) => {
-      if (getname === "") {
-        getname = setname;
-      }
-      let multiplier = arg.multiplier ?? 1;
-      if (samplers.includes(getname)) {
-        //@ts-expect-error dynamic key access on preset with value from parsed JSON
+      if (getname === "") getname = setname;
+
+      const multiplier = arg.multiplier ?? 1;
+      if (samplers.includes(getname))
+      //@ts-expect-error dynamic key access on preset with value from parsed JSON
+      {
         preset[setname] = data[getname] * multiplier;
-      } else {
-        //@ts-expect-error dynamic key assignment to preset, -1000 indicates unset sampler
+      } else
+      //@ts-expect-error dynamic key assignment to preset, -1000 indicates unset sampler
+      {
         preset[setname] = -1000;
       }
 
-      if (OobaParams.includes(getname)) {
-        oobaData[getname] = data[getname];
-      }
+      if (OobaParams.includes(getname)) oobaData[getname] = data[getname];
     };
 
     preset.name ||= instData.name ?? "";
@@ -354,6 +349,7 @@ export async function promptConvertion(
             oobaData[key] = data[key];
           }
         }
+
         break;
       }
       case "STCONTEXT": {

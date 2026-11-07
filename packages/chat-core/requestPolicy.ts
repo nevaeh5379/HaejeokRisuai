@@ -77,6 +77,7 @@ function decideFailedRequestRetry(input?: any): any {
   if (input.response.failByServerError && input.antiServerOverloads) {
     retryCount -= 0.5;
   }
+
   retryCount += 1;
 
   if (retryCount <= input.requestRetries) {

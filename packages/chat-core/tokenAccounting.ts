@@ -17,7 +17,7 @@ function calculateMultimodalTokenCost(data?: any, options?: any): any {
   if (!options.supportsInlayImage) return options.chatAdditionalTokens;
   if (options.visionQuality === "low") return 87;
 
-  let encoded: any = options.chatAdditionalTokens;
+  const encoded: any = options.chatAdditionalTokens;
   let height: any = data.height ?? 0;
   let width: any = data.width ?? 0;
 
@@ -54,8 +54,9 @@ async function countChatTokensDetailed(
   for (const chat of chats) {
     texts.push(chat.content);
     if (chat.name && options.useName) texts.push(chat.name);
-    if (options.countThoughts && chat.thoughts?.length)
+    if (options.countThoughts && chat.thoughts?.length) {
       texts.push(...chat.thoughts);
+    }
   }
 
   const counts: any = await countTexts(texts);
@@ -69,12 +70,15 @@ async function countChatTokensDetailed(
     let encoded: any = counts[countIndex++] + options.chatAdditionalTokens;
     if (chat.name && options.useName) encoded += counts[countIndex++] + 1;
     if (options.countThoughts && chat.thoughts?.length) {
-      for (let i: any = 0; i < chat.thoughts.length; i++)
+      for (let i: any = 0; i < chat.thoughts.length; i++) {
         encoded += counts[countIndex++] + 1;
+      }
     }
+
     for (const multimodal of chat.multimodals ?? []) {
       encoded += calculateMultimodalTokenCost(multimodal, options);
     }
+
     detailed.push(encoded);
   }
   return detailed;

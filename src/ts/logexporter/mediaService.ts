@@ -106,6 +106,7 @@ export async function mergeImagesVertically(
       message: `브라우저에서 ${format.toUpperCase()} 인코딩이 불가하여 PNG로 저장됩니다`,
     });
   }
+
   return { blob: stitched.blob, ext: "png" };
 }
 
@@ -150,6 +151,7 @@ async function mergeBlobsWithFFmpeg(
         parts.push(`[${i}:v]scale=${targetWidth}:-1:flags=lanczos[p${i}]`),
       );
     }
+
     const stackInputs = inputNames
       .map((_, i) => `[${scaleAll ? "p" + i : i + ":v"}]`)
       .join("");
@@ -180,6 +182,7 @@ async function mergeBlobsWithFFmpeg(
         /* ignore */
       }
     }
+
     try {
       await ffmpeg.deleteFile(`out.${ext}`);
     } catch {
@@ -221,6 +224,7 @@ async function mergeBlobsViaCanvas(
   if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
     throw new Error("Failed to decode images for canvas merge");
   }
+
   const scaledHeights = dims.map(({ w, h }) =>
     Math.round((h * targetWidth) / w),
   );
@@ -266,9 +270,8 @@ async function mergeBlobsViaCanvas(
       format === "jpeg" ? 0.95 : format === "webp" ? 0.9 : undefined,
     ),
   );
-  if (!blob) {
-    throw new Error(`Failed to encode merged image (${format})`);
-  }
+  if (!blob) throw new Error(`Failed to encode merged image (${format})`);
+
   return blob;
 }
 
@@ -301,6 +304,7 @@ export async function convertWebMToAnimatedWebp(
     if (maxWidth && maxWidth > 0) {
       vfParts.push(`scale='min(${maxWidth},iw)':-2:flags=lanczos`);
     }
+
     await ffmpeg.exec([
       "-i",
       "input.webm",

@@ -59,7 +59,7 @@ async function processResponseContent(
   msgIndex: number,
   previousContent = "",
 ) {
-  let processed = await processScriptFull(
+  const processed = await processScriptFull(
     options.nowChatroom,
     options.reformatContent(previousContent + content),
     "editoutput",
@@ -70,6 +70,7 @@ async function processResponseContent(
   if (settingsStore.state.removeIncompleteResponse) {
     processed.data = trimUntilPunctuation(processed.data);
   }
+
   const inlay = runInlayScreen(options.currentChar, processed.data);
   return {
     result: inlay.text,
@@ -171,9 +172,8 @@ async function consumeNonStreamingResponses(
         processed.inlayPromise,
       );
       if (!options.continueGeneration) rerolls.push(result);
-    } else {
-      rerolls.push(result);
-    }
+    } else rerolls.push(result);
+
     characterStore.characters[options.selectedChar].reloadKeys += 1;
     if (settingsStore.state.ttsAutoSpeech) {
       await sayTTS(options.currentChar, result);
@@ -192,6 +192,7 @@ export async function processNonStreamingResponse(
   if (consumed.rerolls.length > 1) {
     addRerolls(options.generationId, consumed.rerolls);
   }
+
   const triggered = await applyOutputTrigger(
     options.currentChar,
     options.selectedChar,

@@ -61,6 +61,7 @@ function createHarness(finalizeStorageSyncReplacement, captureImpact = true) {
               ),
             );
           }
+
           revision += 1;
           if (method === "activateChatBranch") return undefined;
           return { revision, method };

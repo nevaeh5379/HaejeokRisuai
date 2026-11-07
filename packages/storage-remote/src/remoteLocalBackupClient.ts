@@ -81,6 +81,7 @@ export class RemoteLocalBackupClient {
         }
       }
     }
+
     throw lastError;
   }
 
@@ -118,6 +119,7 @@ export class RemoteLocalBackupClient {
         "Could not create local backup database stream session",
       );
     }
+
     return validateLocalBackupDatabaseStreamSession(await response.json());
   }
 
@@ -145,6 +147,7 @@ export class RemoteLocalBackupClient {
         "Could not append local backup database records",
       );
     }
+
     return validateLocalBackupDatabaseStreamSession(await response.json());
   }
 
@@ -172,6 +175,7 @@ export class RemoteLocalBackupClient {
         "Could not finalize local backup database restore",
       );
     }
+
     return validateLocalBackupDatabaseStreamFinalizeResult(
       await response.json(),
     );
@@ -212,6 +216,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Could not create local backup export");
     }
+
     return validateLocalBackupExportJobCreated(await response.json());
   }
 
@@ -234,6 +239,7 @@ export class RemoteLocalBackupClient {
         "Could not read backup export progress",
       );
     }
+
     return validateLocalBackupExportJobProgress(await response.json());
   }
 
@@ -253,6 +259,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Local backup export failed");
     }
+
     return validateLocalBackupExportJobCompletion(await response.json());
   }
 
@@ -271,6 +278,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Could not create local backup import");
     }
+
     return validateLocalBackupImportJobCreated(await response.json());
   }
 
@@ -293,6 +301,7 @@ export class RemoteLocalBackupClient {
         "Could not read backup import progress",
       );
     }
+
     return validateLocalBackupImportJobProgress(await response.json());
   }
 
@@ -312,6 +321,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Local backup import failed");
     }
+
     return validateLocalBackupImportJobCompletion(await response.json());
   }
 
@@ -338,6 +348,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Could not import local backup");
     }
+
     return validateLocalBackupImportJobCompletion(await response.json());
   }
 
@@ -368,6 +379,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Could not upload local backup chunk");
     }
+
     return validateLocalBackupImportUploadState(await response.json());
   }
 
@@ -390,6 +402,7 @@ export class RemoteLocalBackupClient {
         "Could not finalize local backup upload",
       );
     }
+
     return validateLocalBackupImportJobCompletion(await response.json());
   }
 
@@ -423,6 +436,7 @@ export class RemoteLocalBackupClient {
         "Local backup upload size must be a positive safe integer",
       );
     }
+
     const chunkSize =
       options.chunkSize ?? LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE;
     if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
@@ -485,6 +499,7 @@ export class RemoteLocalBackupClient {
           `Local backup source ended early: ${offset} / ${totalBytes} bytes`,
         );
       }
+
       return await this.retryImportRequest(
         async () => await this.finalizeImportUpload(id, options.signal),
         options.signal,
@@ -512,6 +527,7 @@ export class RemoteLocalBackupClient {
     if (!response.ok) {
       return await this.error(response, "Local backup download failed");
     }
+
     return response;
   }
 

@@ -99,21 +99,18 @@ export class PluginCustomStorageSubsystem {
   }
 
   async loadKey(key: string): Promise<PluginStorageValue> {
-    if (this.hasLoadedKey(key)) {
-      return (this.host.getRecord() ?? {})[key];
-    }
+    if (this.hasLoadedKey(key)) return (this.host.getRecord() ?? {})[key];
+
     const existingLoad = this.loads.get(key);
     if (existingLoad) return existingLoad;
     const storage = this.storage || (await getSqlStorage());
     const pending = storage.pluginCustomStorage
       .get(key)
       .then((value) => {
-        if (this.pendingClear || this.pendingDeletes.has(key)) {
-          return undefined;
-        }
-        if (this.hasLoadedKey(key)) {
-          return (this.host.getRecord() ?? {})[key];
-        }
+        if (this.pendingClear || this.pendingDeletes.has(key)) return undefined;
+
+        if (this.hasLoadedKey(key)) return (this.host.getRecord() ?? {})[key];
+
         if (value !== undefined) this.hydrateKey(key, value);
         return value;
       })
@@ -143,9 +140,8 @@ export class PluginCustomStorageSubsystem {
 
   clear(): void {
     const record = this.host.getRecord();
-    if (record) {
-      for (const key of Object.keys(record)) delete record[key];
-    }
+    if (record) for (const key of Object.keys(record)) delete record[key];
+
     this.keys.clear();
     this.pendingUpserts.clear();
     this.pendingDeletes.clear();
@@ -157,9 +153,7 @@ export class PluginCustomStorageSubsystem {
   replaceRecord(next: PluginStorageValue): void {
     this.keys.clear();
     if (next && typeof next === "object") {
-      for (const [key, value] of Object.entries(next)) {
-        this.setKey(key, value);
-      }
+      for (const [key, value] of Object.entries(next)) this.setKey(key, value);
     }
   }
 
@@ -195,8 +189,9 @@ export class PluginCustomStorageSubsystem {
     ]);
     if (payload.clear) {
       this.pendingClear = true;
-      for (const key of Object.keys(this.host.getRecord() ?? {}))
+      for (const key of Object.keys(this.host.getRecord() ?? {})) {
         impactedKeys.add(key);
+      }
     }
     const record = this.host.getRecord() ?? {};
     for (const key of impactedKeys) {

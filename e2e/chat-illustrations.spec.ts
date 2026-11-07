@@ -333,11 +333,12 @@ test("fills streamed illustration positions in the background, regenerates, and 
           data: await encodeRisuSaveLegacyAsync(snapshot.database),
         },
       ];
-      for (const item of items)
+      for (const item of items) {
         entries.push({
           name: `inlay_${item.imageId}.risuinlay`,
           data: await encodeInlayAssetBackup(await getInlayAsset(item.imageId)),
         });
+      }
       const parts: Uint8Array[] = [];
       const u32 = (n: number) => {
         const b = new Uint8Array(4);

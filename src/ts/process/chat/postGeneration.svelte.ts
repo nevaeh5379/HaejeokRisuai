@@ -24,9 +24,8 @@ interface EmotionState {
 function getEmotionState(currentChar: character): EmotionState {
   const map = get(CharEmotion) as EmotionMap;
   const history = map[currentChar.chaId] ?? [];
-  if (history.length > 4) {
-    history.splice(0, 1);
-  }
+  if (history.length > 4) history.splice(0, 1);
+
   return { map, history, assets: currentChar.emotionImages };
 }
 
@@ -82,9 +81,7 @@ async function buildEmotionBias(
 ) {
   const bias: Record<number, number> = {};
   for (const emotion of emotionList) {
-    for (const token of await tokenizeNum(emotion)) {
-      bias[token] = 10;
-    }
+    for (const token of await tokenizeNum(emotion)) bias[token] = 10;
   }
 
   for (let i = 0; i < history.length; i++) {
@@ -210,6 +207,7 @@ function buildImageGenerationTranscript(
       break;
     }
   }
+
   return transcript;
 }
 
@@ -243,8 +241,10 @@ async function processEmotionEffects(
   ) {
     emoChanged = true;
   }
-  if (options.currentChar.inlayViewScreen)
+
+  if (options.currentChar.inlayViewScreen) {
     return { returnEarly: false, emoChanged };
+  }
   if (
     options.currentChar.viewScreen !== "emotion" ||
     emoChanged ||
@@ -265,6 +265,7 @@ async function processEmotionEffects(
       options.throwError,
     );
   }
+
   return { returnEarly: true, emoChanged };
 }
 
@@ -273,6 +274,7 @@ async function processImageGeneration(options: PostGenerationEffectsOptions) {
   if (options.chatProcessIndex !== -1) {
     options.throwError("Stable diffusion in group chat is not supported");
   }
+
   await stableDiff(
     options.currentChar,
     buildImageGenerationTranscript(options.selectedChar, options.selectedChat),

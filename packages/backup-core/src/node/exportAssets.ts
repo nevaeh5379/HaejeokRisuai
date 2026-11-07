@@ -57,9 +57,8 @@ export async function createNodeBackupAssetRequest(
   scope: BackupAssetScope,
   assetMap: BackupAssetMap,
 ): Promise<NodeBackupAssetRequest> {
-  if (scope === "all") {
-    return { keys: [], options: { prefix: "assets/" } };
-  }
+  if (scope === "all") return { keys: [], options: { prefix: "assets/" } };
+
   const keys: string[] = await storage.keys("assets/");
   return { keys: filterEssentialBackupAssetKeys(keys, assetMap) };
 }
@@ -89,9 +88,7 @@ export async function streamNodeBackupAssets(
   const missingKeys: string[] = [];
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-    if (!writtenKeys.has(key)) {
-      missingKeys.push(key);
-    }
+    if (!writtenKeys.has(key)) missingKeys.push(key);
   }
   return {
     writtenKeys: Array.from(writtenKeys),

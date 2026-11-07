@@ -13,18 +13,23 @@ await page.goto("http://127.0.0.1:5174/");
 await page.waitForTimeout(6000); // let the app boot + register the SW
 
 const result = await page.evaluate(async () => {
-  const regs = (
-    await navigator.serviceWorker.getRegistrations()
-  ).map((r) => r.active?.scriptURL ?? r.installing?.scriptURL ?? "?");
+  const regs = (await navigator.serviceWorker.getRegistrations()).map(
+    (r) => r.active?.scriptURL ?? r.installing?.scriptURL ?? "?",
+  );
   const ctrl = navigator.serviceWorker.controller;
-  const out = { controllerScriptURL: ctrl?.scriptURL ?? null, registrations: regs };
+  const out = {
+    controllerScriptURL: ctrl?.scriptURL ?? null,
+    registrations: regs,
+  };
 
   // 1) plain fetch interception check (sw.js answers /sw/init with "v2")
   const initResp = await fetch("/sw/init").then((r) => r.text());
   out.swInitResponse = initResp.slice(0, 40);
 
   // 2) raw SW fetch interception check for /sw/download (expect 404 "not found")
-  const missing = await fetch("/sw/download?id=probe-missing").then((r) => r.text());
+  const missing = await fetch("/sw/download?id=probe-missing").then((r) =>
+    r.text(),
+  );
   out.downloadMissingResponse = missing.startsWith("Download stream")
     ? "SW_INTERCEPTED_404"
     : missing.slice(0, 40);
@@ -54,7 +59,9 @@ console.log(JSON.stringify(result, null, 2));
 
 // 4) replicate the actual app flow: <a download> click + waitForEvent('download')
 const anchorId = "probe-anchor-" + Math.random().toString(36).slice(2);
-const downloadPromise = page.waitForEvent("download", { timeout: 8000 }).catch(() => null);
+const downloadPromise = page
+  .waitForEvent("download", { timeout: 8000 })
+  .catch(() => null);
 await page.evaluate((id) => {
   const ctrl = navigator.serviceWorker.controller;
   if (!ctrl) return "no-controller";
@@ -82,8 +89,6 @@ if (download) {
     suggested: download.suggestedFilename(),
     head: JSON.stringify(head),
   });
-} else {
-  console.log("ANCHOR_DOWNLOAD: no download event fired");
-}
+} else console.log("ANCHOR_DOWNLOAD: no download event fired");
 
 await browser.close();

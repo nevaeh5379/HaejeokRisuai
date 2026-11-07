@@ -62,12 +62,14 @@ export class AutoStorage {
     if (this.realStorage instanceof TauriAssetStorage) {
       return await this.realStorage.hasStoredData();
     }
+
     const storage = this.realStorage as LocalForage & {
       length?: () => Promise<number>;
     };
     if (typeof storage.length === "function") {
       return (await storage.length()) > 0;
     }
+
     return (await this.realStorage.keys()).length > 0;
   }
 
@@ -81,6 +83,7 @@ export class AutoStorage {
           "Asset storage was already initialized for a different profile. Reload before switching storage.",
         );
       }
+
       return;
     }
     const profile =
@@ -101,6 +104,7 @@ export class AutoStorage {
       if (!options?.nodeApiClient) {
         throw new Error("Remote asset storage requires a Node API client.");
       }
+
       console.log("using node storage");
       this.realStorage = new NodeStorage(options.nodeApiClient);
       return;

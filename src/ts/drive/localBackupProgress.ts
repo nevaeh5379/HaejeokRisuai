@@ -276,9 +276,8 @@ export function createNodeLocalBackupRestoreProgressReporter(
           boundedProgressRatio(progress.current ?? 0, progress.total ?? 0) ?? 0;
         restoreRatio = Math.max(restoreRatio, 0.95 + ratio * 0.05);
         restoreDetail = undefined;
-      } else {
-        message = language.localBackupRestoreReading;
-      }
+      } else message = language.localBackupRestoreReading;
+
       emit();
     },
     complete(): void {

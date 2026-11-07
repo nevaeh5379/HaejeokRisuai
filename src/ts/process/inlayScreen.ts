@@ -12,6 +12,7 @@ export function runInlayScreen(
     if (char.viewScreen === "emotion") {
       return { text: data.replace(/<Emotion="(.+?)">/gi, "{{emotion::$1}}") };
     }
+
     if (char.viewScreen === "imggen") {
       return {
         text: data
@@ -26,9 +27,8 @@ export function runInlayScreen(
               promises.push(
                 (async () => {
                   const v = await generateAIImage(prompt, char, neg, "inlay");
-                  if (!v) {
-                    return "";
-                  }
+                  if (!v) return "";
+
                   const imgHTML = new Image();
                   imgHTML.src = v;
                   const inlay = await writeInlayImage(imgHTML);
@@ -40,9 +40,8 @@ export function runInlayScreen(
             const d = await Promise.all(promises);
             data = data.replace(regex, () => {
               const result = d.shift();
-              if (result === false) {
-                return "";
-              }
+              if (result === false) return "";
+
               return result;
             });
           }

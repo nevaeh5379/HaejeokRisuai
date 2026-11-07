@@ -146,9 +146,8 @@ function ensureUniqueMessageIds(messages: Message[]): string[] {
   for (const message of messages) {
     let messageId = message.chatId;
     if (!messageId || usedIds.has(messageId)) {
-      do {
-        messageId = uuidv4();
-      } while (usedIds.has(messageId));
+      do messageId = uuidv4();
+      while (usedIds.has(messageId));
       message.chatId = messageId;
     }
     usedIds.add(messageId);
@@ -171,6 +170,7 @@ export function buildSqlReplaceCommit(
       `Cannot replace SQL database from partially loaded character: ${partialCharacter.chaId || "unknown"}`,
     );
   }
+
   for (const currentCharacter of database.characters ?? []) {
     const partialChat = (currentCharacter.chats ?? []).find(
       (value) =>
@@ -241,6 +241,7 @@ export function buildSqlReplaceCommit(
       activeId: presetIds[activePresetIndex],
     };
   }
+
   const modules = Array.isArray(database.modules) ? database.modules : [];
   commit.modules = {
     upserts: modules.map((data, position) => ({
@@ -290,6 +291,7 @@ export function buildSqlReplaceCommit(
       commit.root.upserts.push({ key, value });
     }
   }
+
   for (
     let characterPosition = 0;
     characterPosition < (database.characters ?? []).length;
@@ -366,6 +368,7 @@ export function* iterateSqlReplaceEntityCommits(
       "SQL restore message batch size must be a positive integer",
     );
   }
+
   const characterIds: string[] = [];
   for (
     let characterPosition = 0;
@@ -378,6 +381,7 @@ export function* iterateSqlReplaceEntityCommits(
         `Cannot replace SQL database from partially loaded character: ${currentCharacter.chaId || "unknown"}`,
       );
     }
+
     currentCharacter.chaId ||= uuidv4();
     characterIds.push(currentCharacter.chaId);
 
@@ -388,6 +392,7 @@ export function* iterateSqlReplaceEntityCommits(
           `Cannot replace SQL database from partially loaded chat: ${chat.id || "unknown"}`,
         );
       }
+
       chat.id ||= uuidv4();
     }
 

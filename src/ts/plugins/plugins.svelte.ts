@@ -69,8 +69,9 @@ export const checkPluginUpdate = async (plugin: PluginMetadata) => {
       const cached = updateCache.get(plugin.name);
       if (
         compareVersions(cached.version, plugin.versionOfPlugin || "0.0.0") === 1
-      )
+      ) {
         return cached;
+      }
     }
 
     const response = await fetch(plugin.updateURL, {
@@ -154,16 +155,17 @@ export async function importPlugin(
 
     const splitedJs = jsFile.split("\n");
     let name = "";
-    for (const line of splitedJs)
+    for (const line of splitedJs) {
       if (line.startsWith("//@name")) {
         name = line.slice(7).trim();
         break;
       }
+    }
 
     const showError = (msg: string) => {
-      if (argu.isHotReload)
+      if (argu.isHotReload) {
         console.error(`Hot-reload plugin "${name}" error: ${msg}`);
-      else alertError(msg);
+      } else alertError(msg);
     };
 
     let displayName: string = undefined;
@@ -189,11 +191,12 @@ export async function importPlugin(
       if (line.startsWith("//@api")) {
         const proviedVersions = line.slice(6).trim().split(" ");
         const supportedVersions = ["2.0", "2.1", "3.0"];
-        for (const ver of proviedVersions)
+        for (const ver of proviedVersions) {
           if (supportedVersions.includes(ver)) {
             apiVersion = ver;
             break;
           } else console.warn(`Plugin API version "${ver}" is not supported.`);
+        }
       }
       if (line.startsWith("//@display-name")) {
         const provied = line.slice("//@display-name".length + 1);
@@ -218,16 +221,18 @@ export async function importPlugin(
         }
         const hoverText = line.split(" ").slice(2).join(" ").trim();
         if (hoverText === "")
-          // OK, no hover text. It's fine.
+        // OK, no hover text. It's fine.
+        {
           customLink.push({
             link: link,
             hoverText: undefined,
           });
-        else
+        } else {
           customLink.push({
             link: link,
             hoverText: hoverText || undefined,
           });
+        }
       }
       if (line.startsWith("//@risu-arg") || line.startsWith("//@arg")) {
         const provied = line.trim().split(" ");
@@ -341,13 +346,14 @@ export async function importPlugin(
       return;
     }
 
-    if (isTypescript)
+    if (isTypescript) {
       try {
         const { pluginCodeTranspiler } = await import("./apiV3/transpiler");
         jsFile = await pluginCodeTranspiler(jsFile);
       } catch (error) {
         showError("Failed to transpile TypeScript code: " + error.message);
       }
+    }
 
     let apiInternalVersion: 2 | "2.1" | "3.0" = "2.1";
 
@@ -397,11 +403,13 @@ export async function importPlugin(
       if (!c) return;
     }
 
-    if (oldPlugin || !isUpdate || argu.isHotReload)
+    if (oldPlugin || !isUpdate || argu.isHotReload) {
       await pluginStore.install(pluginMetadata, jsFile, oldPlugin?.id);
+    }
 
-    if (argu.isHotReload && !hotReloading.includes(pluginMetadata.name))
+    if (argu.isHotReload && !hotReloading.includes(pluginMetadata.name)) {
       hotReloading.push(pluginMetadata.name);
+    }
 
     console.log(`Imported plugin: ${pluginMetadata.name} (API v${apiVersion})`);
     await loadPlugins();
@@ -472,7 +480,7 @@ async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
     `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
   );
   const crashGuard = PluginCrashGuard.getInstance();
-  for (const plugin of blockedPresent)
+  for (const plugin of blockedPresent) {
     try {
       await pluginStore.setEnabled(plugin.id, false);
       await crashGuard?.clearBlocked(plugin.name);
@@ -482,6 +490,7 @@ async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
         error,
       );
     }
+  }
 
   const { alertToast } = await import("../alert");
   alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
@@ -604,8 +613,9 @@ function setDomainDbValue(
     case "characters":
       return characterStore.snapshot.saveAll(value);
     case "modules":
-      if (!Array.isArray(value))
+      if (!Array.isArray(value)) {
         throw new TypeError("Plugin database modules must be an array");
+      }
 
       moduleStore.upsertModules(value);
       return true;
@@ -613,8 +623,9 @@ function setDomainDbValue(
       moduleStore.enabledModules = value;
       return true;
     case "plugins":
-      if (!Array.isArray(value))
+      if (!Array.isArray(value)) {
         throw new TypeError("Plugin database plugins must be an array");
+      }
 
       return pluginStore.replaceCompatibilityPlugins(value);
     case "personas":
@@ -636,8 +647,9 @@ function getAllowedDbValue(key: string): any {
 
 function setAllowedDbValue(key: string, value: any): void | Promise<void> {
   const domainResult = setDomainDbValue(key, value);
-  if (domainResult !== false)
+  if (domainResult !== false) {
     return domainResult === true ? undefined : domainResult;
+  }
 
   if (isPresetStoreSettingKey(key)) presetStore.set(key, value);
   else settingsStore.set(key as any, value);
@@ -658,8 +670,9 @@ export const getV2PluginAPIs = () => {
     nativeFetch: fetchNative,
     getArg: (arg: string) => {
       const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins)
+      for (const plugin of pluginStore.plugins) {
         if (plugin.name === name) return plugin.realArg[realArg];
+      }
     },
     getChar: async () =>
       (await characterStore.snapshot.load(get(selectedCharID))) ?? undefined,
@@ -710,13 +723,15 @@ export const getV2PluginAPIs = () => {
     },
     setArg: (arg: string, value: string | number) => {
       const [name, realArg] = arg.split("::");
-      for (const plugin of pluginStore.plugins)
+      for (const plugin of pluginStore.plugins) {
         if (plugin.name === name) plugin.realArg[realArg] = value;
+      }
     },
     safeGlobalThis: {} as any,
     getSafeGlobalThis: () => {
-      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0)
+      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0) {
         return globalThis.__pluginApis__.safeGlobalThis;
+      }
 
       //safeGlobalThis
       const keys = Object.keys(globalThis);
@@ -728,9 +743,11 @@ export const getV2PluginAPIs = () => {
         "URL",
         "URLSearchParams",
       ];
-      for (const key of keys)
-        if (allowedKeys.includes(key))
+      for (const key of keys) {
+        if (allowedKeys.includes(key)) {
           safeGlobal[key] = (globalThis as any)[key];
+        }
+      }
 
       //compatibility layer with old unsafe APIs
 
@@ -812,22 +829,24 @@ export const getV2PluginAPIs = () => {
           return undefined;
         },
         set(target, prop, value) {
-          if (typeof prop === "string")
+          if (typeof prop === "string") {
             if (allowedDbKeys.includes(prop)) {
               const pending = setAllowedDbValue(prop, value);
-              if (pending)
+              if (pending) {
                 void pending.catch((error) => {
                   console.error(
                     `Failed to persist compatibility database key '${prop}':`,
                     error,
                   );
                 });
+              }
 
               return true;
             } else {
               settingsStore.setPluginCustomStorageKey(prop, value);
               return true;
             }
+          }
 
           return false;
         },
@@ -838,38 +857,42 @@ export const getV2PluginAPIs = () => {
         },
         has(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop))
+            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
               return true;
+            }
             if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
           }
           return false;
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop))
+            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
               return {
                 value: getAllowedDbValue(prop),
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
+            }
 
             const custom = settingsStore.state.pluginCustomStorage;
-            if (custom && prop in custom)
+            if (custom && prop in custom) {
               return {
                 value: custom[prop],
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
+            }
 
-            if (settingsStore.hasPluginCustomStorageKey(prop))
+            if (settingsStore.hasPluginCustomStorageKey(prop)) {
               return {
                 value: undefined,
                 writable: true,
                 enumerable: true,
                 configurable: true,
               };
+            }
           }
           return undefined;
         },
@@ -928,10 +951,11 @@ export const getV2PluginAPIs = () => {
     },
     setDatabaseLite: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
-      for (const key of Object.keys(newDb))
-        if (allowedDbKeys.includes(key))
+      for (const key of Object.keys(newDb)) {
+        if (allowedDbKeys.includes(key)) {
           await setAllowedDbValue(key, newDb[key]);
-        else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
+        } else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
+      }
     },
     setDatabase: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
@@ -943,9 +967,9 @@ export const getV2PluginAPIs = () => {
           newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins);
         }
 
-        if (allowedDbKeys.includes(key))
+        if (allowedDbKeys.includes(key)) {
           await setAllowedDbValue(key, newDb[key]);
-        else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
+        } else settingsStore.setPluginCustomStorageKey(key, newDb[key]);
       }
     },
     SafeFunction: new Proxy(Function, {
@@ -965,13 +989,16 @@ export const getV2PluginAPIs = () => {
     loadPlugins: loadPlugins,
     readImage: (path: string) => {
       if (path.startsWith("assets/"))
-        //trim assets/ prefix temporarily
+      //trim assets/ prefix temporarily
+      {
         path = path.slice(7);
+      }
 
-      if (path.includes("/") || path.includes("\\"))
+      if (path.includes("/") || path.includes("\\")) {
         throw new Error(
           "readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.",
         );
+      }
 
       //re-add assets/ prefix
       return readImage("assets/" + path);
@@ -1031,10 +1058,11 @@ export async function handlePluginInstallViaPlugin(
         language.confirmInstallPluginViaPlugin.replace("{plugin}", plugin.name),
       );
       if (confirmation) trimmedPlugins.push(plugin);
-    } else
+    } else {
       console.warn(
         `Plugin "${plugin.name}" already exists, skipping installation via plugin.`,
       );
+    }
   }
 
   return trimmedPlugins;

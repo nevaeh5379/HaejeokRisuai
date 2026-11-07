@@ -86,8 +86,9 @@ function resolveTarget(
  * @throws When the resident chat no longer exists. / 적재된 대상 채팅이 사라진 경우.
  */
 function getSettings(target: IllustrationTarget) {
-  if (!settingsStore.state.useChatIllustrations)
+  if (!settingsStore.state.useChatIllustrations) {
     throw new Error("Chat illustrations are disabled");
+  }
   const resolved = resolveTarget(target);
   if (!resolved) throw new Error("The illustration chat was removed");
   return resolveIllustrationSettings(
@@ -125,8 +126,9 @@ async function update(
       },
       target,
     );
-    if (!stored || stored.branchId !== resolved.chat.activeBranchId)
+    if (!stored || stored.branchId !== resolved.chat.activeBranchId) {
       return null;
+    }
     const resident = resolved.chat.message.find(
       (m) => m.chatId === target.messageId,
     );
@@ -149,8 +151,9 @@ async function update(
       !latest ||
       latest.chat.activeBranchId !== stored.branchId ||
       (resident && (!latestMessage || latestMessage.data !== originalData))
-    )
+    ) {
       return null;
+    }
     return {
       commit: {
         baseRevision: 0,
@@ -208,8 +211,9 @@ async function tagArguments(
     target,
   );
   const resolved = resolveTarget(target);
-  if (!located || !resolved)
+  if (!located || !resolved) {
     throw new Error("The illustration message was removed");
+  }
   const settings = getSettings(target);
   const history = await readIllustrationHistory(
     { loadChat: storage.chat.load, loadChatMessagePage: storage.message.page },
@@ -253,8 +257,9 @@ async function tagArguments(
     ),
     async (messages) => {
       let total = 0;
-      for (const m of messages)
+      for (const m of messages) {
         total += (await encode(m.content, prepared.aiModel)).length + 8;
+      }
       return total;
     },
     presetStore.state.maxContext,
@@ -295,14 +300,16 @@ const runner = createIllustrationRunner({
       await tagArguments(target, record),
       "submodel",
     );
-    if (response.type === "multiline")
+    if (response.type === "multiline") {
       return response.result.map((entry) => entry[1]).join("\n");
-    if (response.type !== "success")
+    }
+    if (response.type !== "success") {
       throw new Error(
         response.type === "fail"
           ? response.result
           : "The submodel returned no image tags",
       );
+    }
     return response.result;
   },
   /**
@@ -346,8 +353,9 @@ const runner = createIllustrationRunner({
    */
   storeImage: async (data) => {
     const { writeInlayImageFromBytes } = await import("../files/inlays");
-    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(data))
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(data)) {
       throw new Error("The image provider returned invalid image data");
+    }
     const mime = /^data:image\/([a-z0-9.+-]+)/i.exec(data)[1];
     return writeInlayImageFromBytes(
       new Uint8Array(Buffer.from(data.slice(data.indexOf(",") + 1), "base64")),
@@ -395,14 +403,16 @@ async function serverRequest(
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  if (!response.ok)
+  if (!response.ok) {
     throw new IllustrationRequestError(
       describeIllustrationError({ status: response.status }, "prepare").code,
       response.status,
     );
+  }
   const data = await response.json();
-  if (!data.illustration || typeof data.runId !== "string")
+  if (!data.illustration || typeof data.runId !== "string") {
     throw new Error("Invalid illustration server response");
+  }
   return data;
 }
 
@@ -452,8 +462,9 @@ async function submit(
             located.branchId,
             item.version,
           )
-        )
+        ) {
           return;
+        }
         const record = { ...located, item: latestItem };
         let tagRequest: IllustrationJobRequest["tagRequest"];
         if (
@@ -467,17 +478,19 @@ async function submit(
             { ...(await tagArguments(target, record)), previewBody: true },
             "submodel",
           );
-          if (response.type !== "success")
+          if (response.type !== "success") {
             throw new Error(
               response.type === "fail"
                 ? response.result
                 : "Unable to prepare the submodel request",
             );
+          }
           const prepared = JSON.parse(response.result);
-          if (!prepared.url || !prepared.body)
+          if (!prepared.url || !prepared.body) {
             throw new Error(
               "This submodel cannot prepare a server illustration request",
             );
+          }
           tagRequest = {
             url: prepared.url,
             headers: prepared.headers ?? {},
@@ -494,9 +507,7 @@ async function submit(
         } satisfies IllustrationJobRequest);
         // SQL realtime events carry all later progress, including completion after this client exits.
       });
-    } else {
-      await runner.run(target, item.version);
-    }
+    } else await runner.run(target, item.version);
   } catch (error) {
     // An accepted server job outlives this request; a lost response must not fail it.
     if (serverDispatched) {
@@ -506,8 +517,9 @@ async function submit(
         !(error instanceof IllustrationRequestError) ||
         !error.status ||
         error.status >= 500
-      )
+      ) {
         return;
+      }
     }
     await update(target, item.version, ({ item }) => {
       item.status = "failed";
@@ -543,7 +555,7 @@ export async function enqueueAnswerIllustrations(
   if (scheduling.has(answerKey)) return;
   scheduling.add(answerKey);
   try {
-    let targetChar = characterStore.getById(target.characterId);
+    const targetChar = characterStore.getById(target.characterId);
     if (!targetChar) {
       throw new Error(
         `Illustration character not found: ${target.characterId}`,
@@ -560,6 +572,7 @@ export async function enqueueAnswerIllustrations(
     if (!targetChat) {
       throw new Error(`Illustration chat not found: ${target.chatId}`);
     }
+
     let targetMessage = targetChat.message.find(
       (message) => message.chatId === target.messageId,
     );
@@ -594,8 +607,9 @@ export async function enqueueAnswerIllustrations(
       !targetMessage ||
       targetMessage.data !== answerData ||
       targetChat.activeBranchId !== branchId
-    )
+    ) {
       return;
+    }
     // SQL materializes a root branch before a newly created resident chat has its ID.
     targetChat.activeBranchId ??= storedChat.activeBranchId;
     if (targetChat.activeBranchId !== storedChat.activeBranchId) return;
@@ -668,12 +682,13 @@ export async function illustrationAction(
       );
       if (!resolved || !item || !message.data.includes(item.token)) return;
     }
-    if (action === "regenerate")
+    if (action === "regenerate") {
       prepareIllustrationRegeneration(
         item,
         selectedImageId,
         getSettings(target).generationCount,
       );
+    }
     item.version++;
     if (action === "retry" && item.batch) item.batch.version = item.version;
     item.branchId = resolved.chat.activeBranchId;
@@ -727,12 +742,13 @@ export async function queryServerIllustration(
       const resident = resolved?.chat.message.find(
         (m) => m.chatId === target.messageId,
       );
-      if (resident)
+      if (resident) {
         applyIllustrationProgress(
           resident,
           result.illustration,
           resolved.chat.activeBranchId,
         );
+      }
       return result;
     })().finally(() => {
       statusQueries.delete(key);
@@ -807,8 +823,9 @@ export async function recoverIllustration(target: IllustrationTarget) {
     ) ||
     submissions.has(illustrationJobKey(target)) ||
     runner.has(target)
-  )
+  ) {
     return;
+  }
   if (item.executor === "server") {
     await queryServerIllustration(target, true);
     return;

@@ -128,12 +128,14 @@ export class BackupImportUploadStore {
         "invalid_offset",
       );
     }
+
     if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
       throw new BackupImportUploadError(
         "Backup upload total size must be a positive safe integer",
         "invalid_total_bytes",
       );
     }
+
     if (offset > totalBytes) {
       throw new BackupImportUploadError(
         "Backup upload offset exceeds the declared total size",
@@ -166,12 +168,14 @@ export class BackupImportUploadStore {
             "invalid_total_bytes",
           );
         }
+
         if (size + chunk.byteLength > this.maxRequestBytes) {
           throw new BackupImportUploadError(
             `Backup upload request exceeds ${this.maxRequestBytes} bytes`,
             "upload_request_too_large",
           );
         }
+
         hash.update(chunk);
         let chunkOffset = 0;
         while (chunkOffset < chunk.byteLength) {
@@ -187,6 +191,7 @@ export class BackupImportUploadStore {
               "upload_error",
             );
           }
+
           chunkOffset += bytesWritten;
           size += bytesWritten;
         }
@@ -220,6 +225,7 @@ export class BackupImportUploadStore {
             "upload_finalized",
           );
         }
+
         const knownTotal: number | undefined = this.totals.get(id);
         if (knownTotal !== undefined && knownTotal !== totalBytes) {
           throw new BackupImportUploadError(
@@ -227,6 +233,7 @@ export class BackupImportUploadStore {
             "invalid_total_bytes",
           );
         }
+
         this.totals.set(id, totalBytes);
 
         const currentSize: number = this.receivedBytes.get(id) ?? 0;
@@ -254,6 +261,7 @@ export class BackupImportUploadStore {
                 complete: currentSize === totalBytes,
               };
             }
+
             throw new BackupImportUploadError(
               `Backup upload offset mismatch: expected ${currentSize}, received ${offset}`,
               "upload_offset_mismatch",
@@ -267,6 +275,7 @@ export class BackupImportUploadStore {
               "upload_error",
             );
           }
+
           await consume(createReadStream(spooled.filePath));
           const position: number = offset + spooled.size;
           this.receivedBytes.set(id, position);
@@ -297,6 +306,7 @@ export class BackupImportUploadStore {
             "upload_finalized",
           );
         }
+
         const totalBytes: number | undefined = this.totals.get(id);
         const receivedBytes: number = this.receivedBytes.get(id) ?? 0;
         if (!totalBytes) {
@@ -305,6 +315,7 @@ export class BackupImportUploadStore {
             "upload_incomplete",
           );
         }
+
         if (receivedBytes !== totalBytes) {
           throw new BackupImportUploadError(
             `Backup upload is incomplete: ${receivedBytes} / ${totalBytes} bytes`,
@@ -312,6 +323,7 @@ export class BackupImportUploadStore {
             receivedBytes,
           );
         }
+
         this.sealed.add(id);
         return { receivedBytes, totalBytes, complete: true };
       },
@@ -326,9 +338,7 @@ export class BackupImportUploadStore {
       this.uploadDirectories.delete(id);
       this.lastAccepted.delete(id);
       this.sealed.delete(id);
-      if (directory) {
-        await fs.rm(directory, { recursive: true, force: true });
-      }
+      if (directory) await fs.rm(directory, { recursive: true, force: true });
     });
   }
 }

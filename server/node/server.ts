@@ -347,9 +347,8 @@ app.use((req: Request, res, next) => {
 app.use("/api", createRemoteCorsMiddleware());
 
 app.use(publicContentLimiter, async (req: Request, res, next) => {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    return next();
-  }
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+
   if (
     req.path.startsWith("/api/") ||
     req.path.startsWith("/proxy") ||
@@ -357,9 +356,8 @@ app.use(publicContentLimiter, async (req: Request, res, next) => {
   ) {
     return next();
   }
-  if (req.path === "/" || req.path === "") {
-    return next();
-  }
+
+  if (req.path === "/" || req.path === "") return next();
 
   try {
     let safePath;
@@ -369,9 +367,7 @@ app.use(publicContentLimiter, async (req: Request, res, next) => {
       return next();
     }
     const resolvedPath = path.normalize(path.join(distDir, safePath));
-    if (!resolvedPath.startsWith(distDir)) {
-      return next();
-    }
+    if (!resolvedPath.startsWith(distDir)) return next();
 
     let stats;
     try {
@@ -380,9 +376,7 @@ app.use(publicContentLimiter, async (req: Request, res, next) => {
       return next();
     }
 
-    if (!stats.isFile()) {
-      return next();
-    }
+    if (!stats.isFile()) return next();
 
     const fileName = path.basename(resolvedPath);
     const ext = path.extname(fileName).toLowerCase();
@@ -399,9 +393,7 @@ app.use(publicContentLimiter, async (req: Request, res, next) => {
       fileName === "manifest.json"
     ) {
       res.setHeader("Cache-Control", "no-cache, must-revalidate");
-    } else {
-      res.setHeader("Cache-Control", "public, max-age=86400");
-    }
+    } else res.setHeader("Cache-Control", "public, max-age=86400");
 
     const etag = `"${stats.mtimeMs.toString(36)}-${stats.size.toString(36)}"`;
     res.setHeader("ETag", etag);
@@ -465,6 +457,7 @@ app.use((req: Request, res, next) => {
   ) {
     return next();
   }
+
   rawBodyParser(req, res, next);
 });
 app.use(express.text({ limit: "100mb" }));
@@ -485,9 +478,8 @@ let knownPublicKeysHashes: string[] = [];
 const savePath = process.env.RISU_SAVE_PATH
   ? path.resolve(process.env.RISU_SAVE_PATH)
   : path.join(process.cwd(), "save");
-if (!existsSync(savePath)) {
-  mkdirSync(savePath);
-}
+if (!existsSync(savePath)) mkdirSync(savePath);
+
 const storageSyncRoot = path.join(savePath, "__storage_sync");
 const storageSyncPersistence = new StorageSyncSessionPersistence(
   storageSyncRoot,
@@ -549,11 +541,13 @@ async function getStorageSyncSession(sessionId: string) {
       if (session.assets && assetStatus !== "assets-ready") {
         session.status = assetStatus;
       }
+
       session.needsHydration = false;
     })().finally(() => {
       delete session.hydrationPromise;
     });
   }
+
   await session.hydrationPromise;
   return session;
 }
@@ -600,6 +594,7 @@ function readStoredPostgresConfig() {
   if (!existsSync(postgresConfigPath)) {
     return { enabled: false, connectionString: "", poolMax: 10 };
   }
+
   try {
     const parsed = JSON.parse(readFileSync(postgresConfigPath, "utf8"));
     return {
@@ -794,6 +789,7 @@ async function initializePrimaryStorage(
     if (storage === postgresStorage) {
       setPrimaryStorageRuntime("degraded", createPrimaryStorageFailure(error));
     }
+
     throw error;
   }
 }
@@ -936,11 +932,10 @@ function enqueueBackupWrite<T>(
           `[db-backup] ${label} failed (attempt ${attempt + 1}):`,
           error?.message || error,
         );
-        if (attempt < backoffs.length) {
-          await delayMs(backoffs[attempt]);
-        }
+        if (attempt < backoffs.length) await delayMs(backoffs[attempt]);
       }
     }
+
     throw lastError;
   };
   return new Promise<T | null>((resolve, reject) => {
@@ -956,6 +951,7 @@ function enqueueBackupWrite<T>(
         } else {
           backupRuntime.lastFullSyncError = error?.message || String(error);
         }
+
         reject(error);
       } finally {
         backupRuntime.inFlight = false;
@@ -990,9 +986,8 @@ async function mirrorFullBackupToBackup(onProgress?: (event?: any) => void) {
     percentage: 10,
   });
   const loaded = await postgresStorage.exportDatabaseSnapshot();
-  if (!loaded?.database) {
-    return { skipped: "primary_not_initialized" };
-  }
+  if (!loaded?.database) return { skipped: "primary_not_initialized" };
+
   const payload: LegacyObject = buildFullBackupPayload(loaded.database);
   const presetSummaries = (await postgresStorage.listBotPresets()).presets;
   payload.presets = {
@@ -1105,6 +1100,7 @@ async function restoreBackupToMainDatabase(onProgress?: (event?: any) => void) {
   if (!loaded?.database) {
     throw new Error("Backup database has no valid data to restore");
   }
+
   const payload: LegacyObject = buildFullBackupPayload(loaded.database);
   const presetSummaries = (await backupStorage.listBotPresets()).presets;
   payload.presets = {
@@ -1219,6 +1215,7 @@ async function loadBackupStorageFromConfig() {
     if (!stored.backup || !stored.backup.vendor || !stored.backup.enabled) {
       return;
     }
+
     if (!isVendorConfigComplete(stored.backup.vendor, stored.backup.params)) {
       console.warn(
         "[db-backup] Stored backup configuration is incomplete; skipping backup storage.",
@@ -1263,9 +1260,8 @@ function syncBackupSnapshotTimer() {
     clearInterval(backupSnapshotTimer);
     backupSnapshotTimer = null;
   }
-  if (!backupStorage?.enabled || !backupConfig.snapshot?.enabled) {
-    return;
-  }
+  if (!backupStorage?.enabled || !backupConfig.snapshot?.enabled) return;
+
   const intervalMinutes = Math.max(
     MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
     backupConfig.snapshot.intervalMinutes || 60,
@@ -1346,6 +1342,7 @@ function getPrimaryDatabaseIdentity() {
       };
     }
   }
+
   const identity =
     dbVendor === "postgres"
       ? {
@@ -1407,6 +1404,7 @@ async function resolveCatalogedAssetKeys(
   if (!sourceId || !canUseAssetCatalog()) {
     return { keys: await storage.list(prefix), source: "storage" };
   }
+
   try {
     const initialized =
       !forceResync &&
@@ -1417,6 +1415,7 @@ async function resolveCatalogedAssetKeys(
         source: "catalog",
       };
     }
+
     // Uninitialized (or forced): mirror the entire bucket so an
     // "initialized" catalog always means a complete listing.
     const fresh = await storage.getAssetDetails();
@@ -1449,10 +1448,12 @@ async function resyncAssetCatalogFull() {
   if (storage.type !== "s3" || !assetStorageManager.s3Storage) {
     throw new Error("S3 storage is not active");
   }
+
   const sourceId = getAssetCatalogSourceId();
   if (!sourceId || !canUseAssetCatalog()) {
     throw new Error("SQL asset catalog is unavailable");
   }
+
   const fresh = await storage.getAssetDetails();
   const count = await postgresStorage.replaceAssetCatalog(
     "",
@@ -1524,8 +1525,9 @@ async function upsertAssetCatalogEntries(
     assetEntries.length === 0 ||
     !canUseAssetCatalog() ||
     typeof postgresStorage.upsertAssetCatalog !== "function"
-  )
+  ) {
     return;
+  }
   try {
     await postgresStorage.upsertAssetCatalog(assetEntries);
   } catch (error) {
@@ -1549,8 +1551,9 @@ async function removeAssetCatalogKeys(keys: unknown[]) {
     assetKeys.length === 0 ||
     !canUseAssetCatalog() ||
     typeof postgresStorage.removeAssetCatalog !== "function"
-  )
+  ) {
     return;
+  }
   try {
     await postgresStorage.removeAssetCatalog(assetKeys);
   } catch (error) {
@@ -1562,9 +1565,7 @@ async function removeAssetCatalogKeys(keys: unknown[]) {
 }
 
 const passwordPath = path.join(savePath, "__password");
-if (existsSync(passwordPath)) {
-  password = readFileSync(passwordPath, "utf-8");
-}
+if (existsSync(passwordPath)) password = readFileSync(passwordPath, "utf-8");
 
 const knownPublicKeysPath = path.join(
   savePath,
@@ -1691,6 +1692,7 @@ function validatePostgresConnectionString(value: unknown) {
       "PostgreSQL connection string must contain 1 to 4096 characters",
     );
   }
+
   let parsed;
   try {
     parsed = new URL(value);
@@ -1704,11 +1706,13 @@ function validatePostgresConnectionString(value: unknown) {
       "PostgreSQL connection string must use postgres:// or postgresql://",
     );
   }
+
   if (!parsed.hostname || !parsed.pathname || parsed.pathname === "/") {
     throw new PostgresPayloadError(
       "PostgreSQL connection string must include a host and database name",
     );
   }
+
   return value;
 }
 
@@ -1723,6 +1727,7 @@ function normalizePostgresPoolMax(value: unknown) {
       "PostgreSQL pool size must be an integer from 1 to 100",
     );
   }
+
   return parsed;
 }
 
@@ -1775,8 +1780,9 @@ async function getAuthenticatedIndexScope(req: Request) {
   const payload = JSON.parse(
     Buffer.from(parts[1], "base64url").toString("utf-8"),
   );
-  if (!payload?.pub)
+  if (!payload?.pub) {
     throw new TypeError("Authentication token has no public key");
+  }
   return await hashJSON(payload.pub);
 }
 
@@ -1786,24 +1792,19 @@ function isAuthorizedRequest(req: AuthRequest) {
 }
 
 function normalizeAuthHeader(authHeader: unknown) {
-  if (Array.isArray(authHeader)) {
-    return authHeader[0] || "";
-  }
+  if (Array.isArray(authHeader)) return authHeader[0] || "";
+
   return typeof authHeader === "string" ? authHeader : "";
 }
 
 async function isAuthorizedJwtHeader(authHeader: unknown) {
   try {
     const normalized = normalizeAuthHeader(authHeader);
-    if (!normalized) {
-      return false;
-    }
+    if (!normalized) return false;
 
     const [jsonHeaderB64, jsonPayloadB64, signatureB64] = normalized.split(".");
 
-    if (!jsonHeaderB64 || !jsonPayloadB64 || !signatureB64) {
-      return false;
-    }
+    if (!jsonHeaderB64 || !jsonPayloadB64 || !signatureB64) return false;
 
     const jsonHeader = JSON.parse(
       Buffer.from(jsonHeaderB64, "base64url").toString("utf-8"),
@@ -1814,18 +1815,12 @@ async function isAuthorizedJwtHeader(authHeader: unknown) {
     const signature = Buffer.from(signatureB64, "base64url");
 
     const now = Math.floor(Date.now() / 1000);
-    if (jsonPayload.exp < now) {
-      return false;
-    }
+    if (jsonPayload.exp < now) return false;
 
     const pubKeyHash = await hashJSON(jsonPayload.pub);
-    if (!knownPublicKeysHashes.includes(pubKeyHash)) {
-      return false;
-    }
+    if (!knownPublicKeysHashes.includes(pubKeyHash)) return false;
 
-    if (jsonHeader.alg !== "ES256") {
-      return false;
-    }
+    if (jsonHeader.alg !== "ES256") return false;
 
     return await crypto.subtle.verify(
       {
@@ -1851,28 +1846,24 @@ async function isAuthorizedJwtHeader(authHeader: unknown) {
 }
 
 async function isAuthorizedProxyRequest(req: AuthRequest) {
-  if (isAuthorizedRequest(req)) {
-    return true;
-  }
+  if (isAuthorizedRequest(req)) return true;
+
   return await isAuthorizedJwtHeader(req.headers["risu-auth"]);
 }
 
 async function checkProxyAuth(req: Request, res: Response) {
-  if (isAuthorizedRequest(req)) {
-    return true;
-  }
+  if (isAuthorizedRequest(req)) return true;
+
   return await checkAuth(req, res);
 }
 
 function getRequestTimeoutMs(timeoutHeader: IncomingHttpHeaders[string]) {
   const raw = Array.isArray(timeoutHeader) ? timeoutHeader[0] : timeoutHeader;
-  if (!raw) {
-    return null;
-  }
+  if (!raw) return null;
+
   const timeoutMs = Number.parseInt(raw, 10);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return null;
-  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return null;
+
   return timeoutMs;
 }
 
@@ -1897,14 +1888,14 @@ function normalizeProxyStreamTimeoutMs(timeoutMs: number) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return PROXY_STREAM_DEFAULT_TIMEOUT_MS;
   }
+
   const parsed = Math.max(1, Math.floor(timeoutMs));
   return Math.min(PROXY_STREAM_MAX_TIMEOUT_MS, parsed);
 }
 
 function normalizeHeartbeatSec(heartbeatSec: number) {
-  if (!Number.isFinite(heartbeatSec)) {
-    return PROXY_STREAM_DEFAULT_HEARTBEAT_SEC;
-  }
+  if (!Number.isFinite(heartbeatSec)) return PROXY_STREAM_DEFAULT_HEARTBEAT_SEC;
+
   const parsed = Math.floor(heartbeatSec);
   return Math.min(
     PROXY_STREAM_HEARTBEAT_MAX_SEC,
@@ -1914,9 +1905,8 @@ function normalizeHeartbeatSec(heartbeatSec: number) {
 
 function isPrivateIPv4Host(hostname: string) {
   const parts = hostname.split(".");
-  if (parts.length !== 4) {
-    return false;
-  }
+  if (parts.length !== 4) return false;
+
   const octets = parts.map((part: string) => Number.parseInt(part, 10));
   if (
     octets.some(
@@ -1925,32 +1915,25 @@ function isPrivateIPv4Host(hostname: string) {
   ) {
     return false;
   }
+
   const [a, b] = octets;
-  if (a === 10) {
-    return true;
-  }
-  if (a === 127) {
-    return true;
-  }
-  if (a === 0) {
-    return true;
-  }
-  if (a === 192 && b === 168) {
-    return true;
-  }
-  if (a === 172 && b >= 16 && b <= 31) {
-    return true;
-  }
-  if (a === 169 && b === 254) {
-    return true;
-  }
+  if (a === 10) return true;
+
+  if (a === 127) return true;
+
+  if (a === 0) return true;
+
+  if (a === 192 && b === 168) return true;
+
+  if (a === 172 && b >= 16 && b <= 31) return true;
+
+  if (a === 169 && b === 254) return true;
+
   return false;
 }
 
 function isLocalNetworkHost(hostname: string) {
-  if (typeof hostname !== "string" || hostname.trim() === "") {
-    return false;
-  }
+  if (typeof hostname !== "string" || hostname.trim() === "") return false;
 
   const normalizedHost = hostname
     .toLowerCase()
@@ -1964,9 +1947,7 @@ function isLocalNetworkHost(hostname: string) {
     return true;
   }
 
-  if (net.isIP(normalizedHost) === 4) {
-    return isPrivateIPv4Host(normalizedHost);
-  }
+  if (net.isIP(normalizedHost) === 4) return isPrivateIPv4Host(normalizedHost);
 
   if (net.isIP(normalizedHost) === 6) {
     if (normalizedHost.startsWith("::ffff:")) {
@@ -1976,9 +1957,9 @@ function isLocalNetworkHost(hostname: string) {
     if (normalizedHost.startsWith("fc") || normalizedHost.startsWith("fd")) {
       return true;
     }
-    if (/^fe[89ab]/.test(normalizedHost)) {
-      return true;
-    }
+
+    if (/^fe[89ab]/.test(normalizedHost)) return true;
+
     return normalizedHost === "::1";
   }
 
@@ -1989,8 +1970,9 @@ function normalizeAuthenticatedProxyTarget(raw: unknown) {
   if (typeof raw !== "string" || raw.trim() === "") return null;
   try {
     const parsed = new URL(raw);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
+    }
     if (parsed.username || parsed.password) return null;
     parsed.hash = "";
     return parsed.toString();
@@ -2004,8 +1986,9 @@ function normalizeHubProxyTarget(raw: unknown, base = hubURL) {
   try {
     const hub = new URL(hubURL);
     const target = new URL(raw, base);
-    if (target.protocol !== "http:" && target.protocol !== "https:")
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
       return null;
+    }
     if (target.origin !== hub.origin) return null;
     if (target.username || target.password) return null;
     target.hash = "";
@@ -2016,17 +1999,16 @@ function normalizeHubProxyTarget(raw: unknown, base = hubURL) {
 }
 
 function sanitizeTargetUrl(raw: unknown) {
-  if (typeof raw !== "string" || raw.trim() === "") {
-    return null;
-  }
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
     }
-    if (!isLocalNetworkHost(parsed.hostname)) {
-      return null;
-    }
+
+    if (!isLocalNetworkHost(parsed.hostname)) return null;
+
     parsed.username = "";
     parsed.password = "";
     return parsed.toString();
@@ -2036,17 +2018,13 @@ function sanitizeTargetUrl(raw: unknown) {
 }
 
 function normalizeForwardHeaders(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (typeof key !== "string") {
-      continue;
-    }
-    if (typeof value === "string") {
-      normalized[key] = value;
-    }
+    if (typeof key !== "string") continue;
+
+    if (typeof value === "string") normalized[key] = value;
   }
   delete normalized["risu-auth"];
   delete normalized["risu-timeout-ms"];
@@ -2059,9 +2037,8 @@ function normalizeForwardHeaders(input: unknown) {
 function normalizeProxyResponseHeaders(headers: IncomingHttpHeaders) {
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers || {})) {
-    if (value === undefined) {
-      continue;
-    }
+    if (value === undefined) continue;
+
     normalized[key.toLowerCase()] = Array.isArray(value)
       ? value.join(", ")
       : String(value);
@@ -2077,9 +2054,8 @@ function requestLocalTargetStream(
     const parsedUrl = new URL(targetUrl);
     const client = parsedUrl.protocol === "https:" ? https : http;
     const headers = normalizeForwardHeaders(arg.headers);
-    if (!headers["host"]) {
-      headers["host"] = parsedUrl.host;
-    }
+    if (!headers["host"]) headers["host"] = parsedUrl.host;
+
     if (arg.bodyBuffer && !headers["content-length"]) {
       headers["content-length"] = String(arg.bodyBuffer.length);
     }
@@ -2087,9 +2063,8 @@ function requestLocalTargetStream(
     let settled = false;
     let cleanupAbort = () => {};
     const finishReject = (error: ServerError) => {
-      if (settled) {
-        return;
-      }
+      if (settled) return;
+
       settled = true;
       cleanupAbort();
       reject(error);
@@ -2143,6 +2118,7 @@ function requestLocalTargetStream(
     if (arg.bodyBuffer && arg.method !== "GET" && arg.method !== "HEAD") {
       req.write(arg.bodyBuffer);
     }
+
     req.end();
   });
 }
@@ -2184,33 +2160,28 @@ function pushJobEvent(job: ProxyStreamJob, event: LegacyObject) {
       job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
     ) {
       const removed = job.pendingEvents.shift();
-      if (!removed) {
-        break;
-      }
+      if (!removed) break;
+
       job.pendingBytes -= Buffer.byteLength(removed);
     }
     return;
   }
   for (const client of job.clients) {
-    if (client.readyState === client.OPEN) {
-      client.send(text);
-    }
+    if (client.readyState === client.OPEN) client.send(text);
   }
 }
 
 function markJobDone(job: ProxyStreamJob) {
-  if (job.done) {
-    return;
-  }
+  if (job.done) return;
+
   job.done = true;
   job.cleanupAt = Date.now() + PROXY_STREAM_DONE_GRACE_MS;
 }
 
 function cleanupJob(jobId: string) {
   const job = proxyStreamJobs.get(jobId);
-  if (!job) {
-    return;
-  }
+  if (!job) return;
+
   for (const client of job.clients) {
     try {
       client.close();
@@ -2218,6 +2189,7 @@ function cleanupJob(jobId: string) {
       // ignore
     }
   }
+
   proxyStreamJobs.delete(jobId);
 }
 
@@ -2234,9 +2206,8 @@ async function runProxyStreamJob(job: ProxyStreamJob, arg: ProxyStreamArgs) {
   }
 
   const headers = normalizeForwardHeaders(arg.headers);
-  if (!headers["x-forwarded-for"]) {
-    headers["x-forwarded-for"] = arg.clientIp;
-  }
+  if (!headers["x-forwarded-for"]) headers["x-forwarded-for"] = arg.clientIp;
+
   const bodyBuffer = arg.bodyBase64
     ? Buffer.from(arg.bodyBase64, "base64")
     : undefined;
@@ -2259,6 +2230,7 @@ async function runProxyStreamJob(job: ProxyStreamJob, arg: ProxyStreamArgs) {
       ) {
         continue;
       }
+
       filteredHeaders[key] = value;
     }
 
@@ -2270,9 +2242,8 @@ async function runProxyStreamJob(job: ProxyStreamJob, arg: ProxyStreamArgs) {
 
     if (upstreamResponse.body) {
       for await (const value of upstreamResponse.body) {
-        if (job.abortController.signal.aborted) {
-          break;
-        }
+        if (job.abortController.signal.aborted) break;
+
         if (value && value.length > 0) {
           pushJobEvent(job, {
             type: "chunk",
@@ -2281,6 +2252,7 @@ async function runProxyStreamJob(job: ProxyStreamJob, arg: ProxyStreamArgs) {
         }
       }
     }
+
     pushJobEvent(job, { type: "done" });
     markJobDone(job);
   } catch (error) {
@@ -2316,9 +2288,7 @@ async function forwardUpstreamResponse(
   }
 
   const headObj: Record<string, string> = {};
-  for (const [k, v] of head) {
-    headObj[k] = v;
-  }
+  for (const [k, v] of head) headObj[k] = v;
 
   res.header(headObj);
   res.status(originalResponse.status);
@@ -2340,29 +2310,20 @@ async function forwardUpstreamResponse(
   };
   res.on("close", onClose);
 
-  if (typeof res.flushHeaders === "function") {
-    res.flushHeaders();
-  }
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
 
   try {
     while (!res.writableEnded) {
       const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      if (value && value.length > 0) {
-        res.write(Buffer.from(value));
-      }
+      if (done) break;
+
+      if (value && value.length > 0) res.write(Buffer.from(value));
     }
   } catch (error) {
-    if (!res.writableEnded) {
-      throw error;
-    }
+    if (!res.writableEnded) throw error;
   } finally {
     res.off("close", onClose);
-    if (!res.writableEnded) {
-      res.end();
-    }
+    if (!res.writableEnded) res.end();
   }
 }
 
@@ -2425,9 +2386,8 @@ async function checkAuth(
 
     if (!authHeader) {
       console.log("No auth header");
-      if (returnOnlyStatus) {
-        return false;
-      }
+      if (returnOnlyStatus) return false;
+
       res.status(400).send({
         error: "No auth header",
       });
@@ -2454,9 +2414,8 @@ async function checkAuth(
     const now = Math.floor(Date.now() / 1000);
     if (jsonPayload.exp < now) {
       console.log("Token expired");
-      if (returnOnlyStatus) {
-        return false;
-      }
+      if (returnOnlyStatus) return false;
+
       res.status(400).send({
         error: "Token Expired",
       });
@@ -2467,9 +2426,8 @@ async function checkAuth(
     const pubKeyHash = await hashJSON(jsonPayload.pub);
     if (!knownPublicKeysHashes.includes(pubKeyHash)) {
       console.log("Unknown public key");
-      if (returnOnlyStatus) {
-        return false;
-      }
+      if (returnOnlyStatus) return false;
+
       res.status(400).send({
         error: "Unknown Public Key",
       });
@@ -2480,9 +2438,8 @@ async function checkAuth(
     if (jsonHeader.alg !== "ES256") {
       //only support ECDSA for now
       console.log("Unsupported algorithm");
-      if (returnOnlyStatus) {
-        return false;
-      }
+      if (returnOnlyStatus) return false;
+
       res.status(400).send({
         error: "Unsupported Algorithm",
       });
@@ -2510,9 +2467,8 @@ async function checkAuth(
 
     if (!isValid) {
       console.log("Invalid signature");
-      if (returnOnlyStatus) {
-        return false;
-      }
+      if (returnOnlyStatus) return false;
+
       res.status(400).send({
         error: "Invalid Signature",
       });
@@ -2522,9 +2478,8 @@ async function checkAuth(
     return true;
   } catch (error) {
     console.log(error);
-    if (returnOnlyStatus) {
-      return false;
-    }
+    if (returnOnlyStatus) return false;
+
     res.status(500).send({
       error: "Internal Server Error",
     });
@@ -2537,9 +2492,7 @@ async function requireNodeAuth(
   res: Response,
   next: NextFunction,
 ) {
-  if (await checkAuth(req, res)) {
-    next();
-  }
+  if (await checkAuth(req, res)) next();
 }
 
 app.get(
@@ -2642,9 +2595,7 @@ const reverseProxyFunc = async (
   res: Response,
   next: NextFunction,
 ) => {
-  if (!(await checkProxyAuth(req, res))) {
-    return;
-  }
+  if (!(await checkProxyAuth(req, res))) return;
 
   const urlParam = req.headers["risu-url"]
     ? decodeURIComponent(normalizeAuthHeader(req.headers["risu-url"]))
@@ -2664,20 +2615,18 @@ const reverseProxyFunc = async (
         )
       : req.headers,
   );
-  if (!header["x-forwarded-for"]) {
-    header["x-forwarded-for"] = req.ip;
-  }
+  if (!header["x-forwarded-for"]) header["x-forwarded-for"] = req.ip;
 
   if (req.headers["authorization"]?.startsWith("X-SERVER-REGISTER")) {
-    if (!existsSync(authCodePath)) {
-      delete header["authorization"];
-    } else {
+    if (!existsSync(authCodePath)) delete header["authorization"];
+    else {
       const authCode = await fs.readFile(authCodePath, {
         encoding: "utf-8",
       });
       header["authorization"] = `Bearer ${authCode}`;
     }
   }
+
   const timeoutMs = getRequestTimeoutMs(req.headers["risu-timeout-ms"]);
   const timeout = createTimeoutController(timeoutMs);
   let originalResponse;
@@ -2703,9 +2652,8 @@ const reverseProxyFunc = async (
     head.delete("Cache-Control");
     head.delete("Content-Encoding");
     const headObj: Record<string, string> = {};
-    for (let [k, v] of head) {
-      headObj[k] = v;
-    }
+    for (const [k, v] of head) headObj[k] = v;
+
     // send response headers to client
     res.header(headObj);
     // send response status to client
@@ -2720,9 +2668,8 @@ const reverseProxyFunc = async (
             ? `Proxy request timed out after ${timeoutMs}ms`
             : "Proxy request aborted",
         });
-      } else {
-        res.end();
-      }
+      } else res.end();
+
       return;
     }
     next(err);
@@ -2737,9 +2684,7 @@ const reverseProxyFunc_get = async (
   res: Response,
   next: NextFunction,
 ) => {
-  if (!(await checkProxyAuth(req, res))) {
-    return;
-  }
+  if (!(await checkProxyAuth(req, res))) return;
 
   const urlParam = req.headers["risu-url"]
     ? decodeURIComponent(normalizeAuthHeader(req.headers["risu-url"]))
@@ -2759,9 +2704,8 @@ const reverseProxyFunc_get = async (
         )
       : req.headers,
   );
-  if (!header["x-forwarded-for"]) {
-    header["x-forwarded-for"] = req.ip;
-  }
+  if (!header["x-forwarded-for"]) header["x-forwarded-for"] = req.ip;
+
   const timeoutMs = getRequestTimeoutMs(req.headers["risu-timeout-ms"]);
   const timeout = createTimeoutController(timeoutMs);
   let originalResponse;
@@ -2786,9 +2730,8 @@ const reverseProxyFunc_get = async (
     head.delete("Cache-Control");
     head.delete("Content-Encoding");
     const headObj: Record<string, string> = {};
-    for (let [k, v] of head) {
-      headObj[k] = v;
-    }
+    for (const [k, v] of head) headObj[k] = v;
+
     // send response headers to client
     res.header(headObj);
     // send response status to client
@@ -2803,9 +2746,8 @@ const reverseProxyFunc_get = async (
             ? `Proxy request timed out after ${timeoutMs}ms`
             : "Proxy request aborted",
         });
-      } else {
-        res.end();
-      }
+      } else res.end();
+
       return;
     }
     next(err);
@@ -2815,7 +2757,7 @@ const reverseProxyFunc_get = async (
   }
 };
 
-let accessTokenCache: { token: string | null; expiry: number } = {
+const accessTokenCache: { token: string | null; expiry: number } = {
   token: null,
   expiry: 0,
 };
@@ -2823,6 +2765,7 @@ async function getSionywAccessToken() {
   if (accessTokenCache.token && Date.now() < accessTokenCache.expiry) {
     return accessTokenCache.token;
   }
+
   //Schema of the client data file
   // {
   //     refresh_token: string;
@@ -2837,6 +2780,7 @@ async function getSionywAccessToken() {
   if (!existsSync(clientDataPath)) {
     throw new Error("No Sionyw client data found");
   }
+
   const clientDataRaw = readFileSync(clientDataPath, "utf-8");
   const clientData = JSON.parse(clientDataRaw);
   refreshToken = clientData.refresh_token;
@@ -2916,9 +2860,7 @@ async function hubProxyFunc(req: Request, res: Response) {
     //if Authorization header is "Server-Auth, set the token to be Server-Auth
     if (headersToSend["Authorization"] === "X-Node-Server-Auth") {
       //this requires password auth
-      if (!(await checkAuth(req, res))) {
-        return;
-      }
+      if (!(await checkAuth(req, res))) return;
 
       headersToSend["Authorization"] =
         "Bearer " + (await getSionywAccessToken());
@@ -2936,9 +2878,8 @@ async function hubProxyFunc(req: Request, res: Response) {
 
     for (const [key, value] of response.headers.entries()) {
       // Skip encoding-related headers to prevent double decoding
-      if (excludedHeaders.includes(key.toLowerCase())) {
-        continue;
-      }
+      if (excludedHeaders.includes(key.toLowerCase())) continue;
+
       res.setHeader(key, value);
     }
     res.status(response.status);
@@ -2964,32 +2905,24 @@ async function hubProxyFunc(req: Request, res: Response) {
         duplex: "half",
       } as RequestInit & { duplex: "half" });
       for (const [key, value] of redirectResponse.headers.entries()) {
-        if (excludedHeaders.includes(key.toLowerCase())) {
-          continue;
-        }
+        if (excludedHeaders.includes(key.toLowerCase())) continue;
+
         res.setHeader(key, value);
       }
       res.status(redirectResponse.status);
-      if (redirectResponse.body) {
-        await pipeline(redirectResponse.body, res);
-      } else {
-        res.end();
-      }
+      if (redirectResponse.body) await pipeline(redirectResponse.body, res);
+      else res.end();
+
       return;
     }
 
-    if (response.body) {
-      await pipeline(response.body, res);
-    } else {
-      res.end();
-    }
+    if (response.body) await pipeline(response.body, res);
+    else res.end();
   } catch (error) {
     console.error("[Hub Proxy] Error:", error);
     if (!res.headersSent) {
       res.status(502).send({ error: "Proxy request failed: " + error.message });
-    } else {
-      res.end();
-    }
+    } else res.end();
   }
 }
 
@@ -3012,9 +2945,7 @@ app.post(
   "/proxy-stream-jobs",
   authenticatedRouteLimiter,
   async (req: Request, res) => {
-    if (!(await checkProxyAuth(req, res))) {
-      return;
-    }
+    if (!(await checkProxyAuth(req, res))) return;
 
     const rawUrl = typeof req.body?.url === "string" ? req.body.url : "";
     const encodedUrl = encodeURIComponent(rawUrl);
@@ -3074,9 +3005,8 @@ app.delete(
   "/proxy-stream-jobs/:jobId",
   authenticatedRouteLimiter,
   async (req: Request, res) => {
-    if (!(await checkProxyAuth(req, res))) {
-      return;
-    }
+    if (!(await checkProxyAuth(req, res))) return;
+
     const job = proxyStreamJobs.get(req.params.jobId);
     if (!job) {
       res.send({ success: true });
@@ -3102,13 +3032,10 @@ app.delete(
 // })
 
 app.get("/api/test_auth", authRouteLimiter, async (req: Request, res) => {
-  if (!password) {
-    res.send({ status: "unset" });
-  } else if (!(await checkAuth(req, res, true))) {
+  if (!password) res.send({ status: "unset" });
+  else if (!(await checkAuth(req, res, true))) {
     res.send({ status: "incorrect" });
-  } else {
-    res.send({ status: "success" });
-  }
+  } else res.send({ status: "success" });
 });
 
 app.get("/api/health", (req: Request, res) => {
@@ -3335,6 +3262,7 @@ function sendStorageSyncSqlError(res: Response, error: ServerError) {
   if (Number.isSafeInteger(error.recordIndex) && error.recordIndex >= 0) {
     body.recordIndex = error.recordIndex;
   }
+
   res.status(status).send(body);
 }
 
@@ -3507,6 +3435,7 @@ function sendStorageSyncFinalizeError(res: Response, error: ServerError) {
   if (Number.isSafeInteger(error.currentRevision)) {
     body.currentRevision = error.currentRevision;
   }
+
   res.status(status).send(body);
 }
 
@@ -3625,9 +3554,7 @@ app.post("/api/login", loginRouteLimiter, async (req: Request, res) => {
       "utf-8",
     );
     res.send({ status: "success" });
-  } else {
-    res.status(400).send({ error: "Password incorrect" });
-  }
+  } else res.status(400).send({ error: "Password incorrect" });
 });
 
 app.post("/api/crypto", async (req: Request, res) => {
@@ -3645,9 +3572,7 @@ app.post("/api/set_password", loginRouteLimiter, async (req: Request, res) => {
     password = req.body.password;
     writeFileSync(passwordPath, password, "utf-8");
     res.send({ status: "success" });
-  } else {
-    res.status(400).send("already set");
-  }
+  } else res.status(400).send("already set");
 });
 
 const BULK_WRITE_CONTENT_TYPE = "application/x-risu-bulk";
@@ -3686,9 +3611,8 @@ async function writeFileChunk(
       data.length - offset,
       null,
     );
-    if (bytesWritten === 0) {
-      throw new Error("Failed to write bulk file chunk");
-    }
+    if (bytesWritten === 0) throw new Error("Failed to write bulk file chunk");
+
     offset += bytesWritten;
   }
 }
@@ -3853,11 +3777,13 @@ function normalizeCharxEntryName(value: unknown) {
   ) {
     throw new Error("Invalid CharX entry name");
   }
+
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const parts = normalized.split("/");
   if (parts.some((part: string) => !part || part === "." || part === "..")) {
     throw new Error(`Invalid CharX entry path: ${value}`);
   }
+
   return parts.join("/");
 }
 
@@ -3958,6 +3884,7 @@ app.get(
     if (job.status === "pending" || job.status === "streaming") {
       await job.completion;
     }
+
     res.send({ status: job.status, error: job.error });
     if (job.status === "complete" || job.status === "error") {
       charxExportJobs.delete(req.params.jobId);
@@ -4013,8 +3940,9 @@ async function handleCharxExport(req: Request, res: Response) {
     const storage = assetStorageManager.getStorage();
     const entries = requestedEntries.map((entry: CharxExportEntry) => {
       const name = normalizeCharxEntryName(entry?.name);
-      if (seenNames.has(name))
+      if (seenNames.has(name)) {
         throw new Error(`Duplicate CharX entry: ${name}`);
+      }
       seenNames.add(name);
 
       if (typeof entry?.source === "string") {
@@ -4026,6 +3954,7 @@ async function handleCharxExport(req: Request, res: Response) {
         ) {
           throw new Error(`Invalid CharX asset source: ${entry.source}`);
         }
+
         return {
           name,
           open: async () => {
@@ -4033,15 +3962,18 @@ async function handleCharxExport(req: Request, res: Response) {
               typeof storage.openReadStream === "function"
                 ? await storage.openReadStream(keyToHex(source))
                 : await storage.read(keyToHex(source));
-            if (!result.exists)
+            if (!result.exists) {
               throw new Error(`CharX asset not found: ${source}`);
+            }
             const body = result.stream ?? result.buffer;
-            if (!body)
+            if (!body) {
               throw new Error(`CharX asset is not readable: ${source}`);
+            }
             const size = Number(result.contentLength ?? result.buffer?.length);
             if (!Number.isSafeInteger(size) || size < 0) {
               throw new Error(`CharX asset size is unavailable: ${source}`);
             }
+
             return { source: body, size };
           },
         };
@@ -4050,11 +3982,13 @@ async function handleCharxExport(req: Request, res: Response) {
       if (typeof entry?.dataBase64 !== "string") {
         throw new Error(`CharX entry has no source or inline data: ${name}`);
       }
+
       const data = Buffer.from(entry.dataBase64, "base64");
       inlineBytes += data.length;
       if (inlineBytes > 32 * 1024 * 1024) {
         throw new Error("CharX inline metadata exceeds 32MB");
       }
+
       return { name, size: data.length, source: data };
     });
 
@@ -4099,15 +4033,18 @@ async function handleCharxExport(req: Request, res: Response) {
           `Invalid CharX JPEG preview source: ${req.body.previewSource}`,
         );
       }
+
       const preview =
         typeof storage.openReadStream === "function"
           ? await storage.openReadStream(keyToHex(previewSource))
           : await storage.read(keyToHex(previewSource));
-      if (!preview.exists)
+      if (!preview.exists) {
         throw new Error(`CharX JPEG preview not found: ${previewSource}`);
+      }
       const previewBody = preview.stream ?? preview.buffer;
-      if (!previewBody)
+      if (!previewBody) {
         throw new Error(`CharX JPEG preview is not readable: ${previewSource}`);
+      }
       const { Readable } = await import("node:stream");
       const sharp = await loadSharp();
       const input =
@@ -4225,8 +4162,9 @@ async function assertServerBackupRevision(expectedRevision: number) {
 }
 
 async function buildPortableServerDatabase() {
-  if (!postgresStorage.enabled)
+  if (!postgresStorage.enabled) {
     throw new Error("SQL storage is not configured");
+  }
   const loaded = await postgresStorage.exportDatabaseSnapshot();
   if (!loaded?.database) throw new Error("Database is not initialized");
   const database = await attachPortableDatabaseBranchGraphs(
@@ -4291,17 +4229,21 @@ async function streamPortableServerDatabase(
     fragmentRecords?: number;
   } = {},
 ) {
-  if (!postgresStorage.enabled)
+  if (!postgresStorage.enabled) {
     throw new Error("SQL storage is not configured");
+  }
   const initialState = await postgresStorage.getState();
-  if (!initialState?.initialized)
+  if (!initialState?.initialized) {
     throw new Error("Database is not initialized");
+  }
   const startup = await postgresStorage.loadStartupData();
-  if (!startup || startup.status !== "ready")
+  if (!startup || startup.status !== "ready") {
     throw new Error("Database is not initialized");
+  }
   if (Number(startup.revision) !== Number(initialState.revision)) {
     throw new Error("Database changed while streaming backup metadata");
   }
+
   const summary = await postgresStorage.getStorageSyncSummary();
   const expectedRecords = Math.max(0, Number(summary?.records?.total) || 0);
   const pageSize = options.pageSize ?? LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE;
@@ -4336,8 +4278,9 @@ async function streamPortableServerDatabase(
   );
   for (const key of settingKeys) {
     const loaded = await postgresStorage.loadSettingKey(key);
-    if (!loaded?.exists)
+    if (!loaded?.exists) {
       throw new Error(`Backup could not load setting ${key}`);
+    }
     await writer.emit({ type: "setting", key, value: loaded.value });
   }
 
@@ -4348,8 +4291,9 @@ async function streamPortableServerDatabase(
     position++
   ) {
     const value = moduleResult.modules[position];
-    if (!value?.id)
+    if (!value?.id) {
       throw new Error("Backup encountered a module without an id");
+    }
     await writer.emit({ type: "module", position, id: value.id, data: value });
   }
 
@@ -4357,8 +4301,9 @@ async function streamPortableServerDatabase(
   const presetSummaries = presetResult?.presets ?? [];
   for (const summary of presetSummaries) {
     const loaded = await postgresStorage.loadBotPreset(summary.id);
-    if (!loaded?.preset)
+    if (!loaded?.preset) {
       throw new Error(`Backup could not load preset ${summary.id}`);
+    }
     const { id: _id, ...value } = loaded.preset;
     await writer.emit({
       type: "preset",
@@ -4375,8 +4320,9 @@ async function streamPortableServerDatabase(
   const pluginKeys = await postgresStorage.listPluginCustomStorageKeys();
   for (const key of pluginKeys) {
     const loaded = await postgresStorage.loadPluginCustomStorageKey(key);
-    if (!loaded?.exists)
+    if (!loaded?.exists) {
       throw new Error(`Backup could not load plugin storage ${key}`);
+    }
     await writer.emit({ type: "plugin-storage", key, value: loaded.value });
   }
 
@@ -4387,8 +4333,9 @@ async function streamPortableServerDatabase(
   ) {
     const shell = startup.characters[characterPosition];
     const loadedCharacter = await postgresStorage.loadCharacter(shell.chaId);
-    if (!loadedCharacter)
+    if (!loadedCharacter) {
       throw new Error(`Backup could not load character ${shell.chaId}`);
+    }
     const chatSummaries = [...(loadedCharacter.chats ?? [])];
     const { chats: _chats, ...character } = loadedCharacter;
     await writer.emit({
@@ -4407,8 +4354,9 @@ async function streamPortableServerDatabase(
       const loadedChat = await postgresStorage.loadChat(summary.id, {
         messageLimit: 1,
       });
-      if (!loadedChat)
+      if (!loadedChat) {
         throw new Error(`Backup could not load chat ${summary.id}`);
+      }
       const { message: _messages, ...chat } = loadedChat;
       await writer.emit({
         type: "chat",
@@ -4434,6 +4382,7 @@ async function streamPortableServerDatabase(
               data: branch,
             });
           }
+
           if (page.activeBranchId) {
             await writer.emit({
               type: "active-branch",
@@ -4441,6 +4390,7 @@ async function streamPortableServerDatabase(
               branchId: page.activeBranchId,
             });
           }
+
           emittedMetadata = true;
         }
         const links = new Map<string, any>(
@@ -4457,6 +4407,7 @@ async function streamPortableServerDatabase(
               `Backup branch metadata is incomplete for chat ${summary.id}`,
             );
           }
+
           const { chatId: _messageId, ...data } = message;
           await writer.emit({
             type: "message",
@@ -4470,10 +4421,11 @@ async function streamPortableServerDatabase(
         }
         if (!page.hasMore) break;
         const nextOffset = page.offset + page.messages.length;
-        if (nextOffset <= offset)
+        if (nextOffset <= offset) {
           throw new Error(
             `Branch backup paging stalled for chat ${summary.id}`,
           );
+        }
         offset = nextOffset;
       }
     }
@@ -5257,6 +5209,7 @@ app.post(
             ) {
               await once(activeChunk.file.writer.stream, "drain");
             }
+
             activeChunk.file.receivedSize += BigInt(writeLength);
             activeChunk.remaining -= writeLength;
             offset += writeLength;
@@ -5284,11 +5237,13 @@ app.post(
                 `Duplicate bulk file ID: ${fileId}`,
               );
             }
+
             if (fileCount >= BULK_WRITE_MAX_FILES) {
               throw createBulkProtocolError(
                 "Too many files in bulk write request",
               );
             }
+
             if (receivingFiles.size >= BULK_WRITE_MAX_OPEN_FILES) {
               throw createBulkProtocolError(
                 `Too many simultaneously open bulk files (maximum ${BULK_WRITE_MAX_OPEN_FILES})`,
@@ -5362,6 +5317,7 @@ app.post(
                 `End packet for unknown bulk file ID: ${fileId}`,
               );
             }
+
             if (file.receivedSize !== file.expectedSize) {
               throw createBulkProtocolError(
                 `Incomplete bulk file: ${file.name}`,
@@ -5386,13 +5342,11 @@ app.post(
                 pendingFinalizations.delete(finalize);
               });
             pendingFinalizations.add(finalize);
-            if (storage.type !== "s3") {
-              await finalize;
-            } else if (
-              pendingFinalizations.size >= S3_BULK_UPLOAD_CONCURRENCY
-            ) {
+            if (storage.type !== "s3") await finalize;
+            else if (pendingFinalizations.size >= S3_BULK_UPLOAD_CONCURRENCY) {
               await Promise.race(pendingFinalizations);
             }
+
             if (finalizationError) throw finalizationError;
             continue;
           }
@@ -5445,6 +5399,7 @@ async function replacePrimaryStorageConfiguration(
   if (!SUPPORTED_VENDORS.includes(vendor)) {
     throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
   }
+
   const normalized = normalizeVendorParams(vendor, params);
   if (!isVendorConfigComplete(vendor, normalized)) {
     throw new StoragePayloadError("Required connection parameters are missing");
@@ -5557,9 +5512,8 @@ app.get(
   "/api/postgres-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       res.send(await getPostgresConfigResponse());
     } catch (error) {
@@ -5572,9 +5526,8 @@ app.post(
   "/api/postgres-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (storageManagedByEnvironment) {
       res.status(403).send({
         error: "PostgreSQL is managed by server environment variables",
@@ -5602,6 +5555,7 @@ app.post(
       if (typeof req.body?.enabled !== "boolean") {
         throw new PostgresPayloadError("enabled must be a boolean");
       }
+
       if (!req.body.enabled) {
         res.status(400).send({
           error:
@@ -5710,9 +5664,8 @@ app.get(
   "/api/db-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       let revision = null;
       let initialized = false;
@@ -5725,6 +5678,7 @@ app.get(
           // storage가 초기화되지 않았을 수 있음
         }
       }
+
       const resp = getDbConfigResponse();
       resp.revision = revision;
       resp.initialized = initialized;
@@ -5739,9 +5693,8 @@ app.post(
   "/api/db-config/test",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!isSecurePostgresConfigRequest(req)) {
       res.status(403).send({
         error: "DB configuration test requires HTTPS or a localhost connection",
@@ -5773,9 +5726,8 @@ app.post(
   "/api/db-config/retry",
   authenticatedRouteLimiter,
   async (req: Request, res) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(409).send({
         error: "SQL storage is not configured",
@@ -5812,9 +5764,8 @@ app.post(
   "/api/db-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (storageManagedByEnvironment) {
       res.status(403).send({
         error: "Database storage is managed by server environment variables",
@@ -5879,9 +5830,8 @@ app.post(
   "/api/database-v2/migrate-legacy",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -5972,9 +5922,8 @@ app.post(
   "/api/tokenize-count",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const counts = await countTokensBatch(
         req.body?.texts,
@@ -5995,9 +5944,8 @@ app.post(
   "/api/lore-match-batch",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const messages = Array.isArray(req.body?.messages)
         ? req.body.messages
@@ -6028,9 +5976,8 @@ app.post(
   "/api/lore-resolve",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const result = resolveLoreEntries(req.body?.messages, req.body?.entries, {
         username: req.body?.username,
@@ -6069,8 +6016,9 @@ app.post(
         ),
       );
     } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError)
+      if (error instanceof TypeError || error instanceof RangeError) {
         return res.status(400).send({ error: error.message });
+      }
       next(error);
     }
   },
@@ -6087,8 +6035,9 @@ app.post(
         upsertVectorIndex(`${scope}:${req.body?.indexId}`, req.body?.entries),
       );
     } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError)
+      if (error instanceof TypeError || error instanceof RangeError) {
         return res.status(400).send({ error: error.message });
+      }
       next(error);
     }
   },
@@ -6107,15 +6056,17 @@ app.post(
         req.body?.metric,
         req.body?.topK ?? null,
       );
-      if (results === null)
+      if (results === null) {
         return res.status(404).send({
           error: "Vector index not found",
           code: "vector_index_missing",
         });
+      }
       res.send({ results });
     } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError)
+      if (error instanceof TypeError || error instanceof RangeError) {
         return res.status(400).send({ error: error.message });
+      }
       next(error);
     }
   },
@@ -6621,9 +6572,8 @@ app.get(
   "/api/database-v2/characters/:characterId",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -6659,9 +6609,8 @@ app.get(
   "/api/database-v2/characters/:characterId/asset-fields",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -6697,9 +6646,8 @@ app.get(
   "/api/database-v2/chats/:chatId",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -6733,9 +6681,8 @@ app.get(
   "/api/database-v2/chats/:chatId/messages",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -6994,9 +6941,8 @@ app.get(
   "/api/database-v2/recent-chats",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7023,9 +6969,8 @@ app.get(
   "/api/database-v2/revisions",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -7047,9 +6992,8 @@ app.get(
   "/api/database-v2/revisions/diff",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7085,9 +7029,8 @@ app.get(
   "/api/database-v2/revisions/:id/details",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7126,9 +7069,8 @@ app.post(
   "/api/database-v2/revisions/preview-restore",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7186,6 +7128,7 @@ app.post(
           }),
         );
       }
+
       res.send({ success: true, ...result });
     } catch (error) {
       if (error instanceof PostgresPayloadError) {
@@ -7229,6 +7172,7 @@ app.post(
           }),
         );
       }
+
       res.send({ success: true, ...result });
     } catch (error) {
       if (error instanceof AuthorNoteError) {
@@ -7456,9 +7400,8 @@ app.get(
   "/api/database-v2/cold-storage",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -7480,9 +7423,8 @@ app.get(
   "/api/database-v2/cold-storage/:key",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -7562,6 +7504,7 @@ app.put(
             }),
         );
       }
+
       res.send({
         success: true,
         key: item.key,
@@ -7587,9 +7530,8 @@ app.delete(
   serializeLargeJsonRequests,
   postgresJsonParser,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -7611,6 +7553,7 @@ app.delete(
             }),
         );
       }
+
       res.send({ success: true, ...result });
     } catch (error) {
       if (error instanceof PostgresPayloadError) {
@@ -7630,9 +7573,8 @@ app.post(
   serializeLargeJsonRequests,
   postgresJsonParser,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "PostgreSQL storage is not configured",
@@ -7656,6 +7598,7 @@ app.post(
             }),
         );
       }
+
       res.send({ success: true, ...result });
     } catch (error) {
       if (error instanceof PostgresPayloadError) {
@@ -7673,9 +7616,8 @@ app.get(
   "/api/database-v2/search",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7711,9 +7653,8 @@ app.get(
   "/api/database-v2/token-usage",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7740,9 +7681,8 @@ app.get(
   "/api/database-v2/bot-stats",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7769,9 +7709,8 @@ app.get(
   "/api/database-v2/characters/search",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7817,9 +7756,8 @@ app.get(
   "/api/database-v2/tables",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7846,9 +7784,8 @@ app.get(
   "/api/database-v2/tables/:table/rows",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (!postgresStorage.enabled) {
       res.status(404).send({
         error: "SQL storage is not configured",
@@ -7896,9 +7833,8 @@ app.get(
   "/api/s3-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       res.send(assetStorageManager.getPublicConfig());
     } catch (error) {
@@ -7911,9 +7847,8 @@ app.post(
   "/api/s3-config",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     if (localBackupImportService.hasActiveImports()) {
       res.status(409).send({
         error: "Asset storage cannot change during a local backup import",
@@ -7935,9 +7870,8 @@ app.post(
   "/api/s3-test",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const body = req.body || {};
       // Azure SQL asset storage test path: when storageType === 'azuresql',
@@ -8000,9 +7934,8 @@ app.get(
   "/api/s3-stats",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const stats = await assetStorageManager.getStorage().getStats();
       res.send(stats);
@@ -8016,9 +7949,8 @@ app.get(
   "/api/storage-summary",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       // Never list S3 just to render the explorer summary. S3 statistics are
       // populated exclusively from the SQL catalog below.
@@ -8032,6 +7964,7 @@ app.get(
       } else if (storage.type === "azuresql" && summary.azuresql) {
         summary.azuresql = { ...summary.azuresql, ...activeStats };
       }
+
       if (summary.s3 && canUseAssetCatalog()) {
         try {
           const sourceId = getAssetCatalogSourceId();
@@ -8054,6 +7987,7 @@ app.get(
           );
         }
       }
+
       res.send(summary);
     } catch (error) {
       next(error);
@@ -8065,9 +7999,8 @@ app.get(
   "/api/s3-asset-details",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const target = req.query.target || "active";
       const storage = assetStorageManager.getStorage();
@@ -8111,9 +8044,8 @@ app.post(
   "/api/storage-assets-delete",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const { keys, target = "active" } = req.body || {};
       if (!Array.isArray(keys)) {
@@ -8135,6 +8067,7 @@ app.post(
       ) {
         await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
       }
+
       res.send(result);
     } catch (error) {
       next(error);
@@ -8146,9 +8079,8 @@ app.post(
   "/api/storage-local-clean",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const result = await assetStorageManager.cleanLocalAssets();
       res.send(result);
@@ -8162,9 +8094,8 @@ app.post(
   "/api/s3-migrate",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const storage = assetStorageManager.getStorage();
       if (storage.type !== "s3" && storage.type !== "azuresql") {
@@ -8196,9 +8127,8 @@ app.post(
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
     } catch (error) {
-      if (!res.headersSent) {
-        res.status(500).send({ error: error.message });
-      } else {
+      if (!res.headersSent) res.status(500).send({ error: error.message });
+      else {
         res.write(
           JSON.stringify({ type: "error", error: error.message }) + "\n",
         );
@@ -8212,9 +8142,8 @@ app.post(
   "/api/s3-rollback",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const storage = assetStorageManager.getStorage();
       if (storage.type !== "s3" && storage.type !== "azuresql") {
@@ -8237,9 +8166,8 @@ app.post(
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
     } catch (error) {
-      if (!res.headersSent) {
-        res.status(500).send({ error: error.message });
-      } else {
+      if (!res.headersSent) res.status(500).send({ error: error.message });
+      else {
         res.write(
           JSON.stringify({ type: "error", error: error.message }) + "\n",
         );
@@ -8277,9 +8205,8 @@ app.post(
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
     } catch (error) {
-      if (!res.headersSent) {
-        res.status(500).send({ error: error.message });
-      } else {
+      if (!res.headersSent) res.status(500).send({ error: error.message });
+      else {
         res.write(
           JSON.stringify({ type: "error", error: error.message }) + "\n",
         );
@@ -8293,9 +8220,8 @@ app.get(
   "/api/read",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     let filePath =
       req.headers["file-path"] ||
       req.query.path ||
@@ -8325,9 +8251,8 @@ app.get(
       return;
     }
 
-    if (!isHex(filePath)) {
-      filePath = keyToHex(filePath);
-    }
+    if (!isHex(filePath)) filePath = keyToHex(filePath);
+
     try {
       let storage;
       if (target && target !== "active") {
@@ -8338,16 +8263,14 @@ app.get(
           });
           return;
         }
-      } else {
-        storage = assetStorageManager.getStorage();
-      }
+      } else storage = assetStorageManager.getStorage();
+
       const result =
         useThumb && typeof storage.readThumbnail === "function"
           ? await storage.readThumbnail(filePath, thumbOptions)
           : await storage.read(filePath);
-      if (!result.exists) {
-        res.send();
-      } else {
+      if (!result.exists) res.send();
+      else {
         const contentType = result.contentType || "application/octet-stream";
         const totalLength =
           result.contentLength || (result.buffer ? result.buffer.length : 0);
@@ -8393,15 +8316,12 @@ app.get(
         if (result.contentLength) {
           res.setHeader("Content-Length", result.contentLength);
         }
-        if (result.buffer) {
-          res.send(result.buffer);
-        } else if (result.stream) {
-          await pipeline(result.stream, res);
-        } else if (result.filePath) {
+
+        if (result.buffer) res.send(result.buffer);
+        else if (result.stream) await pipeline(result.stream, res);
+        else if (result.filePath) {
           await pipeline(fsSync.createReadStream(result.filePath), res);
-        } else {
-          res.send();
-        }
+        } else res.send();
       }
     } catch (error) {
       next(error);
@@ -8413,9 +8333,8 @@ app.get(
   "/api/remove",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     const filePaths =
       normalizeAuthHeader(req.headers["file-path"]).split("$") || [];
 
@@ -8456,9 +8375,8 @@ app.get(
   "/api/list",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     try {
       const storage = assetStorageManager.getStorage();
       const prefix =
@@ -8520,9 +8438,8 @@ app.post(
   "/api/write",
   authenticatedRouteLimiter,
   async (req: Request, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
+    if (!(await checkAuth(req, res))) return;
+
     const filePath = req.headers["file-path"];
     if (!filePath) {
       res.status(400).send({
@@ -8673,11 +8590,12 @@ app.get("/api/oauth_login", loginRouteLimiter, async (req: Request, res) => {
     //now lets request
 
     const openid = await getOpenidClient();
-    let code_verifier = openid.randomPKCECodeVerifier();
-    let code_challenge = await openid.calculatePKCECodeChallenge(code_verifier);
+    const code_verifier = openid.randomPKCECodeVerifier();
+    const code_challenge =
+      await openid.calculatePKCECodeChallenge(code_verifier);
 
     oauthData.code_verifier = code_verifier;
-    let redirectTo = openid.buildAuthorizationUrl(oauthData.config, {
+    const redirectTo = openid.buildAuthorizationUrl(oauthData.config, {
       redirect_uri,
       code_challenge,
       code_challenge_method: "S256",
@@ -8711,7 +8629,7 @@ app.get("/api/oauth_callback", loginRouteLimiter, async (req: Request, res) => {
     return;
   }
 
-  let tokens = await (
+  const tokens = await (
     await getOpenidClient()
   ).authorizationCodeGrant(oauthData.config, getRequestUrl(req), {
     pkceCodeVerifier: oauthData.code_verifier,
@@ -8788,9 +8706,8 @@ app.use(
       );
     }
 
-    if (res.headersSent) {
-      return next(error);
-    }
+    if (res.headersSent) return next(error);
+
     res.status(statusCode).send({
       error: message,
       code: errorKey || undefined,
@@ -8885,8 +8802,9 @@ function setupProxyStreamWebSocket(server: Server) {
     ws.once("message", async (raw) => {
       try {
         const message = JSON.parse(raw.toString());
-        if (message?.type !== "authenticate")
+        if (message?.type !== "authenticate") {
           throw new Error("Authentication required");
+        }
         const authorized = await isAuthorizedProxyRequest({
           headers: { "risu-auth": message.auth },
         });
@@ -8918,29 +8836,24 @@ function setupProxyStreamWebSocket(server: Server) {
 
       job.clients.add(ws);
       ws.send(JSON.stringify({ type: "job_accepted", jobId }));
-      for (const event of job.pendingEvents) {
-        ws.send(event);
-      }
+      for (const event of job.pendingEvents) ws.send(event);
+
       job.pendingEvents = [];
       job.pendingBytes = 0;
 
       const pingTimer = setInterval(() => {
-        if (ws.readyState !== ws.OPEN) {
-          return;
-        }
+        if (ws.readyState !== ws.OPEN) return;
+
         ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
       }, job.heartbeatSec * 1000);
 
       ws.on("close", () => {
         clearInterval(pingTimer);
         const currentJob = proxyStreamJobs.get(jobId);
-        if (!currentJob) {
-          return;
-        }
+        if (!currentJob) return;
+
         currentJob.clients.delete(ws);
-        if (currentJob.done && currentJob.clients.size === 0) {
-          cleanupJob(jobId);
-        }
+        if (currentJob.done && currentJob.clients.size === 0) cleanupJob(jobId);
       });
 
       ws.on("error", () => {
@@ -9091,13 +9004,16 @@ async function shutdownServer(signal: NodeJS.Signals) {
     if (activeHttpServer?.listening) {
       await new Promise((resolve) => activeHttpServer.close(resolve));
     }
+
     await flushVectorIndexPersistence();
     if (backupStorage && typeof backupStorage.close === "function") {
       await backupStorage.close();
     }
+
     if (postgresStorage && typeof postgresStorage.close === "function") {
       await postgresStorage.close();
     }
+
     clearTimeout(forceExitTimer);
     console.log(
       `[Server shutdown] Graceful shutdown after ${signal} completed.`,
@@ -9127,6 +9043,7 @@ process.once("SIGINT", () => void shutdownServer("SIGINT"));
       ) {
         job.abortController.abort();
       }
+
       if (
         job.done &&
         job.clients.size === 0 &&

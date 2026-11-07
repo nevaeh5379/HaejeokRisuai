@@ -39,6 +39,7 @@ export function unwrapExportedWidgetValue(value: unknown): unknown {
   ) {
     return value.__value__;
   }
+
   return value;
 }
 
@@ -62,9 +63,7 @@ export const graphToPrompt = async (
       ? node.getInnerNodes(new Map())
       : [node];
     for (const innerNode of innerNodes) {
-      if (innerNode.isVirtualNode) {
-        innerNode.applyToGraph?.();
-      }
+      if (innerNode.isVirtualNode) innerNode.applyToGraph?.();
     }
   }
 
@@ -72,12 +71,9 @@ export const graphToPrompt = async (
 
   // Remove localized_name from the workflow
   for (const node of workflow.nodes) {
-    for (const slot of node.inputs ?? []) {
-      delete slot.localized_name;
-    }
-    for (const slot of node.outputs ?? []) {
-      delete slot.localized_name;
-    }
+    for (const slot of node.inputs ?? []) delete slot.localized_name;
+
+    for (const slot of node.outputs ?? []) delete slot.localized_name;
   }
 
   compressWidgetInputSlots(workflow);

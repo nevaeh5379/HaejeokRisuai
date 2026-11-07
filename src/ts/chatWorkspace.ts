@@ -67,6 +67,7 @@ export class ChatWindowManager {
     if (!id || id === MAIN_CHAT_WORKSPACE_WINDOW_ID) {
       throw new Error("Auxiliary chat windows require a unique non-main id");
     }
+
     return this.setWindow({ id, kind: "auxiliary", tabs, bounds });
   }
 
@@ -123,9 +124,8 @@ export class ChatWindowManager {
     let firstRemainingId: string | null = null;
     for (let i = 0; i < sourceTabs.length; i++) {
       if (sourceTabs[i].groupId === sourceGroup.id) {
-        if (remainingInSourceGroup === 0) {
-          firstRemainingId = sourceTabs[i].id;
-        }
+        if (remainingInSourceGroup === 0) firstRemainingId = sourceTabs[i].id;
+
         remainingInSourceGroup++;
       }
     }
@@ -134,9 +134,8 @@ export class ChatWindowManager {
       const groupIndex = sourceGroups.findIndex(
         (group) => group.id === sourceGroup.id,
       );
-      if (groupIndex !== -1) {
-        sourceGroups.splice(groupIndex, 1);
-      }
+      if (groupIndex !== -1) sourceGroups.splice(groupIndex, 1);
+
       if (sourceWindow.tabs.focusedGroupId === sourceGroup.id) {
         sourceWindow.tabs.focusedGroupId = sourceGroups[0]?.id ?? "";
       }
@@ -172,6 +171,7 @@ export class ChatWindowManager {
     for (const window of this.windows.values()) {
       list.push(this.cloneWindow(window));
     }
+
     return list;
   }
 
@@ -180,8 +180,9 @@ export class ChatWindowManager {
   }
 
   restore(snapshot: ChatWorkspaceSnapshot): void {
-    if (snapshot.version !== 1)
+    if (snapshot.version !== 1) {
       throw new Error("Unsupported chat workspace version");
+    }
     this.windows.clear();
     for (const window of snapshot.windows) {
       this.windows.set(window.id, this.cloneWindow(window));

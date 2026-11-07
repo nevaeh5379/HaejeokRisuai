@@ -39,8 +39,9 @@ export function buildPortableLocalBackupDatabase(
       key === "account" ||
       typeof value === "function" ||
       (mode === "compatible" && key === "moduleFolders")
-    )
+    ) {
       continue;
+    }
     cleanDb[key] = value;
   }
   cleanDb.pluginCustomStorage ??= {};
@@ -78,6 +79,7 @@ export function normalizePortableBackupSnapshot<T extends object>(db: T): T {
       if (persona) persona.largePortrait ??= false;
     }
   }
+
   if (
     typeof draft.selectedPersona !== "number" ||
     !Number.isInteger(draft.selectedPersona) ||

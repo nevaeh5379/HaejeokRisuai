@@ -107,6 +107,7 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
   for (const key of loadedDeferredKeys) {
     await deferredSettingsLoader.ensureKey(key);
   }
+
   applyStartupAppearance();
 
   const { selectedCharID } = await import("../stores.svelte");
@@ -125,9 +126,8 @@ function uniqueStrings(
   ...arrays: readonly (readonly (string | undefined)[])[]
 ): string[] {
   let totalLength = 0;
-  for (let i = 0; i < arrays.length; i++) {
-    totalLength += arrays[i].length;
-  }
+  for (let i = 0; i < arrays.length; i++) totalLength += arrays[i].length;
+
   if (totalLength === 0) return [];
 
   const set = new Set<string>();
@@ -221,17 +221,21 @@ async function applyDatabaseChange(
   for (const [key, value] of rootValues) {
     settingsStore.hydrateRemoteSettingKey(key, value, value !== undefined);
   }
+
   for (const key of regularDeleteKeys) {
     settingsStore.hydrateRemoteSettingKey(key, undefined, false);
   }
+
   await deferredSettingsLoader.refreshLoadedKeys(deferredKeys);
 
   if (change.pluginStorageCleared) {
     settingsStore.hydrateRemotePluginCustomStorageClear();
   }
+
   for (const key of pluginStorageDeleteKeys) {
     settingsStore.hydrateRemotePluginCustomStorageDelete(key);
   }
+
   for (let offset = 0; offset < pluginStorageUpsertKeys.length; offset += 4) {
     const end = Math.min(pluginStorageUpsertKeys.length, offset + 4);
     const promises: Promise<void>[] = [];
@@ -239,9 +243,9 @@ async function applyDatabaseChange(
       const key = pluginStorageUpsertKeys[i];
       promises.push(
         storage.pluginCustomStorage.get(key).then((value) => {
-          if (value === undefined)
+          if (value === undefined) {
             settingsStore.hydrateRemotePluginCustomStorageDelete(key);
-          else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+          } else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
         }),
       );
     }
@@ -252,9 +256,7 @@ async function applyDatabaseChange(
   // are never decoded at the same time on low-memory Android devices.
   if (personaChanged) await personaStore.refreshFromStorage();
   if (modulesChanged) await moduleStore.refreshFromStorage();
-  if (presetsChanged) {
-    await presetStore.refreshFromStorage();
-  }
+  if (presetsChanged) await presetStore.refreshFromStorage();
 
   if (
     change.pluginsChanged ||
@@ -280,6 +282,7 @@ async function applyDatabaseChange(
   if (characterStore.hasPendingWrites()) {
     throw new Error("Cannot refresh chats while local changes are pending");
   }
+
   const refreshableChatIds = chatIds.filter(
     (chatId) => !isLocalChatGenerationActive(chatId),
   );
@@ -313,6 +316,7 @@ async function applyModelJob(event: RealtimeModelJobEvent): Promise<void> {
         dedupeKey: `model-job:${job.generationId || job.id || job.chatId}`,
       });
     }
+
     return;
   }
   const source = `model-job:${job.id ?? job.chatId}`;
@@ -326,6 +330,7 @@ function applyGenerationState(event: RealtimeGenerationState): void {
   if (event.state === "aborted") {
     localGenerationController.cancel(event.chatId, event.lifecycleId);
   }
+
   setRemoteChatGeneration(
     event.chatId,
     event.state === "started",
@@ -337,6 +342,7 @@ function applyGenerationState(event: RealtimeGenerationState): void {
       dedupeKey: `remote:${event.lifecycleId}`,
     });
   }
+
   if (
     event.state === "failed" &&
     event.error &&
@@ -404,6 +410,7 @@ async function dispatchEvent(
         sourceClientId: null,
       });
     }
+
     return;
   }
   if (frame.event === "database-change") {
@@ -411,9 +418,11 @@ async function dispatchEvent(
     if (change.revision !== undefined) {
       storage.applyRemoteRevision(change.revision);
     }
+
     if (change.sourceClientId !== storage.getClientId()) {
       databaseChangeQueue?.enqueue(change);
     }
+
     return;
   }
   if (frame.event === "illustration-progress") {
@@ -471,12 +480,15 @@ async function consumeEventStream(
       for (const line of frame.split("\n")) {
         if (line.startsWith("id:")) {
           const parsed = Number(line.slice(3).trim());
-          if (Number.isSafeInteger(parsed) && parsed >= 0)
+          if (Number.isSafeInteger(parsed) && parsed >= 0) {
             frameEventId = parsed;
+          }
         } else if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        else if (line.startsWith("data:"))
+        else if (line.startsWith("data:")) {
           dataLines.push(line.slice(5).trimStart());
+        }
       }
+
       if (dataLines.length > 0) {
         await dispatchEvent(
           storage,
@@ -548,6 +560,7 @@ async function connect(
     if (!response.ok) {
       throw new Error(`Realtime event stream unavailable (${response.status})`);
     }
+
     await consumeEventStream(response, storage, allowNodeFeatures);
   } catch (error) {
     if (!controller.signal.aborted) {
@@ -556,8 +569,9 @@ async function connect(
   } finally {
     setNodeRealtimeConnected(false);
     if (streamController === controller) streamController = null;
-    if (!controller.signal.aborted)
+    if (!controller.signal.aborted) {
       scheduleReconnect(storage, apiClient, allowNodeFeatures);
+    }
   }
 }
 

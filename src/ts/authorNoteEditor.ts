@@ -29,6 +29,7 @@ export class AuthorNoteEditor {
     for (const editor of editors) {
       if (editor.detached && editor.error) failed.push(editor);
     }
+
     failedAuthorNoteDrafts.set(failed);
   }
   load(): Promise<void> {
@@ -48,11 +49,12 @@ export class AuthorNoteEditor {
   input(content: string) {
     this.draft = content;
     if (this.timer) clearTimeout(this.timer);
-    if (!this.error)
+    if (!this.error) {
       this.timer = setTimeout(() => {
         this.timer = null;
         void this.flush().catch(() => undefined);
       }, 100);
+    }
     this.notify();
   }
   async flush(force = false): Promise<void> {
@@ -136,8 +138,7 @@ export async function flushAuthorNoteEditors(): Promise<void> {
 }
 
 export function hasUnsavedAuthorNoteDrafts(): boolean {
-  for (const editor of editors) {
-    if (editor.hasUnsavedChanges) return true;
-  }
+  for (const editor of editors) if (editor.hasUnsavedChanges) return true;
+
   return false;
 }

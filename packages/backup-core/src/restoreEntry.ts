@@ -71,6 +71,7 @@ async function dispatchEncryptionEntry(
       "This backup is encrypted, but its encryption metadata is incomplete.",
     );
   }
+
   const metadata: AccountBackupEncryptionMetadata = {
     type: "account",
     time: value.time,
@@ -88,12 +89,13 @@ async function dispatchColdStorageEntry(
   if (!coldStorageKey) {
     throw new Error(`Invalid cold storage backup entry: ${name}`);
   }
+
   try {
     const value: unknown = JSON.parse(textDecoder.decode(data)) as unknown;
     if (!isColdStorageBackupData(value)) {
-      if (handlers.onPluginColdStorage)
+      if (handlers.onPluginColdStorage) {
         await handlers.onPluginColdStorage(coldStorageKey, value, name);
-      else await handlers.onInvalidColdStorage?.(coldStorageKey, name);
+      } else await handlers.onInvalidColdStorage?.(coldStorageKey, name);
       return;
     }
     await handlers.onColdStorage(coldStorageKey, value, name);
@@ -126,6 +128,7 @@ export async function dispatchBackupRestoreEntry(
       if (!normalizedName) {
         throw new Error(`Invalid streaming database entry name: ${name}`);
       }
+
       await handlers.onDatabaseStream(normalizedName, data);
       return;
     }

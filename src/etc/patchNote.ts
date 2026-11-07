@@ -20,6 +20,7 @@ export function getPatchNote(version: string) {
   ) {
     return patchNote;
   }
+
   return {
     version: version.split(".")[0] + "." + version.split(".")[1],
     content: "",

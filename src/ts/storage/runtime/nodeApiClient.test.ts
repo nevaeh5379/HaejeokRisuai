@@ -190,6 +190,7 @@ describe("NodeApiClient", () => {
             },
           });
         }
+
         return Response.json({
           protocolVersion: 1,
           supportsPluginRecords,

@@ -34,5 +34,6 @@ export function resolveRerollTarget(
       return { branchMessageIndex: index, responseMessageIndex: targetIndex };
     }
   }
+
   return null;
 }

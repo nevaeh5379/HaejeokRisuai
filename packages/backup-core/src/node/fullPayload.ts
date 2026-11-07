@@ -31,6 +31,7 @@ export function buildFullBackupPayload(
     ) {
       continue;
     }
+
     rootUpserts.push({ key, value });
   }
 

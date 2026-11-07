@@ -32,6 +32,7 @@ async function encodeJsonBody(payload: unknown): Promise<{
   if (json.length < 64 * 1024 || typeof CompressionStream === "undefined") {
     return { body: json };
   }
+
   const input = new Blob([json]).stream();
   const compressed = input.pipeThrough(new CompressionStream("gzip"));
   return {
@@ -74,6 +75,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL configuration load failed",
       );
     }
+
     return await response.json();
   }
 
@@ -98,6 +100,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL configuration update failed",
       );
     }
+
     return await response.json();
   }
 
@@ -110,6 +113,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "DB configuration load failed");
     }
+
     return await response.json();
   }
 
@@ -133,6 +137,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "DB configuration update failed");
     }
+
     return await response.json();
   }
 
@@ -147,6 +152,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "DB reconnection failed");
     }
+
     return await response.json();
   }
 
@@ -169,6 +175,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "DB connection test failed");
     }
+
     return await response.json();
   }
 
@@ -190,6 +197,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "Legacy migration failed");
     }
+
     return await response.json();
   }
 
@@ -209,6 +217,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL revision history load failed",
       );
     }
+
     const body: { revisions: NodePostgresRevision[] } = await response.json();
     return body.revisions;
   }
@@ -227,6 +236,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL revision details load failed",
       );
     }
+
     const body: { details: NodePostgresRevisionDetails } =
       await response.json();
     return body.details;
@@ -246,6 +256,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL revision diff load failed",
       );
     }
+
     const body: { diff: NodePostgresRevisionDiff } = await response.json();
     return body.diff;
   }
@@ -274,6 +285,7 @@ export class RemoteDatabaseAdminClient {
         "PostgreSQL revision preview restore failed",
       );
     }
+
     const body: { preview: NodePostgresRestorePreview } = await response.json();
     return body.preview;
   }
@@ -299,6 +311,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL revision restore failed");
     }
+
     return await response.json();
   }
 
@@ -319,6 +332,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL message search failed");
     }
+
     const body: { results: NodePostgresMessageSearchResult[] } =
       await response.json();
     return body.results;
@@ -336,6 +350,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL token usage load failed");
     }
+
     const body: { usage: NodePostgresTokenUsage[] } = await response.json();
     return body.usage;
   }
@@ -352,6 +367,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL bot stats load failed");
     }
+
     const body: { stats: NodePostgresBotChatStats[] } = await response.json();
     return body.stats;
   }
@@ -375,6 +391,7 @@ export class RemoteDatabaseAdminClient {
         `PostgreSQL character ${field} search failed`,
       );
     }
+
     const body: { results: NodePostgresCharacterSearchResult[] } =
       await response.json();
     return body.results;
@@ -390,6 +407,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL table list load failed");
     }
+
     const body: { tables: NodePostgresTableInfo[] } = await response.json();
     return body.tables;
   }
@@ -412,8 +430,9 @@ export class RemoteDatabaseAdminClient {
     if (options.sortColumn) params.set("sort", options.sortColumn);
     if (options.sortOrder) params.set("dir", options.sortOrder);
     if (options.search) params.set("search", options.search);
-    if (options.columns?.length)
+    if (options.columns?.length) {
       params.set("columns", options.columns.join(","));
+    }
     const response = await this.apiClient.request(
       `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,
       { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
@@ -422,6 +441,7 @@ export class RemoteDatabaseAdminClient {
     if (response.status < 200 || response.status >= 300) {
       throw await responseError(response, "PostgreSQL table data load failed");
     }
+
     const body: { data: NodePostgresTableData } = await response.json();
     return body.data;
   }

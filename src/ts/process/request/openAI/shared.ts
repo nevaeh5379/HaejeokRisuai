@@ -16,9 +16,7 @@ export function getLocalNetworkRequestOptions(
   > = presetStore.state,
   useStreaming = false,
 ): LocalNetworkRequestOptions {
-  if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {
-    return {};
-  }
+  if (!db.localNetworkMode || !isLocalNetworkUrl(url)) return {};
 
   const timeoutSec =
     Number.isFinite(db.localNetworkTimeoutSec) && db.localNetworkTimeoutSec > 0

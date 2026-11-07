@@ -10,6 +10,7 @@ async function getEncoder(encoding?: any): Promise<any> {
   if (!SUPPORTED_ENCODINGS.has(encoding)) {
     throw new TypeError(`Unsupported tokenizer encoding: ${encoding}`);
   }
+
   let encoder: any = encoderCache.get(encoding);
   if (!encoder) {
     const { get_encoding } = await loadTokenizer();
@@ -22,17 +23,17 @@ async function getEncoder(encoding?: any): Promise<any> {
 }
 
 async function countTokensBatch(texts?: any, encoding?: any): Promise<any> {
-  if (!Array.isArray(texts)) {
-    throw new TypeError("texts must be an array");
-  }
+  if (!Array.isArray(texts)) throw new TypeError("texts must be an array");
+
   if (texts.length > 4096) {
     throw new RangeError("A tokenize batch may contain at most 4096 texts");
   }
 
   let totalChars: any = 0;
   const normalized: any = texts.map((text?: any) => {
-    if (typeof text !== "string")
+    if (typeof text !== "string") {
       throw new TypeError("Every tokenize input must be a string");
+    }
     totalChars += text.length;
     return text;
   });
@@ -50,6 +51,7 @@ function disposeEncoders(): any {
       encoder.free();
     } catch {}
   }
+
   encoderCache.clear();
 }
 

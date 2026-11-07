@@ -42,8 +42,9 @@ describe("proxy response cache policy", () => {
       "Content-Security-Policy",
       "Content-Security-Policy-Report-Only",
       "Clear-Site-Data",
-    ])
+    ]) {
       expect(headers.has(key)).toBe(false);
+    }
     expect(headers.get("Content-Type")).toBe("text/event-stream");
   });
 });

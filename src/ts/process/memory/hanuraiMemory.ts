@@ -23,40 +23,34 @@ export async function hanuraiMemory(
     undefined,
     arg.serverIndexId ? `hanurai:${arg.serverIndexId}` : undefined,
   );
-  let addTexts: string[] = [];
+  const addTexts: string[] = [];
   const queryStartIndex = chats.length - maxRecentChatQuery;
   for (let index = 0; index < chats.length; index++) {
-    if (queryStartIndex < index) {
-      continue;
-    }
+    if (queryStartIndex < index) continue;
+
     const chat = chats[index];
     const content = chat?.content?.trim();
-    if (!content) {
-      continue;
-    }
+    if (!content) continue;
+
     if (db.hanuraiSplit) {
       const splited = content.split("\n\n");
       for (let s = 0; s < splited.length; s++) {
         const trimmedSplit = splited[s].trim();
-        if (!trimmedSplit) {
-          continue;
-        }
+        if (!trimmedSplit) continue;
+
         addTexts.push(DOCUMENT_PREFIX + trimmedSplit);
       }
-    } else {
-      addTexts.push(DOCUMENT_PREFIX + content);
-    }
+    } else addTexts.push(DOCUMENT_PREFIX + content);
   }
   if (!(await processer.prepareServerTextIndex(addTexts))) {
     await processer.addText(addTexts);
   }
 
-  let scoredResults: { [key: string]: number } = {};
+  const scoredResults: { [key: string]: number } = {};
   for (let i = 1; i < maxRecentChatQuery; i++) {
     const chat = chats[chats.length - i];
-    if (!chat?.content) {
-      continue;
-    }
+    if (!chat?.content) continue;
+
     const scoredArray = await processer.similaritySearchScored(
       "search_query: " + chat.content,
     );
@@ -95,9 +89,7 @@ export async function hanuraiMemory(
   const existingContents = new Set<string>();
   for (let i = 0; i < chats.length; i++) {
     const content = chats[i]?.content?.trim();
-    if (content) {
-      existingContents.add(content);
-    }
+    if (content) existingContents.add(content);
   }
 
   const candidateTexts: string[] = [];
@@ -119,7 +111,7 @@ export async function hanuraiMemory(
   }
   const candidateTokenCounts =
     await tokenizer.tokenizeChatsDetailed(candidateChats);
-  let resultTexts: string[] = [];
+  const resultTexts: string[] = [];
   for (let i = 0; i < candidateTexts.length; i++) {
     const tokenized = candidateTokenCounts[i] + 2;
     tokens += tokenized;

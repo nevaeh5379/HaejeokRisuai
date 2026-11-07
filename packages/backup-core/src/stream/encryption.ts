@@ -28,6 +28,7 @@ function hasMagic(data: Uint8Array): boolean {
   if (data.byteLength < STREAMING_BACKUP_ENCRYPTION_MAGIC.byteLength) {
     return false;
   }
+
   return STREAMING_BACKUP_ENCRYPTION_MAGIC.every(
     (byte, index) => data[index] === byte,
   );
@@ -84,6 +85,7 @@ export async function decryptStreamingBackupEntry(
   if (!hasMagic(data) || data.byteLength <= payloadOffset) {
     throw new Error("Invalid streaming backup encryption envelope");
   }
+
   const iv = data.subarray(
     STREAMING_BACKUP_ENCRYPTION_MAGIC.byteLength,
     payloadOffset,
@@ -149,5 +151,6 @@ export async function decodeStreamingBackupValue(
       ? await decryptStreamingBackupEntry(data, options.secret, entryName)
       : await options.decryptLegacy(data, options.secret);
   }
+
   return await decode(encoded);
 }

@@ -54,6 +54,7 @@ export class BoundedCache<K, V> {
         this.options.onEvict!(item.value, key);
       });
     }
+
     this.values.clear();
     this.totalWeight = 0;
   }

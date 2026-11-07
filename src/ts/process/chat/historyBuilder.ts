@@ -107,6 +107,7 @@ function extractInlayReferences(content: string, role: Message["role"]) {
       ...(content.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g) ?? []),
     );
   }
+
   return { content, inlays };
 }
 
@@ -140,6 +141,7 @@ async function resolveInlays(content: string, inlays: string[]) {
     } else if (data?.type === "signature") {
       multimodals.push({ type: "signature", base64: data.data });
     }
+
     content = content.replace(inlay, "");
   }
   return { content, multimodals };
@@ -172,6 +174,7 @@ async function resolveAssetPrompts(
           })(),
         );
       }
+
       return "";
     },
   );
@@ -236,8 +239,9 @@ function extractThoughts(
   content = content.replace(
     /<Thoughts>(.+)<\/Thoughts>/gms,
     (_match, thought) => {
-      if (maxDepth === -1 || maxDepth - messageCount <= index)
+      if (maxDepth === -1 || maxDepth - messageCount <= index) {
         thoughts.push(thought);
+      }
       return "";
     },
   );
@@ -364,6 +368,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
       memo: "NewChat",
     });
   }
+
   const firstMessage = await addFirstMessage(
     chats,
     options.currentChar,
@@ -376,6 +381,7 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
   if (firstMessage) {
     currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
   }
+
   return { chats, currentTokens };
 }
 
@@ -394,6 +400,7 @@ async function runStartTrigger(
       triggerResult: undefined,
     };
   }
+
   const triggerResult = await runTrigger(options.currentChar, "start", {
     chat: currentChat,
     target: options.chatTarget,
@@ -443,6 +450,7 @@ async function appendHistoryMessages(
       ),
     );
   }
+
   return (
     currentTokens +
     (await options.tokenizer.tokenizeChats(chats.slice(historyStart)))
@@ -467,6 +475,7 @@ async function collectDepthPrompts(
       }),
     });
   }
+
   return { depthPrompts: depthPrompts as DepthPrompt[], currentTokens };
 }
 

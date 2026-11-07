@@ -20,9 +20,7 @@ it.each(["resync", "restore", "migrate", "rollback", "thumbnails"] as const)(
             // End inside the three-byte UTF-8 encoding of 한.
             const bytes = new TextEncoder().encode('{"message":"한');
             controller.enqueue(bytes.subarray(0, bytes.length - 2));
-          } else {
-            controller.error(new Error("connection lost"));
-          }
+          } else controller.error(new Error("connection lost"));
         },
       },
       { highWaterMark: 0 },

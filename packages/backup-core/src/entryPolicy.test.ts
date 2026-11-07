@@ -44,6 +44,7 @@ describe("normalizeBackupEntryName", () => {
     ]) {
       expect(normalizeBackupEntryName(name)).toBeNull();
     }
+
     // A dot-prefixed filename segment is a valid name.
     expect(normalizeBackupEntryName("trailing/.bin")).toBe("trailing/.bin");
   });
@@ -90,6 +91,7 @@ describe("classifyBackupEntry kinds", () => {
         normalized: name,
       });
     }
+
     expect(classifyBackupEntry(`coldstorage\\${key}.json`)).toEqual({
       kind: "coldStorage",
       normalized: `coldstorage/${key}.json`,
@@ -207,6 +209,7 @@ describe("focused restore target helpers", () => {
     ]) {
       expect(getColdStorageBackupKey(name)).toBe(key);
     }
+
     expect(getColdStorageBackupKey(`coldstorage\\\\${key}.json`)).toBe(key);
     expect(getColdStorageBackupKey(`coldstorage\\${key}.json`)).toBe(key);
   });

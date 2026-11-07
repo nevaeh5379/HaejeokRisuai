@@ -161,5 +161,6 @@ export function resolveModelTokenizerRoute(
   if (route.kind === "googleCloud" && !googleClaudeTokenizing) {
     return WEB_ROUTE("gemma");
   }
+
   return route;
 }

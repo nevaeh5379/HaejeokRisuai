@@ -63,9 +63,7 @@ export function supportsTauriLiquidGlassVersion(version: string): boolean {
 }
 
 export function isTauriMacOSRuntime(): boolean {
-  if (!detectTauri()) {
-    return false;
-  }
+  if (!detectTauri()) return false;
 
   try {
     return tauriOsType() === "macos";
@@ -84,6 +82,7 @@ export function parseTauriSidebarMenuLaunch(
   if (!sourceWindowLabel || !popupWindowLabel?.startsWith(POPUP_LABEL_PREFIX)) {
     return null;
   }
+
   return { sourceWindowLabel, popupWindowLabel };
 }
 

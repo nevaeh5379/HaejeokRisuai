@@ -67,6 +67,7 @@ export function encodeJsonValue(value: unknown): string | null {
       return JSON.stringify(value);
     }
   }
+
   return JSON.stringify(value);
 }
 

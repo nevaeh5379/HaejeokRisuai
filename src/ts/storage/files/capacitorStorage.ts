@@ -64,6 +64,7 @@ export class CapacitorStorage {
         this.initPromise = null;
       });
     }
+
     await this.initPromise;
   }
 
@@ -87,6 +88,7 @@ export class CapacitorStorage {
       if (typeof result.data === "string") {
         return Buffer.from(result.data, "base64");
       }
+
       return Buffer.from(await result.data.arrayBuffer());
     } catch {
       return null;
@@ -132,6 +134,7 @@ export class CapacitorStorage {
     if (typeof result.data === "string") {
       return Buffer.from(result.data, "base64");
     }
+
     return new Uint8Array(await result.data.arrayBuffer());
   }
 

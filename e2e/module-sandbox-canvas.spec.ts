@@ -65,9 +65,9 @@ test("edits module bundles on a free-position canvas", async ({ page }) => {
   const node = page.getByTestId("module-sandbox-node");
   await expect(node).toBeVisible();
 
-  await node.getByRole("combobox", { name: "Modules" }).selectOption(
-    "canvas-test-module",
-  );
+  await node
+    .getByRole("combobox", { name: "Modules" })
+    .selectOption("canvas-test-module");
   await node.getByRole("button", { name: "Add" }).click();
   await expect(node.getByText("Lightboard", { exact: true })).toBeVisible();
 

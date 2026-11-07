@@ -58,6 +58,7 @@ describe("Ollama Cloud transport selection", () => {
         }),
       ).toBe(true);
     }
+
     expect(
       matchesNodeOllamaCloudEndpoint({
         requestURL: "https://proxy.example/v1/messages",

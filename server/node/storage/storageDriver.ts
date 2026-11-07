@@ -112,6 +112,7 @@ async function testConnection(vendor?: any, rawParams: any = {}): Promise<any> {
       error: "Required connection parameters are missing",
     };
   }
+
   try {
     if (vendor === "postgres") {
       // initialize() 내부에서 SELECT 1 + 스키마 확인까지 수행.
@@ -201,27 +202,33 @@ async function applyDbConfig(
   });
   // 환경 변수에도 반영 (createServerStorage가 환경 변수를 읽으므로)
   if (vendor === "postgres") {
-    if (normalized.connectionString)
+    if (normalized.connectionString) {
       process.env.DATABASE_URL = normalized.connectionString;
+    }
   } else if (vendor === "oracle") {
     if (normalized.user) process.env.ORACLE_USER = normalized.user;
-    if (normalized.password)
+    if (normalized.password) {
       process.env.ORACLE_USER_PASSWORD = normalized.password;
+    }
     if (normalized.tnsAlias) process.env.ORACLE_TNS_ALIAS = normalized.tnsAlias;
-    if (normalized.walletPath)
+    if (normalized.walletPath) {
       process.env.ORACLE_WALLET_PATH = normalized.walletPath;
-    if (normalized.walletPassword)
+    }
+    if (normalized.walletPassword) {
       process.env.ORACLE_WALLET_PASSWORD = normalized.walletPassword;
-    if (normalized.poolMax)
+    }
+    if (normalized.poolMax) {
       process.env.ORACLE_POOL_MAX = String(normalized.poolMax);
+    }
   } else if (vendor === "azure") {
     if (normalized.server) process.env.AZURE_HOST = normalized.server;
     if (normalized.database) process.env.AZURE_DATABASE = normalized.database;
     if (normalized.user) process.env.AZURE_USERNAME = normalized.user;
     if (normalized.password) process.env.AZURE_PASSWORD = normalized.password;
     if (normalized.port) process.env.AZURE_PORT = String(normalized.port);
-    if (normalized.poolMax)
+    if (normalized.poolMax) {
       process.env.AZURE_POOL_MAX = String(normalized.poolMax);
+    }
   }
   // 신규 인스턴스 반환
   return createServerStorage(savePath, { vendor, postgresConfig: null });
@@ -347,11 +354,8 @@ async function createServerStorage(
     ) {
       enabled = storedConfig.enabled && Boolean(storedParams.connectionString);
       poolMax = storedParams.poolMax || poolMax;
-    } else if (process.env.DATABASE_URL) {
-      enabled = true;
-    } else {
-      enabled = false;
-    }
+    } else if (process.env.DATABASE_URL) enabled = true;
+    else enabled = false;
   } else if (storedConfig.vendor === "azure") {
     vendor = "azure";
     const azureConfig: any = readAzureConfigFromEnv();
@@ -396,9 +400,8 @@ async function createServerStorage(
           storedParams.port || parseInt(process.env.AZURE_PORT || "1433", 10),
         poolMax: storedParams.poolMax || poolMax,
       };
-    } else {
-      azureConfig = readAzureConfigFromEnv();
-    }
+    } else azureConfig = readAzureConfigFromEnv();
+
     return {
       vendor: "azure",
       storage: new AzureStorage({
@@ -433,9 +436,8 @@ async function createServerStorage(
           "",
         poolMax: storedParams.poolMax || poolMax,
       };
-    } else {
-      oracleConfig = readOracleConfigFromEnv();
-    }
+    } else oracleConfig = readOracleConfigFromEnv();
+
     return {
       vendor: "oracle",
       storage: new OracleStorage({
@@ -463,6 +465,7 @@ async function createServerStorage(
   } else if (process.env.DATABASE_URL) {
     connectionString = process.env.DATABASE_URL;
   }
+
   return {
     vendor: "postgres",
     storage: new PostgresStorage({

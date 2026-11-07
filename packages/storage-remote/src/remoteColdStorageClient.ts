@@ -22,6 +22,7 @@ export class RemoteColdStorageClient {
     if (json.length < 64 * 1024 || typeof CompressionStream === "undefined") {
       return { body: json };
     }
+
     const compressed = new Blob([json])
       .stream()
       .pipeThrough(new CompressionStream("gzip"));
@@ -45,6 +46,7 @@ export class RemoteColdStorageClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL cold storage load failed");
     }
+
     const body: { data: unknown } = await response.json();
     return body.data;
   }
@@ -60,6 +62,7 @@ export class RemoteColdStorageClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL cold storage list failed");
     }
+
     const body: { items: { key: string }[] } = await response.json();
     return body.items.map((item) => item.key);
   }
@@ -104,6 +107,7 @@ export class RemoteColdStorageClient {
     if (response.status < 200 || response.status >= 300) {
       throw await this.error(response, "PostgreSQL cold storage delete failed");
     }
+
     const body: { deleted: number } = await response.json();
     return body.deleted;
   }
@@ -130,6 +134,7 @@ export class RemoteColdStorageClient {
         "PostgreSQL cold storage cleanup failed",
       );
     }
+
     const body: { deleted: number } = await response.json();
     return body.deleted;
   }

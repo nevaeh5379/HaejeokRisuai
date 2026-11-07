@@ -31,15 +31,14 @@ function readParams(options?: RemoteAssetReadOptions): URLSearchParams {
   if (options?.target && options.target !== "active") {
     params.set("target", options.target);
   }
+
   return params;
 }
 
 const MAX_STORAGE_ERROR_DETAIL_LENGTH = 2000;
 
 function formatStorageValueSize(byteLength: number) {
-  if (byteLength < 1024) {
-    return `${byteLength} bytes`;
-  }
+  if (byteLength < 1024) return `${byteLength} bytes`;
 
   const units = ["KiB", "MiB", "GiB"];
   let size = byteLength;
@@ -53,12 +52,10 @@ function formatStorageValueSize(byteLength: number) {
 }
 
 function formatUnknownError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
+  if (error instanceof Error) return error.message;
+
+  if (typeof error === "string") return error;
+
   try {
     return JSON.stringify(error) ?? `${error}`;
   } catch {
@@ -79,9 +76,8 @@ function normalizeStorageErrorDetail(detail: string) {
     .replace(/\n\s+/g, "\n")
     .trim();
 
-  if (normalized.length <= MAX_STORAGE_ERROR_DETAIL_LENGTH) {
-    return normalized;
-  }
+  if (normalized.length <= MAX_STORAGE_ERROR_DETAIL_LENGTH) return normalized;
+
   return normalized.slice(0, MAX_STORAGE_ERROR_DETAIL_LENGTH) + "...";
 }
 
@@ -93,9 +89,7 @@ async function getStorageResponseErrorDetail(response: Response) {
     return `Could not read the server response: ${formatUnknownError(error)}`;
   }
 
-  if (!responseText.trim()) {
-    return "";
-  }
+  if (!responseText.trim()) return "";
 
   try {
     const body = JSON.parse(responseText);
@@ -168,10 +162,11 @@ export class RemoteAssetClient {
         `Node storage setItem received an invalid response.\n${context}\nCause: ${formatUnknownError(error)}`,
       );
     }
-    if (body?.error)
+    if (body?.error) {
       throw new Error(
         `Node storage setItem failed.\n${context}\nServer: ${formatUnknownError(body.error)}`,
       );
+    }
   }
 
   async getItemWithMetadata(

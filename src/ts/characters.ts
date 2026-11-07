@@ -131,9 +131,8 @@ export async function selectCharImg(charIndex: number) {
     "jpg",
     "jpeg",
   ]);
-  if (!selected) {
-    return;
-  }
+  if (!selected) return;
+
   const img = selected.data;
   const targetChar = characterStore.characters[charIndex];
 
@@ -155,15 +154,12 @@ export async function selectCharImg(charIndex: number) {
         "Copyright",
       ];
       for await (const chunk of gen) {
-        if (chunk instanceof AppendableBuffer) {
-          continue;
-        }
-        if (!chunk) {
-          continue;
-        }
-        if (chunk.value.length > 20_000) {
-          continue;
-        }
+        if (chunk instanceof AppendableBuffer) continue;
+
+        if (!chunk) continue;
+
+        if (chunk.value.length > 20_000) continue;
+
         if (allowedChunk.includes(chunk.key)) {
           console.log(chunk.key, chunk.value);
           targetChar.extentions ??= {};
@@ -186,9 +182,8 @@ export async function selectCharImg(charIndex: number) {
 
 export function dumpCharImage(charIndex: number) {
   const char = characterStore.characters[charIndex] as character;
-  if (!char || !char.image || char.image === "") {
-    return;
-  }
+  if (!char || !char.image || char.image === "") return;
+
   char.ccAssets ??= [];
   char.ccAssets.push({
     type: "icon",
@@ -223,7 +218,7 @@ export async function addCharEmotion(charId: number) {
     const img = f.data;
     const imgp = await saveImage(img);
     const name = f.name.replace(".png", "").replace(".webp", "");
-    let dbChar = characterStore.characters[charId];
+    const dbChar = characterStore.characters[charId];
     if (dbChar && dbChar.type !== "group") {
       dbChar.emotionImages.push([name, imgp]);
       characterStore.characters[charId] = dbChar;
@@ -233,7 +228,7 @@ export async function addCharEmotion(charId: number) {
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
-  let dbChar = characterStore.characters[charId];
+  const dbChar = characterStore.characters[charId];
   if (dbChar && dbChar.type !== "group") {
     dbChar.emotionImages.splice(emotionId, 1);
     characterStore.characters[charId] = dbChar;
@@ -274,6 +269,7 @@ async function hydrateCharacterForChatExport(
     if (char.coldstorage !== coldStorageKey) {
       throw new Error("Character changed while preparing the chat export");
     }
+
     characterStore.characters[index] = coldData.character;
     char = coldData.character;
   }
@@ -290,6 +286,7 @@ async function hydrateCharacterForChatExport(
         `Failed to hydrate character before chat export: ${characterId}`,
       );
     }
+
     char = hydratedChar;
   }
 
@@ -304,6 +301,7 @@ function resolveExportChatIndex(
   if (chatId) {
     return char.chats?.findIndex((candidate) => candidate?.id === chatId) ?? -1;
   }
+
   return char.chats?.[fallbackIndex] ? fallbackIndex : -1;
 }
 
@@ -382,9 +380,7 @@ export async function exportChat(page: number) {
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v);
 
-      if (doTranslate) {
-        v = await translateHTML(v, false, "", -1);
-      }
+      if (doTranslate) v = await translateHTML(v, false, "", -1);
 
       if (anonymous) {
         //case insensitive match, replace all
@@ -404,6 +400,7 @@ export async function exportChat(page: number) {
       if (chat.folderId) {
         folders = char.chatFolders?.filter((f) => f.id === chat.folderId);
       }
+
       let branchGraph;
       if (jsonExportMode === "native") {
         if (!chat.id) throw new Error("Chat ID is required for branch export");
@@ -433,8 +430,9 @@ export async function exportChat(page: number) {
           ) + ".json",
           stringl,
         ))
-      )
+      ) {
         return;
+      }
     } else if (mode === "2") {
       let chatContentHTML = "";
 
@@ -518,8 +516,9 @@ export async function exportChat(page: number) {
             ".html",
           doc,
         ))
-      )
+      ) {
         return;
+      }
     } else if (mode === "3") {
       //create a html table
       let chatContentHTML = "";
@@ -585,8 +584,9 @@ export async function exportChat(page: number) {
           `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".txt",
           stringl,
         ))
-      )
+      ) {
         return;
+      }
     }
     alertNormal(language.successExport);
   } catch (error) {
@@ -596,15 +596,14 @@ export async function exportChat(page: number) {
 
 export async function importChat() {
   const dat = await selectSingleFile(["json", "jsonl", "txt", "html"]);
-  if (!dat) {
-    return;
-  }
+  if (!dat) return;
+
   try {
     const selectedID = get(selectedCharID);
 
     if (dat.name.endsWith("jsonl")) {
       const lines = Buffer.from(dat.data).toString("utf-8").split("\n");
-      let newChat: Chat = {
+      const newChat: Chat = {
         message: [],
         note: "",
         name: "Imported Chat",
@@ -652,6 +651,7 @@ export async function importChat() {
           newChat.message ?? [],
         );
       }
+
       changeChatTo(0);
       alertNormal(language.successImport);
     } else if (dat.name.endsWith("json")) {
@@ -677,9 +677,7 @@ export async function importChat() {
             const newId = uuidv4();
             folderIdMap[folder.id] = newId;
             folder.id = newId;
-          } else {
-            folderIdMap[folder.id] = folder.id;
-          }
+          } else folderIdMap[folder.id] = folder.id;
         });
         currentCharacter.chatFolders ??= [];
         currentCharacter.chatFolders.push(...folders);
@@ -691,6 +689,7 @@ export async function importChat() {
         if (newChat.folderId && folderIdMap[newChat.folderId]) {
           newChat.folderId = folderIdMap[newChat.folderId];
         }
+
         newChat.id = v4();
         currentCharacter.chats.unshift(newChat);
         await messageStore.persistNewChat(
@@ -717,7 +716,7 @@ export async function importChat() {
         const folders = json.folders || [];
         const chats = Array.isArray(json.data) ? json.data : [json.data];
         const selectedID = get(selectedCharID);
-        let folderIdMap = {};
+        const folderIdMap = {};
         folders.forEach((folder) => {
           if (
             characterStore.characters[selectedID].chatFolders?.some(
@@ -727,18 +726,18 @@ export async function importChat() {
             const newId = uuidv4();
             folderIdMap[folder.id] = newId;
             folder.id = newId;
-          } else {
-            folderIdMap[folder.id] = folder.id;
-          }
+          } else folderIdMap[folder.id] = folder.id;
         });
         if (characterStore.characters[selectedID].chatFolders === undefined) {
           characterStore.characters[selectedID].chatFolders = [];
         }
+
         characterStore.characters[selectedID].chatFolders.push(...folders);
         chats.forEach((chat) => {
           if (chat.folderId && folderIdMap[chat.folderId]) {
             chat.folderId = folderIdMap[chat.folderId];
           }
+
           chat.id = v4();
         });
         characterStore.characters[selectedID].chats.unshift(...chats);
@@ -758,12 +757,10 @@ export async function importChat() {
         const chats = json.data;
         if (Array.isArray(chats) && chats.length > 0) {
           const mappedChats = chats.map((v) => {
-            if (!v.id) {
-              v.id = uuidv4();
-            }
-            if (!v.localLore) {
-              v.localLore = [];
-            }
+            if (!v.id) v.id = uuidv4();
+
+            if (!v.localLore) v.localLore = [];
+
             v.fmIndex ??= -1;
             return v;
           });
@@ -802,6 +799,7 @@ export async function importChat() {
               das.message ?? [],
             );
           }
+
           alertNormal(language.successImport);
           return;
         } else {
@@ -839,11 +837,10 @@ export async function importChat() {
             json.message ?? [],
           );
         }
+
         changeChatTo(0);
         alertNormal(language.successImport);
-      } else {
-        alertError(language.errors.noData);
-      }
+      } else alertError(language.errors.noData);
     }
   } catch (error) {
     alertError(error);
@@ -874,6 +871,7 @@ export async function exportAllChats() {
       if (chatIndex < 0) {
         throw new Error("Chats changed while preparing the export");
       }
+
       await preLoadChat(resolved.index, chatIndex, { full: true });
 
       const loaded = await hydrateCharacterForChatExport(characterId);
@@ -891,6 +889,7 @@ export async function exportAllChats() {
     if (char.chats.length !== chatTargets.length) {
       throw new Error("Chats changed while preparing the export");
     }
+
     for (const target of chatTargets) {
       const finalChatIndex = resolveExportChatIndex(
         char,
@@ -903,8 +902,9 @@ export async function exportAllChats() {
     }
     const date = new Date().toISOString().replace(/[:.]/g, "-");
     const allChats = [];
-    for (const chat of char.chats)
+    for (const chat of char.chats) {
       allChats.push(await materializeChatNote(chat));
+    }
     const allFolders = char.chatFolders;
     const stringl = JSON.stringify({
       type: "risuAllChats",
@@ -918,8 +918,9 @@ export async function exportAllChats() {
           ".json",
         stringl,
       ))
-    )
+    ) {
       return;
+    }
     alertNormal(language.successExport);
   } catch (error) {
     alertError(error);
@@ -954,9 +955,7 @@ export function characterFormatUpdate(
           characterIndex,
           interactionTime,
         );
-      } else {
-        cha.lastInteraction = interactionTime;
-      }
+      } else cha.lastInteraction = interactionTime;
     }
     return cha;
   }
@@ -984,9 +983,8 @@ export function characterFormatUpdate(
     cha.chatPage = 0;
     needsFullCharacterPersistence = true;
   }
-  if (!cha.chats[cha.chatPage].message) {
-    cha.chats[cha.chatPage].message = [];
-  }
+  if (!cha.chats[cha.chatPage].message) cha.chats[cha.chatPage].message = [];
+
   if (!cha.type) {
     cha.type = "character";
     needsFullCharacterPersistence = true;
@@ -996,12 +994,10 @@ export function characterFormatUpdate(
     needsFullCharacterPersistence = true;
   }
   if (cha.type !== "group") {
-    if (checkNullish(cha.sdData)) {
-      cha.sdData = defaultSdDataFunc();
-    }
-    if (checkNullish(cha.utilityBot)) {
-      cha.utilityBot = false;
-    }
+    if (checkNullish(cha.sdData)) cha.sdData = defaultSdDataFunc();
+
+    if (checkNullish(cha.utilityBot)) cha.utilityBot = false;
+
     cha.triggerscript = cha.triggerscript ?? [];
     cha.alternateGreetings = cha.alternateGreetings ?? [];
     cha.exampleMessage = cha.exampleMessage ?? "";
@@ -1048,15 +1044,16 @@ export function characterFormatUpdate(
     // in memory, but do not rewrite every lore/asset row merely because the bot
     // was opened; a later real character edit will persist the normalized form.
     cha.globalLore = updateLorebooks(cha.globalLore ?? []);
-    if (!cha.newGenData) {
-      cha = updateInlayScreen(cha);
-    }
+    if (!cha.newGenData) cha = updateInlayScreen(cha);
+
     // Migrate legacy 'none' value to '' for UI dropdown compatibility.
-    if (cha.ttsMode === "none") {
-      // Compatibility-only runtime normalization. Persisting this tiny legacy
-      // value during selection would rewrite the entire character tree.
+    if (cha.ttsMode === "none")
+    // Compatibility-only runtime normalization. Persisting this tiny legacy
+    // value during selection would rewrite the entire character tree.
+    {
       cha.ttsMode = "";
     }
+
     cha.ttsMode ??= "";
   } else {
     if (
@@ -1067,6 +1064,7 @@ export function characterFormatUpdate(
       for (let i = 0; i < cha.characters.length; i++) {
         cha.characterTalks.push((1 / 6) * 4);
       }
+
       needsFullCharacterPersistence = true;
     }
     if (
@@ -1077,12 +1075,11 @@ export function characterFormatUpdate(
       for (let i = 0; i < cha.characters.length; i++) {
         cha.characterActive.push(true);
       }
+
       needsFullCharacterPersistence = true;
     }
   }
-  if (checkNullish(cha.customscript)) {
-    cha.customscript = [];
-  }
+  if (checkNullish(cha.customscript)) cha.customscript = [];
 
   for (let i = 0; i < cha.chats.length; i++) {
     const chat = cha.chats[i];
@@ -1116,11 +1113,13 @@ export function characterFormatUpdate(
   ) {
     cha.lastInteraction = interactionTime;
   }
+
   formattedCharacters.add(cha);
 
   if (characterIndex !== null) {
-    if (!sqlHydrated) {
-      // Legacy/non-SQL objects retain the historical eager persistence path.
+    if (!sqlHydrated)
+    // Legacy/non-SQL objects retain the historical eager persistence path.
+    {
       characterStore.setCharacterByIndex(characterIndex, cha);
     } else {
       if (needsFullCharacterPersistence) {
@@ -1131,24 +1130,22 @@ export function characterFormatUpdate(
           interactionTime,
         );
       }
+
       for (const chatId of dirtyChatIds) characterStore.markChatDirty(chatId);
-      if (chatManifestChanged) {
-        characterStore.markChatManifestDirty(cha.chaId);
-      }
+      if (chatManifestChanged) characterStore.markChatManifestDirty(cha.chaId);
     }
   }
+
   return cha;
 }
 
 export function updateLorebooks(book: loreBook[]) {
-  if (!book.some((v) => (v.bookVersion ?? 1) < 2)) {
-    return book;
-  }
+  if (!book.some((v) => (v.bookVersion ?? 1) < 2)) return book;
+
   return book.map((v) => {
     v.bookVersion ??= 1;
-    if (v.bookVersion >= 2) {
-      return v;
-    }
+    if (v.bookVersion >= 2) return v;
+
     if (v.activationPercent) {
       const perc = v.activationPercent;
       v.activationPercent = null;
@@ -1172,9 +1169,7 @@ export async function makeGroupImage() {
     });
     const charID = get(selectedCharID);
     const group = characterStore.characters[charID];
-    if (group.type !== "group") {
-      return;
-    }
+    if (group.type !== "group") return;
 
     const imageUrls = await Promise.all(
       group.characters.map((v) => {
@@ -1189,7 +1184,7 @@ export async function makeGroupImage() {
 
     // Load the images
     const images = [];
-    let loadedImages = 0;
+    const loadedImages = 0;
 
     await Promise.all(
       imageUrls.map(
@@ -1259,24 +1254,20 @@ export async function removeChar(
 ) {
   if (type !== "permanentForce") {
     const conf = await alertConfirm(language.removeConfirm + name);
-    if (!conf) {
-      return;
-    }
+    if (!conf) return;
+
     const conf2 = await alertConfirm(language.removeConfirm2 + name);
-    if (!conf2) {
-      return;
-    }
+    if (!conf2) return;
   }
-  let chars = characterStore.characters;
+  const chars = characterStore.characters;
   // Resolve identifier to actual index at the time of deletion to avoid
   // race conditions when concurrent deletions shift the array.
   const index =
     typeof identifier === "string"
       ? findCharacterIndexbyId(identifier)
       : identifier;
-  if (index === -1 || index >= chars.length) {
-    return;
-  }
+  if (index === -1 || index >= chars.length) return;
+
   if (type === "normal") {
     chars[index].trashTime = Date.now();
     characterStore.markCharacterDirty(chars[index].chaId);
@@ -1286,9 +1277,7 @@ export async function removeChar(
     // Drop tabs referencing the deleted character so a stale tab can never
     // become the active one and deadlock the chat screen (removeChar
     // deselects right after, so no navigation is needed here).
-    if (removedChaId) {
-      chatTabsStore.pruneCharacter(removedChaId);
-    }
+    if (removedChaId) chatTabsStore.pruneCharacter(removedChaId);
   }
   checkCharOrder();
   characterStore.characters = chars;
@@ -1328,6 +1317,7 @@ export async function addCharacter(
   if (characterStore.characters[characterStore.characters.length - 1]) {
     changeChar(characterStore.characters.length - 1);
   }
+
   MobileGUIStack.set(1);
 }
 
@@ -1358,9 +1348,8 @@ export async function changeChar(
       characterStore.characters[index] = coldData.character;
     } else {
       alertError(language.errors.coldStorageRestoreFailed);
-      if (get(pendingCharID) === index) {
-        pendingCharID.set(-1);
-      }
+      if (get(pendingCharID) === index) pendingCharID.set(-1);
+
       return;
     }
   }
@@ -1371,14 +1360,11 @@ export async function changeChar(
     }
   } catch (error) {
     console.error(`SQL loadCharacter failed for character ${index}:`, error);
-    if (get(pendingCharID) === index) {
-      pendingCharID.set(-1);
-    }
+    if (get(pendingCharID) === index) pendingCharID.set(-1);
+
     throw error;
   }
-  if (get(pendingCharID) !== index) {
-    return;
-  }
+  if (get(pendingCharID) !== index) return;
 
   const currentChar = characterStore.characters?.[index];
   if (arg.chatId && currentChar?.chats) {
@@ -1401,9 +1387,8 @@ export async function changeChar(
   // is independent and must not hold navigation hostage on a cold first click.
   selectedCharID.set(index);
   pendingCharID.set(-1);
-  if (arg.chatId) {
-    changeChatTo(arg.chatId);
-  }
+  if (arg.chatId) changeChatTo(arg.chatId);
+
   const getProtectedIds = () => getProtectedChatIds([activeChatId]);
   releaseInactiveChatMessages(getProtectedIds);
   characterStore.releaseInactiveCharacterDetails(getProtectedIds);
@@ -1501,6 +1486,7 @@ export async function duplicateChat(
       .map((id) => idMap.get(id))
       .filter((id): id is string => typeof id === "string");
   }
+
   if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
     const nextBookmarkNames: { [key: string]: string } = {};
     for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
@@ -1529,6 +1515,7 @@ export async function duplicateChat(
   if (!selectNew && insertIndex <= activeChatIndex) {
     char.chatPage = activeChatIndex + 1;
   }
+
   characterStore.markChatDirty(newChat.id);
   characterStore.markChatManifestDirty(characterId);
   characterStore.markCharacterDirty(characterId);
@@ -1540,11 +1527,8 @@ export async function duplicateChat(
 
   const selectedCharacter = characterStore.characters[get(selectedCharID)];
   if (selectNew) {
-    if (selectedCharacter?.chaId === characterId) {
-      changeChatTo(insertIndex);
-    } else {
-      char.chatPage = insertIndex;
-    }
+    if (selectedCharacter?.chaId === characterId) changeChatTo(insertIndex);
+    else char.chatPage = insertIndex;
   } else if (selectedCharacter?.chaId === characterId) {
     ReloadGUIPointer.set(Math.random());
   }
@@ -1755,6 +1739,7 @@ export async function duplicateCharacter(
         .map((id) => idMap.get(id))
         .filter((id): id is string => typeof id === "string");
     }
+
     if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
       const nextBookmarkNames: { [key: string]: string } = {};
       for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
@@ -1784,10 +1769,9 @@ export async function duplicateCharacter(
   characterStore.markCharacterOrderDirty();
 
   for (const chat of newChats) {
-    if (chat.id) {
-      characterStore.markChatDirty(chat.id);
-    }
+    if (chat.id) characterStore.markChatDirty(chat.id);
   }
+
   characterStore.markChatManifestDirty(newChar.chaId);
 
   if (chatsToPersist.length > 0) {
@@ -1797,9 +1781,7 @@ export async function duplicateCharacter(
   const newIndex = characterStore.characters.findIndex(
     (candidate) => candidate.chaId === newChar.chaId,
   );
-  if (options.selectNew && newIndex >= 0) {
-    await changeChar(newIndex);
-  }
+  if (options.selectNew && newIndex >= 0) await changeChar(newIndex);
 
   return newChar;
 }

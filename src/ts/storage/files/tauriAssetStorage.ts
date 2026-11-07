@@ -27,19 +27,22 @@ export class TauriAssetStorage {
     ]) {
       if (await exists(path, { baseDir: BaseDirectory.AppData })) return true;
     }
+
     return false;
   }
 
   async setItem(key: string, value: Uint8Array): Promise<void> {
     const separator = key.lastIndexOf("/");
-    if (separator > 0) {
-      // SQL startup skips the legacy cleanup that used to create assets/.
-      // Recursive mkdir also handles concurrent imports and nested sync keys.
+    if (separator > 0)
+    // SQL startup skips the legacy cleanup that used to create assets/.
+    // Recursive mkdir also handles concurrent imports and nested sync keys.
+    {
       await mkdir(key.slice(0, separator), {
         baseDir: BaseDirectory.AppData,
         recursive: true,
       });
     }
+
     await writeFile(key, value, { baseDir: BaseDirectory.AppData });
   }
 
@@ -55,6 +58,7 @@ export class TauriAssetStorage {
     ) {
       return [];
     }
+
     const entries = await readDir(directory, {
       baseDir: BaseDirectory.AppData,
     });
@@ -66,6 +70,7 @@ export class TauriAssetStorage {
     if (!root || !(await exists(root, { baseDir: BaseDirectory.AppData }))) {
       return [];
     }
+
     const keys: string[] = [];
     const visit = async (directory: string): Promise<void> => {
       for (const entry of await readDir(directory, {

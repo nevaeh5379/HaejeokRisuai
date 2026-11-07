@@ -23,9 +23,7 @@ function normalizeRelaxedJsonKeywords(value: string) {
         continue;
       }
 
-      if (char === quote) {
-        quote = null;
-      }
+      if (char === quote) quote = null;
 
       continue;
     }
@@ -51,9 +49,7 @@ function normalizeRelaxedJsonKeywords(value: string) {
       }
     }
 
-    if (!replaced) {
-      normalized += char;
-    }
+    if (!replaced) normalized += char;
   }
 
   return normalized;
@@ -68,9 +64,7 @@ export function parseAdditionalParamJsonValue(
 
   const normalized = normalizeRelaxedJsonKeywords(value);
 
-  if (normalized === value) {
-    return undefined;
-  }
+  if (normalized === value) return undefined;
 
   try {
     return JSON.parse(normalized);

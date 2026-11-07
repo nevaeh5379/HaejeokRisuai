@@ -87,9 +87,7 @@ function prepareAnthropicConversation(messages?: any, options: any = {}): any {
         lastContent.text += `
 
 ${chat.content}`;
-      } else {
-        content.push({ type: "text", text: chat.content });
-      }
+      } else content.push({ type: "text", text: chat.content });
 
       if (multimodals?.length) {
         for (const modal of multimodals) {
@@ -108,6 +106,7 @@ ${chat.content}`;
         content[content.length - 1].cache_control =
           createCacheControl(oneHourCaching);
       }
+
       return;
     }
 
@@ -124,9 +123,11 @@ ${chat.content}`;
         });
       }
     }
+
     if (chat.cache) {
       content[0].cache_control = createCacheControl(oneHourCaching);
     }
+
     claudeChat.push({ role: chat.role, content });
   }
 
@@ -151,6 +152,7 @@ ${chat.content}`;
             cache: chat.cachePoint,
           });
         }
+
         break;
       case "function":
         break;
@@ -160,6 +162,7 @@ ${chat.content}`;
   if (claudeChat.length === 0 && systemPrompt === "") {
     return { ok: false, error: ANTHROPIC_NO_INPUT_ERROR };
   }
+
   if (claudeChat.length === 0 && systemPrompt !== "") {
     claudeChat.push({
       role: "user",

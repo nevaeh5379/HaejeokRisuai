@@ -200,8 +200,9 @@ async function consumeBtwResponse(
     signal.removeEventListener("abort", abort);
     void reader.cancel().catch(() => {});
   }
-  if (signal.aborted)
+  if (signal.aborted) {
     throw new DOMException("BTW generation aborted", "AbortError");
+  }
   return result;
 }
 
@@ -247,6 +248,7 @@ export async function syncBtwToggleValues(
     ) {
       continue;
     }
+
     const key = `toggle_${toggle.key}`;
     if (!(key in next)) {
       next[key] = "";
@@ -279,6 +281,7 @@ async function createSession(
     ) {
       continue;
     }
+
     const key = `toggle_${toggle.key}`;
     const value = getGlobalChatVar(
       key,
@@ -331,6 +334,7 @@ export function deleteBtwSession(chat: Chat, sessionId: string) {
   if (chat.activeBtwSessionId === sessionId) {
     chat.activeBtwSessionId = chat.btwSessions.at(-1)?.id;
   }
+
   markBtwDirty(chat);
 }
 
@@ -403,6 +407,7 @@ export async function sendBtwMessage(
   if (session.messages.length === 0 && session.name.startsWith("BTW ")) {
     session.name = trimmed.replace(/\s+/g, " ").slice(0, 48);
   }
+
   session.messages.push(userMessage, assistantMessageDraft);
   // Objects inserted into a Svelte deep-state array are proxied. Keep mutating
   // the stored proxy so streaming chunks are rendered and persisted.
@@ -505,11 +510,13 @@ export async function sendBtwMessage(
         session.messages.length - 1,
       );
     }
+
     markBtwDirty(parent, session);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      if (!assistantMessage.data)
+      if (!assistantMessage.data) {
         assistantMessage.data = "[BTW generation cancelled]";
+      }
     } else {
       const message = error instanceof Error ? error.message : String(error);
       btwRuntime.errors[sessionId] = message;
@@ -547,6 +554,7 @@ export async function openBtwPanel(
   if (question.trim()) {
     void sendBtwMessage(characterIndex, chatIndex, session.id, question);
   }
+
   return session;
 }
 

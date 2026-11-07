@@ -18,16 +18,14 @@ export async function initRPack() {
 export async function encodeRPack(data) {
   await initRPack();
   let result = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    result[i] = encodeMap[data[i]];
-  }
+  for (let i = 0; i < data.length; i++) result[i] = encodeMap[data[i]];
+
   return result;
 }
 export async function decodeRPack(data) {
   await initRPack();
   let result = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    result[i] = decodeMap[data[i]];
-  }
+  for (let i = 0; i < data.length; i++) result[i] = decodeMap[data[i]];
+
   return result;
 }

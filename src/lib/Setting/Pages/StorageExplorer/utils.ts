@@ -60,10 +60,10 @@ export function extractOriginalKeyFromThumbnail(
   ) {
     return null;
   }
+
   const match = thumbnailKey.match(/^thumbnails\/(.+)_\d+x\d+\.webp$/i);
-  if (match) {
-    return match[1];
-  }
+  if (match) return match[1];
+
   return thumbnailKey.replace(/^thumbnails\//, "");
 }
 
@@ -79,6 +79,7 @@ export function getNodeStorage(): NodeStorage {
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
     throw new Error("Node storage is not available");
   }
+
   return forageStorage.realStorage;
 }
 
@@ -141,14 +142,13 @@ export async function runStorageAnalysis(
         .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
         .map(async (c: any) => {
           const assets = await sqlStorage.character.assetFields(c.chaId);
-          if (assets && typeof assets === "object") {
-            Object.assign(c, assets);
-          }
+          if (assets && typeof assets === "object") Object.assign(c, assets);
         }),
     );
-  } else {
-    // Backends without a targeted loader: hydrate the missing characters
-    // through the standard lazy-loads path.
+  } else
+  // Backends without a targeted loader: hydrate the missing characters
+  // through the standard lazy-loads path.
+  {
     await Promise.allSettled(
       characters
         .filter((c: any) => c && c.detailsLoaded === false && c.chaId)
@@ -537,6 +537,7 @@ export async function runStorageAnalysis(
   for (let i = 0; i < bots.length; i++) {
     totalMissingAssets += bots[i].missingAssetsCount;
   }
+
   for (let i = 0; i < modules.length; i++) {
     totalMissingAssets += modules[i].missingAssetsCount;
   }

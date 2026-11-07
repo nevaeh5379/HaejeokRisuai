@@ -36,7 +36,10 @@ export function applyUITheme(theme?: string): void {
   const isAndroid = targetTheme === "android" && isCapacitorAndroid;
 
   document.documentElement.classList.toggle("theme-windows-fluent", isWindows);
-  document.documentElement.classList.toggle("theme-android-material", isAndroid);
+  document.documentElement.classList.toggle(
+    "theme-android-material",
+    isAndroid,
+  );
 
   const root = document.querySelector(":root") as HTMLElement | null;
   const db = settingsStore.state;
@@ -67,17 +70,12 @@ export function applyUITheme(theme?: string): void {
         "--risu-font-family",
         'Roboto, "Noto Sans", system-ui, sans-serif',
       );
-    } else {
-      root.style.setProperty("--risu-font-family", "Arial, sans-serif");
-    }
+    } else root.style.setProperty("--risu-font-family", "Arial, sans-serif");
   }
 
-  if (isWindows && isTauriWindows) {
-    void ensureFluentWindowsBackdrop();
-  }
-  if (isAndroid) {
-    void applyAndroidDynamicPalette(isDark);
-  }
+  if (isWindows && isTauriWindows) void ensureFluentWindowsBackdrop();
+
+  if (isAndroid) void applyAndroidDynamicPalette(isDark);
 }
 
 /**

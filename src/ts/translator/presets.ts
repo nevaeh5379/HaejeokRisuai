@@ -41,13 +41,9 @@ function isTranslatorPresetValue(value: unknown): value is TranslatorPreset {
 }
 
 function getBytes(value: unknown): Uint8Array | null {
-  if (value instanceof Uint8Array) {
-    return value;
-  }
+  if (value instanceof Uint8Array) return value;
 
-  if (value instanceof ArrayBuffer) {
-    return new Uint8Array(value);
-  }
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
 
   if (ArrayBuffer.isView(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
@@ -80,9 +76,7 @@ function getNormalizedTranslatorPresetName(
   name: unknown,
   index: number,
 ): string {
-  if (typeof name === "string" && name.trim().length > 0) {
-    return name;
-  }
+  if (typeof name === "string" && name.trim().length > 0) return name;
 
   return `Preset ${index + 1}`;
 }
@@ -206,9 +200,7 @@ async function decodeEncryptedTranslatorPresetFile(
 
   const encryptedPreset = getBytes(decodedContainer.preset);
 
-  if (!encryptedPreset) {
-    throw new Error("Invalid translator preset file.");
-  }
+  if (!encryptedPreset) throw new Error("Invalid translator preset file.");
 
   let decryptedPreset: ArrayBuffer;
 

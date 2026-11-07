@@ -43,6 +43,7 @@ export function loadStorageSyncResumeState(
     ) {
       return null;
     }
+
     return value as StorageSyncResumeState;
   } catch {
     return null;

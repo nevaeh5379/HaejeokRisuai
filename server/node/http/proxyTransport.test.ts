@@ -78,8 +78,9 @@ afterAll(async () => {
     server.kill("SIGKILL");
     await exited;
   }
-  if (upstream)
+  if (upstream) {
     await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  }
   if (root) await rm(root, { recursive: true, force: true });
 });
 

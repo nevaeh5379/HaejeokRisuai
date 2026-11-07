@@ -72,8 +72,9 @@ export function createIllustrationImages(
      */
     fetchJson: async (url, options) => {
       const headers = new Headers(options.headers);
-      if (!headers.has("content-type"))
+      if (!headers.has("content-type")) {
         headers.set("content-type", "application/json");
+      }
       const response = await providerFetch(url, {
         method: options.method ?? (options.body ? "POST" : "GET"),
         headers,
@@ -152,8 +153,9 @@ export function createIllustrationImages(
    * 한국어: 기존 백업 코덱으로 서버 생성 그림도 일반 백업·복원에서 유지.
    */
   const storeImage = async (data: string) => {
-    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(data))
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(data)) {
       throw new Error("Invalid image data");
+    }
     const bytes = Buffer.from(data.slice(data.indexOf(",") + 1), "base64");
     const image = sharp(bytes, { limitInputPixels: 64 * 1024 * 1024 });
     const metadata = await image.metadata();

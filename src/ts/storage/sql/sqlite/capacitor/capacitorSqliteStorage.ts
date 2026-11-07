@@ -46,9 +46,9 @@ function jsonStringChars(value: string, budget: number): number {
       code === 10 ||
       code === 12 ||
       code === 13
-    )
+    ) {
       chars += 2;
-    else if (code < 32) chars += 6;
+    } else if (code < 32) chars += 6;
     else if (code >= 0xd800 && code <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
       if (next >= 0xdc00 && next <= 0xdfff) {
@@ -229,6 +229,7 @@ export class CapacitorSqliteStorage
         ) {
           await flushBatch();
         }
+
         batchPayloadChars += chars + (pendingBatch.length > 0 ? 1 : 0);
         pendingBatch.push({ sql, bind });
         if (
@@ -264,6 +265,7 @@ export class CapacitorSqliteStorage
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
+
     const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,
@@ -276,6 +278,7 @@ export class CapacitorSqliteStorage
           if (!this._enabled || !this.isStorageReady()) {
             throw new Error("SQLite storage is not enabled");
           }
+
           return await this.runNativeTransaction(baseRevision, task);
         }),
     });
@@ -295,6 +298,7 @@ export class CapacitorSqliteStorage
       if (!this._enabled || !this.isStorageReady()) {
         throw new Error("SQLite storage is not enabled");
       }
+
       const meta = await this.selectOne<{ revision: number }>(
         "SELECT revision FROM system_storage_meta WHERE singleton = 1",
       );
@@ -302,6 +306,7 @@ export class CapacitorSqliteStorage
       if (rootCommit.baseRevision !== currentRevision) {
         throw new SqlRevisionConflictError(currentRevision);
       }
+
       await this.validatePresetCommit(rootCommit);
       onProgress?.("Counting SQL operations...", 0.025);
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -318,6 +323,7 @@ export class CapacitorSqliteStorage
       )) {
         totalStatements += sqliteCommit.countStatements(batch);
       }
+
       onProgress?.(
         `SQL restore plan ready (${totalStatements} statements)`,
         0.05,
@@ -367,6 +373,7 @@ export class CapacitorSqliteStorage
       ) {
         return;
       }
+
       lastReportAt = now;
       lastProgress = progress;
       const label =
@@ -416,6 +423,7 @@ export class CapacitorSqliteStorage
       )) {
         await sqliteCommit.apply(batch, write);
       }
+
       await write(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],
@@ -432,6 +440,7 @@ export class CapacitorSqliteStorage
           `Native SQLite restore applied ${appliedResult}/${written} statements`,
         );
       }
+
       this.currentRevision = revision;
     } catch (error) {
       await stream.abort().catch(() => {});
@@ -450,6 +459,7 @@ export class CapacitorSqliteStorage
     if (!this._enabled || !this.isStorageReady()) {
       throw new Error("SQLite storage is not enabled");
     }
+
     const meta = await this.selectOne<{ revision: number }>(
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
@@ -462,6 +472,7 @@ export class CapacitorSqliteStorage
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
+
     await this.prepareModuleCommit(commit);
     await this.validatePresetCommit(commit);
 

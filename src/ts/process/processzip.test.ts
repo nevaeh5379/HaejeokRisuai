@@ -106,11 +106,8 @@ vi.mock(
 
         release() {
           const next = this.waiting.shift();
-          if (next) {
-            next();
-          } else {
-            this.available += 1;
-          }
+          if (next) next();
+          else this.available += 1;
         }
       },
       sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),

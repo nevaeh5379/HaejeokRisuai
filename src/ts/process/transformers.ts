@@ -15,11 +15,10 @@ type TextGenerationConfig = NonNullable<
 
 let tfCache: Cache = null;
 let tfLoaded = false;
-let tfMap: { [key: string]: string } = {};
+const tfMap: { [key: string]: string } = {};
 async function initTransformers() {
-  if (tfLoaded) {
-    return;
-  }
+  if (tfLoaded) return;
+
   const { env } = await import("@huggingface/transformers");
   tfCache = await caches.open("tfCache");
   env.localModelPath = "https://sv.risuai.xyz/transformers/";
@@ -38,6 +37,7 @@ async function initTransformers() {
           return new Response(asBuffer(await loadAsset(assetId)));
         }
       }
+
       return await tfCache.match(url);
     },
   };
@@ -53,11 +53,11 @@ export const runTransformers = async (
 ) => {
   await initTransformers();
   const { pipeline } = await import("@huggingface/transformers");
-  let text = baseText;
-  let generator = await pipeline("text-generation", model, {
+  const text = baseText;
+  const generator = await pipeline("text-generation", model, {
     device,
   });
-  let output = (await generator(text, config)) as TextGenerationOutput;
+  const output = (await generator(text, config)) as TextGenerationOutput;
   const outputOne = output[0];
   return outputOne;
 };
@@ -65,7 +65,10 @@ export const runTransformers = async (
 export const runSummarizer = async (text: string) => {
   await initTransformers();
   const { pipeline } = await import("@huggingface/transformers");
-  let classifier = await pipeline("summarization", "Xenova/distilbart-cnn-6-6");
+  const classifier = await pipeline(
+    "summarization",
+    "Xenova/distilbart-cnn-6-6",
+  );
   const v = (await classifier(text)) as SummarizationOutput;
   return v[0].summary_text;
 };
@@ -93,9 +96,8 @@ export const runVITS = async (
   await initTransformers();
   const { WaveFile } = await import("wavefile");
   const { pipeline, env } = await import("@huggingface/transformers");
-  if (modelData === null) {
-    return;
-  }
+  if (modelData === null) return;
+
   if (typeof modelData === "string") {
     if (!synthesizer || lastSynth !== modelData) {
       lastSynth = modelData;
@@ -104,23 +106,22 @@ export const runVITS = async (
         modelData,
       );
     }
-  } else {
-    if (!synthesizer || lastSynth !== modelData.id) {
-      const files = modelData.files;
-      const keys = Object.keys(files);
-      for (const key of keys) {
-        const fileURL = env.localModelPath + modelData.id + "/" + key;
-        tfMap[fileURL] = files[key];
-        tfMap[location.origin + fileURL] = files[key];
-      }
-      lastSynth = modelData.id;
-      synthesizer = await pipeline<"text-to-speech">(
-        "text-to-speech",
-        modelData.id,
-      );
+  } else if (!synthesizer || lastSynth !== modelData.id) {
+    const files = modelData.files;
+    const keys = Object.keys(files);
+    for (const key of keys) {
+      const fileURL = env.localModelPath + modelData.id + "/" + key;
+      tfMap[fileURL] = files[key];
+      tfMap[location.origin + fileURL] = files[key];
     }
+    lastSynth = modelData.id;
+    synthesizer = await pipeline<"text-to-speech">(
+      "text-to-speech",
+      modelData.id,
+    );
   }
-  let out = await synthesizer(text, {});
+
+  const out = await synthesizer(text, {});
   const wav = new WaveFile();
   wav.fromScratch(1, out.sampling_rate, "32f", out.audio);
   const audioContext = new AudioContext();
@@ -140,9 +141,7 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
 
   const modelFile = await selectSingleFile(["zip"]);
 
-  if (!modelFile) {
-    return;
-  }
+  if (!modelFile) return;
 
   const unziped = await new Promise((res, rej) => {
     unzip(
@@ -157,18 +156,15 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
         },
       },
       (err, unzipped) => {
-        if (err) {
-          rej(err);
-        } else {
-          res(unzipped);
-        }
+        if (err) rej(err);
+        else res(unzipped);
       },
     );
   });
 
   console.log(unziped);
 
-  let fileIdMapped: { [key: string]: string } = {};
+  const fileIdMapped: { [key: string]: string } = {};
 
   const keys = Object.keys(unziped);
   for (let i = 0; i < keys.length; i++) {
@@ -176,9 +172,8 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
     const file = unziped[key];
     const fid = await saveAsset(file);
     let url = key;
-    if (url.startsWith("/")) {
-      url = url.substring(1);
-    }
+    if (url.startsWith("/")) url = url.substring(1);
+
     fileIdMapped[url] = fid;
   }
 

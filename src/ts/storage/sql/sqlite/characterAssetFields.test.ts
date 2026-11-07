@@ -32,6 +32,7 @@ describe.each(backendFactories)(
       for (const key of sqliteEntity.CHARACTER_ASSET_FIELD_KEYS) {
         expect(assets[key]).toEqual(full[key]);
       }
+
       // Non-asset fields must not leak in.
       expect(assets.chats).toBeUndefined();
       expect(assets.firstMessage).toBeUndefined();

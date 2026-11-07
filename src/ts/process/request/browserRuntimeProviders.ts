@@ -150,6 +150,7 @@ export async function requestWebLLM(
       }),
     };
   }
+
   const transformersParams = {
     temperature: temperature,
     max_new_tokens: maxTokens,

@@ -62,6 +62,7 @@ function defaultIdFactory(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
   }
+
   throw new Error("Legacy backup record conversion requires an idFactory");
 }
 
@@ -269,6 +270,7 @@ export function* iterateLegacyBackupSqlRecords(
     ) {
       continue;
     }
+
     if (key === "activeBotPresetId" && presets.length > 0) continue;
     yield { type: "setting", key, value };
   }
@@ -280,8 +282,9 @@ export function* iterateLegacyBackupSqlRecords(
     };
   }
 
-  for (const data of database.globalAuthorNotes ?? [])
+  for (const data of database.globalAuthorNotes ?? []) {
     yield { type: "author-note", data };
+  }
   yield {
     type: "author-note-settings",
     allowScriptWrite:

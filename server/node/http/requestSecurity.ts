@@ -13,6 +13,7 @@ function hostnameFromHostHeader(value?: any): any {
     if (hostname.startsWith("[") && hostname.endsWith("]")) {
       return hostname.slice(1, -1);
     }
+
     return hostname;
   } catch {
     return "";
@@ -23,8 +24,9 @@ function isLoopbackHostname(hostname?: any): any {
   const normalized: any = String(hostname || "")
     .toLowerCase()
     .replace(/\.$/, "");
-  if (normalized === "localhost" || normalized.endsWith(".localhost"))
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) {
     return true;
+  }
   if (normalized === "::1") return true;
   return net.isIP(normalized) === 4 && normalized.startsWith("127.");
 }
@@ -34,16 +36,21 @@ function isSecurePostgresConfigRequest(req?: any): any {
 
   const headers: any = req.headers || {};
   const forwardedProto: any = firstHeaderValue(headers["x-forwarded-proto"]);
-  if (forwardedProto.split(",")[0].trim().toLowerCase() === "https")
+  if (forwardedProto.split(",")[0].trim().toLowerCase() === "https") {
     return true;
-  if (firstHeaderValue(headers["x-forwarded-ssl"]).toLowerCase() === "on")
+  }
+  if (firstHeaderValue(headers["x-forwarded-ssl"]).toLowerCase() === "on") {
     return true;
-  if (firstHeaderValue(headers["front-end-https"]).toLowerCase() === "on")
+  }
+  if (firstHeaderValue(headers["front-end-https"]).toLowerCase() === "on") {
     return true;
-  if (firstHeaderValue(headers["x-url-scheme"]).toLowerCase() === "https")
+  }
+  if (firstHeaderValue(headers["x-url-scheme"]).toLowerCase() === "https") {
     return true;
-  if (firstHeaderValue(headers["cf-visitor"]).includes('"scheme":"https"'))
+  }
+  if (firstHeaderValue(headers["cf-visitor"]).includes('"scheme":"https"')) {
     return true;
+  }
   if (/proto=https/i.test(firstHeaderValue(headers.forwarded))) return true;
 
   const remoteAddress: any = req.socket?.remoteAddress || "";

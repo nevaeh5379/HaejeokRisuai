@@ -58,6 +58,7 @@ async function readSettingValue(
       rebuilt[row.key] = row.text_val;
     }
   }
+
   return rebuilt;
 }
 
@@ -88,6 +89,7 @@ export async function syncModuleRecords(
       modules.deletes.map((id) => [id]),
     );
   }
+
   if (modules.order) {
     await dialect.bumpPositions("system.module_records", POSITION_BUMP);
   }

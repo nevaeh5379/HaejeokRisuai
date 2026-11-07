@@ -419,6 +419,7 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
       return undefined;
     }
   }
+
   if (!data || typeof data !== "object") return undefined;
   const response = data as {
     error?: { type?: unknown };
@@ -427,8 +428,9 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
   const identifier = (value: unknown): value is string =>
     typeof value === "string" && /^[a-zA-Z_][a-zA-Z0-9_]{0,79}$/.test(value);
   const lines: string[] = [];
-  if (identifier(response.error?.type))
+  if (identifier(response.error?.type)) {
     lines.push(`ComfyUI: ${response.error.type}`);
+  }
   if (response.node_errors && typeof response.node_errors === "object") {
     for (const [id, value] of Object.entries(response.node_errors).slice(
       0,
@@ -439,8 +441,9 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
         id.length > 80 ||
         !value ||
         typeof value !== "object"
-      )
+      ) {
         continue;
+      }
       const errors = (value as { errors?: unknown }).errors;
       if (!Array.isArray(errors)) continue;
       for (const error of errors.slice(0, 3)) {
@@ -452,6 +455,7 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
       }
     }
   }
+
   return lines.length ? lines.join("\n").slice(0, 1024) : undefined;
 }
 
@@ -773,6 +777,7 @@ function applyNovelAIVarietyPlus(
   if (modelIncludesAny(db.NAIImgModel, NAI_VARIETY_PLUS_V3_V4_MODELS)) {
     parameters.skip_cfg_above_sigma = canvasScale * 0.01889;
   }
+
   if (modelIncludesAny(db.NAIImgModel, NAI_V4_5_MODELS)) {
     parameters.skip_cfg_above_sigma = canvasScale * 0.05766;
   }
@@ -854,6 +859,7 @@ async function applyNovelAICharacterReference(
   ) {
     return;
   }
+
   const source = config.character_image
     ? config.character_base64image
     : await readCharacterImageBase64(runtime, currentChar);
@@ -1025,9 +1031,9 @@ function buildStabilityFormData(
   if (model === "core" && db.stabllityStyle) {
     formData.append("style_preset", db.stabllityStyle);
   }
-  if (model === "ultra") {
-    formData.append("negative_prompt", negativePrompt);
-  }
+
+  if (model === "ultra") formData.append("negative_prompt", negativePrompt);
+
   return formData;
 }
 
@@ -1067,6 +1073,7 @@ async function generateWithStability(
   ) {
     throwProviderError(Buffer.from(body).toString());
   }
+
   return toPngDataUrl(Buffer.from(body).toString("base64"));
 }
 
@@ -1088,8 +1095,9 @@ export function createComfyUrlBuilder(
   const baseUrl = new URL(comfyUiUrl.replace(/\/+$/, "") + "/");
   return (pathname, params = {}) => {
     const url = new URL(pathname.replace(/^\/+/, ""), baseUrl);
-    for (const [key, value] of Object.entries(params))
+    for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
+    }
     return url.toString();
   };
 }
@@ -1127,6 +1135,7 @@ function injectComfyPrompts(
       if (inputName === "seed" && typeof input === "number") {
         input = randomInt(0, 999_999_999);
       }
+
       node.inputs[inputName] = input;
     }
   }
@@ -1154,6 +1163,7 @@ async function waitForComfyHistoryItem(
     if (Date.now() - startTime >= timeoutMs) {
       throwProviderError("Error: Image generation took longer than expected.");
     }
+
     await sleep(COMFY_POLL_INTERVAL_MS);
   }
 }
@@ -1255,6 +1265,7 @@ function resolveFalLoraPath(loraPath: string): string {
   if (!loraPath.startsWith("urn:") && !loraPath.startsWith("civitai:")) {
     return loraPath;
   }
+
   const id = loraPath.split("@").pop();
   return `https://civitai.com/api/download/models/${id}?type=Model&format=SafeTensor`;
 }
@@ -1285,10 +1296,10 @@ function buildFalRequestBody(
       },
     ];
   }
+
   // flux-pro rejects the safety-checker flag. / flux-pro는 안전 검사기 옵션을 받지 않음.
-  if (db.falModel === "fal-ai/flux-pro") {
-    delete body.enable_safety_checker;
-  }
+  if (db.falModel === "fal-ai/flux-pro") delete body.enable_safety_checker;
+
   return body;
 }
 
@@ -1348,6 +1359,7 @@ function buildImagenRequestBody(
   if ((IMAGEN_SIZED_MODELS as readonly string[]).includes(db.ImagenModel)) {
     parameters.sampleImageSize = db.ImagenImageSize;
   }
+
   return {
     instances: [{ prompt }],
     parameters,
@@ -1401,6 +1413,7 @@ async function resolveWavespeedReferenceImage(
   if (config.reference_mode === "character") {
     return readCharacterImageBase64(context.runtime, context.currentChar);
   }
+
   return "";
 }
 
@@ -1435,6 +1448,7 @@ async function buildWavespeedRequestBody(
   if (config.loras && Array.isArray(config.loras)) {
     body.loras = buildWavespeedLoras(config.loras);
   }
+
   return body;
 }
 
@@ -1485,6 +1499,7 @@ async function waitForWavespeedResultUrl(
     if (Date.now() - startTime > WAVESPEED_MAX_WAIT_MS) {
       throwProviderError(`Task timeout after ${WAVESPEED_MAX_WAIT_MS / 1000}s`);
     }
+
     const response = await fetchJson(taskEndpoint, {
       method: "GET",
       headers: {
@@ -1500,6 +1515,7 @@ async function waitForWavespeedResultUrl(
     if (task.status === "failed") {
       throwProviderError(JSON.stringify(response.data));
     }
+
     await sleep(WAVESPEED_POLL_INTERVAL_MS);
   }
 }
@@ -1640,6 +1656,7 @@ export async function executeImageGeneration(
         : "Image provider is not set",
     );
   }
+
   return IMAGE_PROVIDER_HANDLERS[db.sdProvider]({
     db,
     runtime,

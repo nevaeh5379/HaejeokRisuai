@@ -30,11 +30,11 @@ export async function readSqliteQueryStream(
         !record ||
         record.queryIndex !== queryIndex ||
         queryIndex >= queries.length
-      )
+      ) {
         throw new Error("Invalid SQLite query stream order");
-      if (record.type === "end") {
-        queryIndex++;
-      } else if (
+      }
+      if (record.type === "end") queryIndex++;
+      else if (
         record.type === "row" &&
         record.row !== null &&
         typeof record.row === "object" &&
@@ -53,9 +53,11 @@ export async function readSqliteQueryStream(
       if (chunk.data.length > 256 * 1024) {
         throw new Error("SQLite query stream chunk exceeds transport limit");
       }
+
       if (!chunk.done && chunk.data.length === 0) {
         throw new Error("SQLite query stream made no progress");
       }
+
       consume(
         decoder.decode(Buffer.from(chunk.data, "base64"), { stream: true }),
       );
@@ -65,6 +67,7 @@ export async function readSqliteQueryStream(
     if (fragments.length || queryIndex !== queries.length) {
       throw new Error("Incomplete SQLite query stream");
     }
+
     succeeded = true;
     return results;
   } finally {

@@ -66,6 +66,7 @@ export class PortableDatabaseStreamCollector {
     if (!this.chats.has(chatId)) {
       throw new Error(`Streamed branch graph has no chat ${chatId}`);
     }
+
     let graph = this.graphs.get(chatId);
     if (!graph) {
       graph = { branches: [], messages: [], links: [] };
@@ -82,6 +83,7 @@ export class PortableDatabaseStreamCollector {
     ) {
       throw new Error("Invalid streaming database record");
     }
+
     increment(this.counts, record.type);
     this.totalRecords++;
     switch (record.type) {
@@ -89,6 +91,7 @@ export class PortableDatabaseStreamCollector {
         if (this.sourceRevision !== null) {
           throw new Error("Duplicate streaming database metadata");
         }
+
         if (
           record.formatVersion !== 1 ||
           !Number.isSafeInteger(record.revision) ||
@@ -96,6 +99,7 @@ export class PortableDatabaseStreamCollector {
         ) {
           throw new Error("Invalid streaming database metadata");
         }
+
         this.sourceRevision = record.revision;
         break;
       case "author-note":
@@ -118,6 +122,7 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed module position");
         }
+
         (
           (this.database.modules ??= []) as Array<{
             position: number;
@@ -129,6 +134,7 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed plugin position");
         }
+
         (
           (this.database.plugins ??= []) as Array<{
             position: number;
@@ -146,6 +152,7 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed preset position");
         }
+
         (
           (this.database.botPresets ??= []) as Array<{
             position: number;
@@ -158,9 +165,11 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed character position");
         }
+
         if (this.characters.has(record.id)) {
           throw new Error(`Duplicate streamed character ${record.id}`);
         }
+
         this.characters.set(record.id, {
           position: record.position,
           value: {
@@ -177,15 +186,18 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed chat position");
         }
+
         const owner = this.characters.get(record.characterId);
         if (!owner) {
           throw new Error(
             `Streamed chat has no character ${record.characterId}`,
           );
         }
+
         if (this.chats.has(record.id)) {
           throw new Error(`Duplicate streamed chat ${record.id}`);
         }
+
         this.chats.add(record.id);
         owner.chats.push({
           position: record.position,
@@ -214,6 +226,7 @@ export class PortableDatabaseStreamCollector {
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
           throw new Error("Invalid streamed message position");
         }
+
         const graph = this.graph(record.chatId);
         graph.messages.push({
           position: record.position,
@@ -242,6 +255,7 @@ export class PortableDatabaseStreamCollector {
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
     }
+
     this.fragments.add(parsed.index);
     for (const record of parsed.records) this.addRecord(record);
   }
@@ -264,19 +278,23 @@ export class PortableDatabaseStreamCollector {
         `Streaming database is incomplete (${this.fragments.size}/${manifest.totalFragments} fragments, ${this.totalRecords}/${manifest.totalRecords} records)`,
       );
     }
+
     for (let index = 1; index <= manifest.totalFragments; index++) {
       if (!this.fragments.has(index)) {
         throw new Error(`Streaming database fragment ${index} is missing`);
       }
     }
+
     if (this.sourceRevision !== manifest.revision) {
       throw new Error("Streaming database revision does not match");
     }
+
     for (const type of RECORD_TYPES) {
       if ((manifest.counts[type] ?? 0) !== (this.counts[type] ?? 0)) {
         throw new Error(`Streaming database ${type} count does not match`);
       }
     }
+
     for (const chatId of this.chats) {
       const graph = this.graphs.get(chatId);
       if (!graph || graph.branches.length === 0) {
@@ -307,6 +325,7 @@ export class PortableDatabaseStreamCollector {
         .sort((left, right) => left.position - right.position)
         .map((entry) => entry.value);
     }
+
     this.database.botPresets = (
       (this.database.botPresets as Array<{
         position: number;

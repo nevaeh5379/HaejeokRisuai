@@ -8,8 +8,8 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { orderGroupSpeakers } from "@risuai/chat-core/group.ts";
 
 export async function addGroupChar() {
-  let selectedId = get(selectedCharID);
-  let group = characterStore.characters[selectedId];
+  const selectedId = get(selectedCharID);
+  const group = characterStore.characters[selectedId];
   if (group && group.type === "group") {
     const res = await alertSelectChar();
     if (res) {
@@ -33,8 +33,8 @@ export async function addGroupChar() {
 }
 
 export function rmCharFromGroup(index: number) {
-  let selectedId = get(selectedCharID);
-  let group = characterStore.characters[selectedId];
+  const selectedId = get(selectedCharID);
+  const group = characterStore.characters[selectedId];
   if (group && group.type === "group") {
     group.characters.splice(index, 1);
     group.characterTalks.splice(index, 1);

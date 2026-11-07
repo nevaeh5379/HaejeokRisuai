@@ -55,6 +55,7 @@ export class ChatHandler extends MCPToolHandler {
         context,
       );
     }
+
     return null;
   }
 
@@ -73,6 +74,7 @@ export class ChatHandler extends MCPToolHandler {
         },
       ];
     }
+
     if (char.type === "group") {
       return [
         {

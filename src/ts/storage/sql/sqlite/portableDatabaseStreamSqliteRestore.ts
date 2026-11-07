@@ -62,8 +62,9 @@ function buildCommit(
           commit.root.upserts.push({ key, value });
           continue;
         }
-        if (!Array.isArray(value))
+        if (!Array.isArray(value)) {
           throw new Error("Backup plugins must be an array");
+        }
         const plugins: Extract<PersistedRecord, { type: "plugin" }>[] =
           value.map((plugin, position) => {
             if (
@@ -74,6 +75,7 @@ function buildCommit(
             ) {
               throw new Error(`Invalid backup plugin at position ${position}`);
             }
+
             const { script, ...data } = plugin;
             return { type: "plugin", id: uuidv4(), position, data, script };
           });
@@ -223,6 +225,7 @@ export class PortableDatabaseStreamSqliteApplier {
       ) {
         await this.flush();
       }
+
       this.pendingType = record.type;
       this.pending.push(record);
     }
@@ -374,6 +377,7 @@ class RestoreCommandQueue {
         this.waiter = resolve;
       });
     }
+
     return this.commands.shift()!;
   }
 }

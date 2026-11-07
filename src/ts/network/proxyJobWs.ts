@@ -20,6 +20,7 @@ export function parseProxyJobWsEvent(raw: string): ProxyJobWsEvent | null {
     ) {
       return null;
     }
+
     return parsed;
   } catch {
     return null;
@@ -44,5 +45,6 @@ export function formatProxyStreamErrorMessage(
   ) {
     return `Cloudflare/origin timeout (${status ?? "unknown"}). The origin server did not start sending response in time.`;
   }
+
   return text || `Proxy stream failed (${status ?? "unknown"})`;
 }

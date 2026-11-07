@@ -27,7 +27,7 @@ export async function requestNovelList(
   const currentChar = resolveRequestCharacter(arg);
   const aiModel = arg.aiModel;
   const auth_key = db.novellistAPI;
-  let headers: Record<string, string> = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${auth_key}`,
     "Content-Type": "application/json",
   };
@@ -62,6 +62,7 @@ export async function requestNovelList(
       }),
     };
   }
+
   const remoteTransport =
     !arg.customURL && arg.modelInfo.format === LLMFormat.NovelList
       ? await tryExecuteNodeProviderTransport(

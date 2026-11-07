@@ -25,8 +25,9 @@ describe("CapacitorSqliteStorage", () => {
     };
     const value = '\u0001\\"\b\t\n\f\r한😀'.repeat(1_024);
     await (storage as any).runNativeTransaction(null, async (execute: any) => {
-      for (let id = 0; id < 50; id++)
+      for (let id = 0; id < 50; id++) {
         await execute("INSERT INTO probe VALUES (?, ?)", [id, value]);
+      }
     });
     const rows = database.prepare("SELECT value FROM probe").all();
     expect(rows).toHaveLength(50);
@@ -339,6 +340,7 @@ describe("CapacitorSqliteStorage", () => {
     for (let index = 1; index < progress.length; index++) {
       expect(progress[index]).toBeGreaterThanOrEqual(progress[index - 1]);
     }
+
     const plan = statuses.find((status) =>
       status.startsWith("SQL restore plan ready"),
     );

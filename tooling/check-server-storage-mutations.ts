@@ -57,8 +57,9 @@ for (const method of [
   "searchCharactersByName",
   "searchCharactersByTag",
   "searchMessages",
-])
+]) {
   DIRECT_READ_METHODS.add(method);
+}
 const INTERNAL_WRITE_METHODS = new Set([
   "close",
   "deleteColdStorage",
@@ -127,6 +128,7 @@ export function checkServerStorageMutations(
           "route the operation through databaseMutations",
       );
     }
+
     if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
@@ -139,6 +141,7 @@ export function checkServerStorageMutations(
         );
       }
     }
+
     if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
@@ -169,6 +172,7 @@ export function checkServerStorageMutations(
               "the previous primary storage alias may only be closed",
           );
         }
+
         ts.forEachChild(node, visit);
         return;
       }

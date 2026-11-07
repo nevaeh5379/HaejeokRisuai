@@ -76,6 +76,7 @@ class PresetStore
           "PresetStore state properties must be configurable",
         );
       }
+
       return Reflect.defineProperty(this.stateData, prop, descriptor);
     },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
@@ -159,8 +160,9 @@ class PresetStore
   }
 
   applyPreset(preset: botPreset, policy: PresetApplyPolicy): void {
-    if (!this.activeMetadata)
+    if (!this.activeMetadata) {
       throw new Error("Active preset state is not initialized");
+    }
     this.stateData = applyPresetSettings(preset, this.stateData, policy);
   }
 
@@ -208,6 +210,7 @@ class PresetStore
         if (value !== undefined) Object.assign(input, { [key]: value });
       }
     }
+
     return createPresetSettingsState(input);
   }
 
@@ -225,8 +228,9 @@ class PresetStore
       this.stateData,
       this.policyProvider(),
     );
-    if (!this.activeDirty && fingerprint === this.persistedActiveFingerprint)
+    if (!this.activeDirty && fingerprint === this.persistedActiveFingerprint) {
       return;
+    }
 
     this.activeDirty = false;
     try {
@@ -241,9 +245,7 @@ class PresetStore
 
     const latestFingerprint = this.activeFingerprint();
     this.activeDirty = latestFingerprint !== this.persistedActiveFingerprint;
-    if (this.activeDirty) {
-      this.commitQueue.schedule(() => this.flush(), 300);
-    }
+    if (this.activeDirty) this.commitQueue.schedule(() => this.flush(), 300);
   }
 
   hasPendingWrites(): boolean {
@@ -356,6 +358,7 @@ class PresetStore
       if (summaries.length === 0) {
         throw new Error("Remote storage has no bot preset");
       }
+
       const activeId =
         typeof storedActiveId === "string" &&
         summaries.some((summary) => summary.id === storedActiveId)
@@ -452,13 +455,13 @@ class PresetStore
         this.activeMetadata = metadata;
         this.persistedActiveFingerprint = savedFingerprint;
         this.activeDirty = this.activeFingerprint() !== savedFingerprint;
-        if (this.activeDirty)
+        if (this.activeDirty) {
           this.commitQueue.schedule(() => this.flush(), 300);
+        }
       }
       this.cache.delete(id);
-    } else {
-      this.cache.set(id, { ...data, id });
-    }
+    } else this.cache.set(id, { ...data, id });
+
     this.summaries = await this.storage.preset.list();
   }
   private async setActiveId(
@@ -466,14 +469,15 @@ class PresetStore
     persist = true,
     nextState?: PresetState,
   ): Promise<void> {
-    if (!this.storage || !this.summaries.some((preset) => preset.id === id))
+    if (!this.storage || !this.summaries.some((preset) => preset.id === id)) {
       throw new Error("Active bot preset does not exist");
+    }
     this.activeStatus = "loading";
     this.error = null;
     try {
       const preset = await this.load(id);
       const state = nextState ?? (await this.restorePresetState(preset));
-      if (persist)
+      if (persist) {
         await commitSqlChanges(this.storage, {
           baseRevision: this.storage.getRevision(),
           action: "preset:activate",
@@ -485,6 +489,7 @@ class PresetStore
           messages: [],
           messageManifests: [],
         });
+      }
       this.installActivePreset(preset, state);
       this.activeStatus = "ready";
     } catch (error) {
@@ -528,8 +533,9 @@ class PresetStore
   }
   async delete(id: string): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
-    if (this.summaries.length <= 1)
+    if (this.summaries.length <= 1) {
       throw new Error("At least one bot preset must remain");
+    }
     const index = this.summaries.findIndex((preset) => preset.id === id);
     if (index < 0) throw new Error("Preset not found");
     const nextActive =
@@ -562,8 +568,9 @@ class PresetStore
     this.activeStatus = "ready";
   }
   async setPresets(presets: botPreset[], activeIndex = 0): Promise<void> {
-    if (!this.storage || presets.length === 0)
+    if (!this.storage || presets.length === 0) {
       throw new Error("At least one bot preset is required");
+    }
     const ids = presets.map(() => uuidv4());
     const selected = ids[Math.max(0, Math.min(activeIndex, ids.length - 1))];
     await commitSqlChanges(this.storage, {
@@ -598,8 +605,9 @@ class PresetStore
   }
   async loadAll(): Promise<StoredBotPreset[]> {
     const result: StoredBotPreset[] = [];
-    for (const summary of this.summaries)
+    for (const summary of this.summaries) {
       result.push(await this.load(summary.id));
+    }
     return result;
   }
 

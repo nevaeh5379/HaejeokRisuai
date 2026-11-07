@@ -76,9 +76,9 @@ function makeMssqlMock() {
     if (upper.startsWith("IF NOT EXISTS") || upper.startsWith("CREATE TABLE")) {
       return { recordset: [] };
     }
-    if (upper.includes("SELECT 1")) {
-      return { recordset: [{ "": 1 }] };
-    }
+
+    if (upper.includes("SELECT 1")) return { recordset: [{ "": 1 }] };
+
     // MERGE asset_files
     if (upper.includes("MERGE") && upper.includes("ASSET_FILES")) {
       const key = params.key;
@@ -147,6 +147,7 @@ function makeMssqlMock() {
       for (const name of Object.keys(params)) {
         if (name === "key" || name.startsWith("k")) keys.push(params[name]);
       }
+
       for (const k of keys) store.delete(k);
       return { recordset: [] };
     }
@@ -155,18 +156,19 @@ function makeMssqlMock() {
       for (const name of Object.keys(params)) {
         if (name === "key" || name.startsWith("k")) keys.push(params[name]);
       }
+
       for (const k of keys) {
         for (const tk of Array.from(thumbStore.keys())) {
           if (tk.startsWith(`${k}|`)) thumbStore.delete(tk);
         }
       }
+
       return { recordset: [] };
     }
     if (upper.includes("SELECT DISTINCT ASSET_KEY FROM ASSET_THUMBNAILS")) {
       const keys = new Set<string>();
-      for (const tk of thumbStore.keys()) {
-        keys.add(tk.split("|")[0]);
-      }
+      for (const tk of thumbStore.keys()) keys.add(tk.split("|")[0]);
+
       return { recordset: Array.from(keys).map((k) => ({ asset_key: k })) };
     }
     if (upper.includes("SELECT F.ASSET_KEY")) {
@@ -220,8 +222,9 @@ describe("AzureSqlAssetStorage basic CRUD", () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(tmpDir))
+    if (fs.existsSync(tmpDir)) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("writes, checks existence, reads, lists, and deletes", async () => {
@@ -276,6 +279,7 @@ function handleMockQuery(
   if (upper.startsWith("IF NOT EXISTS") || upper.startsWith("CREATE TABLE")) {
     return { recordset: [] };
   }
+
   if (upper.includes("MERGE") && upper.includes("ASSET_FILES")) {
     store.set(
       params.key,
@@ -298,6 +302,7 @@ function handleMockQuery(
   if (upper.includes("SELECT TOP 1 1 AS HIT")) {
     return { recordset: store.has(params.key) ? [{ hit: 1 }] : [] };
   }
+
   if (upper.includes("SELECT CONTENT, CONTENT_TYPE, SIZE FROM ASSET_FILES")) {
     if (!store.has(params.key)) return { recordset: [] };
     const buf = store.get(params.key)!;
@@ -316,6 +321,7 @@ function handleMockQuery(
       recordset: Array.from(store.keys()).map((k) => ({ asset_key: k })),
     };
   }
+
   if (upper.includes("SELECT COUNT(*) AS TOTAL_OBJECTS")) {
     let total = 0;
     for (const b of store.values()) total += b.length;
@@ -330,15 +336,16 @@ function handleMockQuery(
       })),
     };
   }
+
   if (upper.includes("DELETE FROM ASSET_FILES")) {
     for (const name of Object.keys(params)) {
       if (name === "key" || name.startsWith("k")) store.delete(params[name]);
     }
+
     return { recordset: [] };
   }
-  if (upper.includes("DELETE FROM ASSET_THUMBNAILS")) {
-    return { recordset: [] };
-  }
+  if (upper.includes("DELETE FROM ASSET_THUMBNAILS")) return { recordset: [] };
+
   if (upper.includes("SELECT DISTINCT ASSET_KEY FROM ASSET_THUMBNAILS")) {
     const keys = new Set<string>();
     for (const tk of thumbStore.keys()) keys.add(tk.split("|")[0]);
@@ -349,6 +356,7 @@ function handleMockQuery(
       recordset: Array.from(store.keys()).map((k) => ({ asset_key: k })),
     };
   }
+
   if (upper.includes("SELECT CONTENT, SIZE FROM ASSET_THUMBNAILS")) {
     const k = `${params.key}|${params.w}x${params.h}`;
     if (!thumbStore.has(k)) return { recordset: [] };
@@ -366,8 +374,9 @@ describe("AssetStorageManager Azure SQL selection", () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(tmpDir))
+    if (fs.existsSync(tmpDir)) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("reports storageType fs by default", async () => {

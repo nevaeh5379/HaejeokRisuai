@@ -119,6 +119,7 @@ function isHex(str?: any): any {
   if (typeof str !== "string" || str.length === 0 || str.length % 2 !== 0) {
     return false;
   }
+
   return /^[0-9a-fA-F]+$/.test(str);
 }
 
@@ -188,9 +189,8 @@ async function createThumbnailBuffer(
   height: any = 128,
 ): Promise<any> {
   const sharpInstance: any = await loadSharp().catch(() => null);
-  if (!sharpInstance) {
-    return null;
-  }
+  if (!sharpInstance) return null;
+
   try {
     return await sharpInstance(buffer)
       .resize({
@@ -231,42 +231,52 @@ function detectContentTypeFromHeader(header?: any, fallback?: any): any {
   if (
     data.length >= 8 &&
     data.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
-  )
+  ) {
     return "image/png";
+  }
   if (
     data.length >= 3 &&
     data[0] === 0xff &&
     data[1] === 0xd8 &&
     data[2] === 0xff
-  )
+  ) {
     return "image/jpeg";
+  }
   if (
     data.length >= 12 &&
     data.subarray(0, 4).toString("ascii") === "RIFF" &&
     data.subarray(8, 12).toString("ascii") === "WEBP"
-  )
+  ) {
     return "image/webp";
+  }
   if (
     data.length >= 6 &&
     /^GIF8[79]a$/.test(data.subarray(0, 6).toString("ascii"))
-  )
+  ) {
     return "image/gif";
+  }
   if (data.length >= 12 && data.subarray(4, 8).toString("ascii") === "ftyp") {
     const brands: any = data
       .subarray(8, Math.min(data.length, 40))
       .toString("ascii");
     if (brands.includes("avif") || brands.includes("avis")) return "image/avif";
   }
-  if (data.length >= 2 && data.subarray(0, 2).toString("ascii") === "BM")
+  if (data.length >= 2 && data.subarray(0, 2).toString("ascii") === "BM") {
     return "image/bmp";
-  if (data.length >= 4 && data.subarray(0, 4).equals(Buffer.from([0, 0, 1, 0])))
+  }
+  if (
+    data.length >= 4 &&
+    data.subarray(0, 4).equals(Buffer.from([0, 0, 1, 0]))
+  ) {
     return "image/x-icon";
+  }
   if (
     data.length >= 4 &&
     (data.subarray(0, 4).equals(Buffer.from("49492a00", "hex")) ||
       data.subarray(0, 4).equals(Buffer.from("4d4d002a", "hex")))
-  )
+  ) {
     return "image/tiff";
+  }
   return fallback;
 }
 
@@ -390,12 +400,10 @@ class LocalFsStorage {
     const rootPath: any = path.resolve(this.savePath);
     const rootPrefix: any = path.join(rootPath, path.sep);
     const fullPath: any = resolveAssetHexPath(rootPath, hexPath);
-    if (!fullPath) {
-      return { exists: false };
-    }
-    if (!fs.existsSync(fullPath)) {
-      return { exists: false };
-    }
+    if (!fullPath) return { exists: false };
+
+    if (!fs.existsSync(fullPath)) return { exists: false };
+
     const key: any = hexToKey(hexPath);
     const stat: any = await fs.promises.stat(fullPath);
     const extensionContentType: any = getContentType(key);
@@ -411,6 +419,7 @@ class LocalFsStorage {
           if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
             throw new Error("Asset path is outside the storage directory");
           }
+
           const s: any = fs.createReadStream(fullPath);
           s.on("error", () => {});
           this._stream = s;
@@ -432,9 +441,7 @@ class LocalFsStorage {
     const width: any = normalizeThumbnailDimension(options.width);
     const height: any = normalizeThumbnailDimension(options.height);
     const key: any = hexToKey(safeHexPath);
-    if (!isImageKey(key)) {
-      return this.read(hexPath);
-    }
+    if (!isImageKey(key)) return this.read(hexPath);
 
     const thumbDir: any = path.join(this.savePath, "__thumbs");
     const thumbPath: any = resolveThumbnailCachePath(
@@ -454,9 +461,7 @@ class LocalFsStorage {
     }
 
     const original: any = await this.read(hexPath);
-    if (!original.exists) {
-      return { exists: false };
-    }
+    if (!original.exists) return { exists: false };
 
     try {
       const originalBuffer: any = await fs.promises.readFile(original.filePath);
@@ -469,6 +474,7 @@ class LocalFsStorage {
         if (!fs.existsSync(thumbDir)) {
           fs.mkdirSync(thumbDir, { recursive: true });
         }
+
         await fs.promises.writeFile(thumbPath, thumbBuffer);
         return {
           exists: true,
@@ -499,6 +505,7 @@ class LocalFsStorage {
             if (!fs.existsSync(thumbDir)) {
               fs.mkdirSync(thumbDir, { recursive: true });
             }
+
             await fs.promises.writeFile(
               resolveThumbnailCachePath(thumbDir, safeHexPath, 128, 128),
               thumbBuffer,
@@ -507,6 +514,7 @@ class LocalFsStorage {
         })
         .catch(() => {});
     }
+
     return { success: true };
   }
 
@@ -532,6 +540,7 @@ class LocalFsStorage {
             if (!fs.existsSync(thumbDir)) {
               fs.mkdirSync(thumbDir, { recursive: true });
             }
+
             await fs.promises.writeFile(
               resolveThumbnailCachePath(thumbDir, safeHexPath, 128, 128),
               thumbBuffer,
@@ -540,6 +549,7 @@ class LocalFsStorage {
         })
         .catch(() => {});
     }
+
     return { success: true };
   }
 
@@ -578,9 +588,7 @@ class LocalFsStorage {
       const fullPath: any = resolveAssetHexPath(this.savePath, safeHexPath);
       if (!fullPath || !safeHexPath) continue;
       try {
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.rm(fullPath);
-        }
+        if (fs.existsSync(fullPath)) await fs.promises.rm(fullPath);
       } catch (err: any) {
         // Ignore removal errors if file is absent
       }
@@ -590,20 +598,16 @@ class LocalFsStorage {
   }
 
   async list(prefix: any = ""): Promise<any> {
-    if (!fs.existsSync(this.savePath)) {
-      return [];
-    }
+    if (!fs.existsSync(this.savePath)) return [];
+
     const entries: any = await fs.promises.readdir(this.savePath);
     const result: any = [];
     for (const entry of entries) {
-      if (entry.startsWith("__")) {
-        continue;
-      }
+      if (entry.startsWith("__")) continue;
+
       if (isHex(entry)) {
         const key: any = hexToKey(entry);
-        if (!prefix || key.startsWith(prefix)) {
-          result.push(key);
-        }
+        if (!prefix || key.startsWith(prefix)) result.push(key);
       }
     }
     return result;
@@ -617,6 +621,7 @@ class LocalFsStorage {
     if (!fs.existsSync(this.savePath)) {
       return { totalObjects: 0, totalSizeBytes: 0 };
     }
+
     const entries: any = await fs.promises.readdir(this.savePath);
     let totalObjects: any = 0;
     let totalSizeBytes: any = 0;
@@ -650,6 +655,7 @@ class LocalFsStorage {
         assets: [],
       };
     }
+
     const entries: any = await fs.promises.readdir(this.savePath);
     const assets: any = [];
     let totalSizeBytes: any = 0;
@@ -680,9 +686,8 @@ class LocalFsStorage {
   }
 
   async cleanLocalAssets(): Promise<any> {
-    if (!fs.existsSync(this.savePath)) {
-      return { deleted: 0, freedBytes: 0 };
-    }
+    if (!fs.existsSync(this.savePath)) return { deleted: 0, freedBytes: 0 };
+
     const entries: any = await fs.promises.readdir(this.savePath);
     let deleted: any = 0;
     let freedBytes: any = 0;
@@ -710,16 +715,15 @@ async function getS3BodyBuffer(body?: any): Promise<any> {
     const bytes: any = await body.transformToByteArray();
     return Buffer.from(bytes);
   }
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body);
-  }
+  if (Buffer.isBuffer(body)) return body;
+
+  if (body instanceof Uint8Array) return Buffer.from(body);
+
   const chunks: any = [];
   for await (const chunk of body) {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
+
   return Buffer.concat(chunks);
 }
 
@@ -780,9 +784,7 @@ class S3AssetStorage {
       }),
     };
 
-    if (config.endpoint) {
-      clientConfig.endpoint = config.endpoint;
-    }
+    if (config.endpoint) clientConfig.endpoint = config.endpoint;
 
     const accessKeyId: any = (config.accessKeyId || "").trim();
     const secretAccessKey: any = (config.secretAccessKey || "").trim();
@@ -857,6 +859,7 @@ class S3AssetStorage {
               };
             }
           }
+
           return {
             success: true,
             bucketExists: false,
@@ -871,6 +874,7 @@ class S3AssetStorage {
         msg =
           "Could not load S3 credentials. Please check your Access Key ID and Secret Access Key.";
       }
+
       return {
         success: false,
         bucketExists: false,
@@ -887,6 +891,7 @@ class S3AssetStorage {
         fs.mkdirSync(this.thumbDir, { recursive: true });
       } catch {}
     }
+
     if (this.config.autoCreateBucket) {
       try {
         await this.client.send(
@@ -930,6 +935,7 @@ class S3AssetStorage {
       if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
         return { exists: false };
       }
+
       throw err;
     }
   }
@@ -953,6 +959,7 @@ class S3AssetStorage {
           contentLength: Number(response.ContentLength || 0),
         };
       }
+
       const buffer: any = await getS3BodyBuffer(body);
       return {
         exists: true,
@@ -966,6 +973,7 @@ class S3AssetStorage {
       if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
         return { exists: false };
       }
+
       throw err;
     }
   }
@@ -977,9 +985,7 @@ class S3AssetStorage {
     const width: any = normalizeThumbnailDimension(options.width);
     const height: any = normalizeThumbnailDimension(options.height);
     const key: any = hexToKey(safeHexPath);
-    if (!isImageKey(key)) {
-      return this.read(hexPath);
-    }
+    if (!isImageKey(key)) return this.read(hexPath);
 
     // 1. Check local server disk cache (0 S3 API calls, fastest)
     const localThumbPath: any = resolveThumbnailCachePath(
@@ -1014,6 +1020,7 @@ class S3AssetStorage {
           if (!fs.existsSync(this.thumbDir)) {
             fs.mkdirSync(this.thumbDir, { recursive: true });
           }
+
           await fs.promises.writeFile(localThumbPath, buffer);
         } catch {}
 
@@ -1047,6 +1054,7 @@ class S3AssetStorage {
           if (!fs.existsSync(this.thumbDir)) {
             fs.mkdirSync(this.thumbDir, { recursive: true });
           }
+
           await fs.promises.writeFile(localThumbPath, thumbBuffer);
         } catch {}
 
@@ -1111,6 +1119,7 @@ class S3AssetStorage {
           if (!fs.existsSync(this.thumbDir)) {
             fs.mkdirSync(this.thumbDir, { recursive: true });
           }
+
           await fs.promises.writeFile(localThumbPath, thumbBuffer);
         } catch {}
 
@@ -1200,6 +1209,7 @@ class S3AssetStorage {
           if (chunks.length < 50) chunks.push(chunk);
         });
       }
+
       upload = new Upload({
         client: this.client,
         params: {
@@ -1305,13 +1315,11 @@ class S3AssetStorage {
       if (response.Contents) {
         for (const item of response.Contents) {
           if (!item.Key) continue;
-          if (item.Key.startsWith("thumbnails/")) {
-            existingThumbs.add(item.Key);
-          } else if (isImageKey(item.Key)) {
-            allImageKeys.push(item.Key);
-          }
+          if (item.Key.startsWith("thumbnails/")) existingThumbs.add(item.Key);
+          else if (isImageKey(item.Key)) allImageKeys.push(item.Key);
         }
       }
+
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
@@ -1325,9 +1333,8 @@ class S3AssetStorage {
       const hexPath: any = keyToHex(key);
       const thumbKey: any = `thumbnails/${key}_128x128.webp`;
 
-      if (existingThumbs.has(thumbKey)) {
-        skipped++;
-      } else {
+      if (existingThumbs.has(thumbKey)) skipped++;
+      else {
         try {
           const original: any = await this.read(hexPath);
           if (
@@ -1357,15 +1364,12 @@ class S3AssetStorage {
                 if (!fs.existsSync(this.thumbDir)) {
                   fs.mkdirSync(this.thumbDir, { recursive: true });
                 }
+
                 await fs.promises.writeFile(localThumbPath, thumbBuffer);
               } catch {}
               created++;
-            } else {
-              errors.push(`Failed to generate thumbnail for ${key}`);
-            }
-          } else {
-            errors.push(`Could not read original file for ${key}`);
-          }
+            } else errors.push(`Failed to generate thumbnail for ${key}`);
+          } else errors.push(`Could not read original file for ${key}`);
         } catch (err: any) {
           errors.push(`Error generating thumbnail for ${key}: ${err.message}`);
         }
@@ -1406,6 +1410,7 @@ class S3AssetStorage {
           }
         }
       }
+
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
@@ -1446,6 +1451,7 @@ class S3AssetStorage {
           totalSizeBytes += item.Size || 0;
         }
       }
+
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
@@ -1485,6 +1491,7 @@ class S3AssetStorage {
           }
         }
       }
+
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
@@ -1503,6 +1510,7 @@ class S3AssetStorage {
     if (!fs.existsSync(savePath)) {
       return { total: 0, migrated: 0, skipped: 0, errors: [] };
     }
+
     const entries: any = await fs.promises.readdir(savePath);
     const hexEntries: any = entries.filter(
       (e?: any) => !e.startsWith("__") && isHex(e),
@@ -1521,12 +1529,11 @@ class S3AssetStorage {
     if (!skipExistsCheck) {
       try {
         const listed: any = await this.list();
-        if (listed.length === 0) {
-          // Empty bucket: no point tracking exists for every file.
+        if (listed.length === 0)
+        // Empty bucket: no point tracking exists for every file.
+        {
           existingKeys = null;
-        } else {
-          existingKeys = new Set(listed);
-        }
+        } else existingKeys = new Set(listed);
       } catch {
         existingKeys = null;
       }
@@ -1542,8 +1549,9 @@ class S3AssetStorage {
       if (!onProgress) return;
       const now: any = Date.now();
       const isFinal: any = completed >= total;
-      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS)
+      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) {
         return;
+      }
       lastProgressSent = now;
       onProgress({
         current: completed,
@@ -1560,8 +1568,9 @@ class S3AssetStorage {
       try {
         const filePath: any = path.join(savePath, hexName);
         const stat: any = await fs.promises.stat(filePath);
-        if (!stat.isFile()) {
-          // Non-file entries still count toward progress.
+        if (!stat.isFile())
+        // Non-file entries still count toward progress.
+        {
           return;
         }
 
@@ -1619,9 +1628,8 @@ class S3AssetStorage {
 
   async rollbackToLocal(savePath?: any, onProgress?: any): Promise<any> {
     await this.ensureClient();
-    if (!fs.existsSync(savePath)) {
-      fs.mkdirSync(savePath, { recursive: true });
-    }
+    if (!fs.existsSync(savePath)) fs.mkdirSync(savePath, { recursive: true });
+
     const keys: any = await this.list();
     const total: any = keys.length;
 
@@ -1634,8 +1642,9 @@ class S3AssetStorage {
       if (!onProgress) return;
       const now: any = Date.now();
       const isFinal: any = completed >= total;
-      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS)
+      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) {
         return;
+      }
       lastProgressSent = now;
       onProgress({
         current: completed,
@@ -1662,6 +1671,7 @@ class S3AssetStorage {
           } else if (result.buffer) {
             await fs.promises.writeFile(localFilePath, result.buffer);
           }
+
           downloaded++;
         }
       } catch (err: any) {
@@ -1858,9 +1868,11 @@ class AssetStorageManager {
     if (explicit === "azuresql" && this.azureConfig.enabled) {
       return { ...this.azureConfig, storageType: "azuresql" };
     }
+
     if (explicit === "s3" && this.s3Config.enabled) {
       return { ...this.s3Config, storageType: "s3" };
     }
+
     if (explicit === "fs") {
       return {
         enabled: false,
@@ -1868,20 +1880,23 @@ class AssetStorageManager {
         managedByEnvironment: this.managedByEnvironment,
       };
     }
+
     // No explicit type: prefer whichever managed-by-env flag is set,
     // then fall back to the stored configs.
     if (this.azureManagedByEnvironment && this.azureConfig.enabled) {
       return { ...this.azureConfig, storageType: "azuresql" };
     }
+
     if (this.s3ManagedByEnvironment && this.s3Config.enabled) {
       return { ...this.s3Config, storageType: "s3" };
     }
+
     if (this.azureConfig.enabled) {
       return { ...this.azureConfig, storageType: "azuresql" };
     }
-    if (this.s3Config.enabled) {
-      return { ...this.s3Config, storageType: "s3" };
-    }
+
+    if (this.s3Config.enabled) return { ...this.s3Config, storageType: "s3" };
+
     return {
       enabled: false,
       storageType: "fs",
@@ -1895,6 +1910,7 @@ class AssetStorageManager {
         "S3 configuration is managed by server environment variables and cannot be modified via API.",
       );
     }
+
     const dataToSave: any = {
       enabled: Boolean(config.enabled),
       endpoint: config.endpoint || "",
@@ -1917,6 +1933,7 @@ class AssetStorageManager {
         "Azure SQL asset storage configuration is managed by server environment variables and cannot be modified via API.",
       );
     }
+
     const dataToSave: any = {
       enabled: Boolean(config.enabled),
       server: config.server || "",
@@ -2003,9 +2020,8 @@ class AssetStorageManager {
       if (mergedConfig.enabled) {
         const testResult: any =
           await S3AssetStorage.testConnection(mergedConfig);
-        if (!testResult.success) {
-          throw new Error(testResult.message);
-        }
+        if (!testResult.success) throw new Error(testResult.message);
+
         this.saveS3Config(mergedConfig);
         // Teardown previous azure backend if active.
         if (this.azureSqlStorage) {
@@ -2020,9 +2036,8 @@ class AssetStorageManager {
         this.config = { ...this.s3Config, storageType: "s3" };
       } else {
         this.saveS3Config({ ...mergedConfig, enabled: false });
-        if (this.s3Storage) {
-          this.s3Storage = null;
-        }
+        if (this.s3Storage) this.s3Storage = null;
+
         this.activeStorage = this.localFs;
         this.config = { ...this.s3Config, storageType: "fs" };
       }
@@ -2061,9 +2076,8 @@ class AssetStorageManager {
       if (mergedConfig.enabled) {
         const testResult: any =
           await AzureSqlAssetStorage.testConnection(mergedConfig);
-        if (!testResult.success) {
-          throw new Error(testResult.message);
-        }
+        if (!testResult.success) throw new Error(testResult.message);
+
         this.saveAzureConfig(mergedConfig);
         // Teardown previous s3 backend if active.
         this.s3Storage = null;
@@ -2090,13 +2104,13 @@ class AssetStorageManager {
       if (this.s3Config.enabled && !this.s3ManagedByEnvironment) {
         this.saveS3Config({ ...this.s3Config, enabled: false });
       }
+
       if (this.azureConfig.enabled && !this.azureManagedByEnvironment) {
         this.saveAzureConfig({ ...this.azureConfig, enabled: false });
       }
 
-      if (this.s3Storage) {
-        this.s3Storage = null;
-      }
+      if (this.s3Storage) this.s3Storage = null;
+
       if (this.azureSqlStorage) {
         try {
           await this.azureSqlStorage.close();
@@ -2146,15 +2160,12 @@ class AssetStorageManager {
   }
 
   getStorageByType(type?: any): any {
-    if (type === "fs") {
-      return this.localFs;
-    }
-    if (type === "s3") {
-      return this.s3Storage;
-    }
-    if (type === "azuresql") {
-      return this.azureSqlStorage;
-    }
+    if (type === "fs") return this.localFs;
+
+    if (type === "s3") return this.s3Storage;
+
+    if (type === "azuresql") return this.azureSqlStorage;
+
     return null;
   }
 
@@ -2190,6 +2201,7 @@ class AssetStorageManager {
         }
       }
     }
+
     if (this.azureSqlStorage) {
       try {
         azureStats = await this.azureSqlStorage.getStats();
@@ -2197,6 +2209,7 @@ class AssetStorageManager {
         // Ignore Azure error
       }
     }
+
     return {
       activeType: this.activeStorage.type,
       localFs: localFsStats,
@@ -2207,30 +2220,27 @@ class AssetStorageManager {
   }
 
   async getAssetDetails(target: any = "active"): Promise<any> {
-    if (target === "fs") {
-      return await this.localFs.getAssetDetails();
-    } else if (target === "s3" && this.s3Storage) {
+    if (target === "fs") return await this.localFs.getAssetDetails();
+    else if (target === "s3" && this.s3Storage) {
       return await this.s3Storage.getAssetDetails();
     } else if (target === "azuresql" && this.azureSqlStorage) {
       return await this.azureSqlStorage.getAssetDetails();
     }
+
     return await this.activeStorage.getAssetDetails();
   }
 
   async deleteAssetKeys(keys?: any, target: any = "active"): Promise<any> {
-    if (!Array.isArray(keys) || keys.length === 0) {
-      return { deleted: 0 };
-    }
+    if (!Array.isArray(keys) || keys.length === 0) return { deleted: 0 };
+
     const hexPaths: any = keys.map((k?: any) => keyToHex(k));
-    if (target === "fs") {
-      await this.localFs.remove(hexPaths);
-    } else if (target === "s3" && this.s3Storage) {
+    if (target === "fs") await this.localFs.remove(hexPaths);
+    else if (target === "s3" && this.s3Storage) {
       await this.s3Storage.remove(hexPaths);
     } else if (target === "azuresql" && this.azureSqlStorage) {
       await this.azureSqlStorage.remove(hexPaths);
-    } else {
-      await this.activeStorage.remove(hexPaths);
-    }
+    } else await this.activeStorage.remove(hexPaths);
+
     return { deleted: keys.length };
   }
 
@@ -2239,6 +2249,7 @@ class AssetStorageManager {
     if (active.type !== "s3" && active.type !== "azuresql") {
       throw new Error("Remote storage (S3 or Azure SQL) is not active");
     }
+
     return await active.generateMissingThumbnails(onProgress);
   }
 
@@ -2356,6 +2367,7 @@ class AzureSqlAssetStorage {
         message: "Server, database, user, and password are all required.",
       };
     }
+
     let pool: any = null;
     try {
       const sql: any = await loadMssql();
@@ -2385,12 +2397,10 @@ class AzureSqlAssetStorage {
   }
 
   async _getPool(): Promise<any> {
-    if (this.pool && this.pool.connected) {
-      return this.pool;
-    }
-    if (this.poolPromise) {
-      return this.poolPromise;
-    }
+    if (this.pool && this.pool.connected) return this.pool;
+
+    if (this.poolPromise) return this.poolPromise;
+
     const cfg: any = buildAzureSqlPoolConfig(this.config);
     this.poolPromise = (async () => {
       this.sql ??= await loadMssql();
@@ -2415,6 +2425,7 @@ class AzureSqlAssetStorage {
         fs.mkdirSync(this.thumbDir, { recursive: true });
       } catch {}
     }
+
     try {
       const pool: any = await this._getPool();
       await pool.request().batch(AZURE_ASSET_SCHEMA_DDL);
@@ -2445,9 +2456,8 @@ class AzureSqlAssetStorage {
       .query(
         "SELECT content, content_type, size FROM asset_files WHERE asset_key = @key",
       );
-    if (!res.recordset || res.recordset.length === 0) {
-      return { exists: false };
-    }
+    if (!res.recordset || res.recordset.length === 0) return { exists: false };
+
     const row: any = res.recordset[0];
     const buffer: any = Buffer.isBuffer(row.content)
       ? row.content
@@ -2472,6 +2482,7 @@ class AzureSqlAssetStorage {
     if (!metaResult.recordset || metaResult.recordset.length === 0) {
       return { exists: false };
     }
+
     const row: any = metaResult.recordset[0];
     const contentLength: any = Number(
       row.size != null ? row.size : row.actual_size || 0,
@@ -2497,6 +2508,7 @@ class AzureSqlAssetStorage {
             `Azure SQL asset ended before its declared size: ${key}`,
           );
         }
+
         const chunk: any = Buffer.isBuffer(value) ? value : Buffer.from(value);
         yield chunk;
         offset += chunk.length;
@@ -2517,9 +2529,7 @@ class AzureSqlAssetStorage {
     const width: any = normalizeThumbnailDimension(options.width);
     const height: any = normalizeThumbnailDimension(options.height);
     const key: any = hexToKey(safeHexPath);
-    if (!isImageKey(key)) {
-      return this.read(hexPath);
-    }
+    if (!isImageKey(key)) return this.read(hexPath);
 
     // 1. Local disk cache
     const localThumbPath: any = resolveThumbnailCachePath(
@@ -2556,8 +2566,9 @@ class AzureSqlAssetStorage {
         ? row.content
         : Buffer.from(row.content);
       try {
-        if (!fs.existsSync(this.thumbDir))
+        if (!fs.existsSync(this.thumbDir)) {
           fs.mkdirSync(this.thumbDir, { recursive: true });
+        }
         await fs.promises.writeFile(localThumbPath, buffer);
       } catch {}
       return {
@@ -2574,6 +2585,7 @@ class AzureSqlAssetStorage {
     if (!original.exists || !original.buffer || original.buffer.length === 0) {
       return { exists: false };
     }
+
     try {
       const thumbBuffer: any = await createThumbnailBuffer(
         original.buffer,
@@ -2582,8 +2594,9 @@ class AzureSqlAssetStorage {
       );
       if (thumbBuffer && thumbBuffer.length > 0) {
         try {
-          if (!fs.existsSync(this.thumbDir))
+          if (!fs.existsSync(this.thumbDir)) {
             fs.mkdirSync(this.thumbDir, { recursive: true });
+          }
           await fs.promises.writeFile(localThumbPath, thumbBuffer);
         } catch {}
         // Persist thumbnail to DB (best-effort)
@@ -2649,6 +2662,7 @@ class AzureSqlAssetStorage {
     if (isImageKey(key)) {
       this._eagerGenerateThumbnail(hexPath, key, buffer).catch(() => {});
     }
+
     return { success: true };
   }
 
@@ -2674,8 +2688,9 @@ class AzureSqlAssetStorage {
       );
       if (!localThumbPath) return;
       try {
-        if (!fs.existsSync(this.thumbDir))
+        if (!fs.existsSync(this.thumbDir)) {
           fs.mkdirSync(this.thumbDir, { recursive: true });
+        }
         await fs.promises.writeFile(localThumbPath, thumbBuffer);
       } catch {}
       const pool: any = await this._getPool();
@@ -2935,6 +2950,7 @@ END CATCH;`);
     if (!fs.existsSync(savePath)) {
       return { total: 0, migrated: 0, skipped: 0, errors: [] };
     }
+
     const entries: any = await fs.promises.readdir(savePath);
     const hexEntries: any = entries.filter(
       (e?: any) => !e.startsWith("__") && isHex(e),
@@ -2965,8 +2981,9 @@ END CATCH;`);
       if (!onProgress) return;
       const now: any = Date.now();
       const isFinal: any = completed >= total;
-      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS)
+      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) {
         return;
+      }
       lastProgressSent = now;
       onProgress({
         current: completed,
@@ -3006,9 +3023,8 @@ END CATCH;`);
   }
 
   async rollbackToLocal(savePath?: any, onProgress?: any): Promise<any> {
-    if (!fs.existsSync(savePath)) {
-      fs.mkdirSync(savePath, { recursive: true });
-    }
+    if (!fs.existsSync(savePath)) fs.mkdirSync(savePath, { recursive: true });
+
     const keys: any = await this.list();
     const total: any = keys.length;
 
@@ -3021,8 +3037,9 @@ END CATCH;`);
       if (!onProgress) return;
       const now: any = Date.now();
       const isFinal: any = completed >= total;
-      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS)
+      if (!isFinal && now - lastProgressSent < MIGRATE_PROGRESS_INTERVAL_MS) {
         return;
+      }
       lastProgressSent = now;
       onProgress({
         current: completed,
@@ -3085,9 +3102,8 @@ END CATCH;`);
     for (let i: any = 0; i < allImageKeys.length; i++) {
       const key: any = allImageKeys[i];
       const hexPath: any = keyToHex(key);
-      if (existingThumbs.has(key)) {
-        skipped++;
-      } else {
+      if (existingThumbs.has(key)) skipped++;
+      else {
         try {
           const original: any = await this.read(hexPath);
           if (
@@ -3113,21 +3129,19 @@ END CATCH;`);
                   this.thumbDir,
                   `${hexPath}_128x128.webp`,
                 );
-                if (!fs.existsSync(this.thumbDir))
+                if (!fs.existsSync(this.thumbDir)) {
                   fs.mkdirSync(this.thumbDir, { recursive: true });
+                }
                 await fs.promises.writeFile(localThumbPath, thumbBuffer);
               } catch {}
               created++;
-            } else {
-              errors.push(`Failed to generate thumbnail for ${key}`);
-            }
-          } else {
-            errors.push(`Could not read original file for ${key}`);
-          }
+            } else errors.push(`Failed to generate thumbnail for ${key}`);
+          } else errors.push(`Could not read original file for ${key}`);
         } catch (err: any) {
           errors.push(`Error generating thumbnail for ${key}: ${err.message}`);
         }
       }
+
       if (onProgress && (i % 5 === 0 || i === allImageKeys.length - 1)) {
         onProgress({
           type: "progress",

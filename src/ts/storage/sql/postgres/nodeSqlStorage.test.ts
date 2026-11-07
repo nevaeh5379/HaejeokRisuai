@@ -1156,6 +1156,7 @@ describe("NodeSqlStorage browser client", () => {
           }),
         };
       }
+
       if (url === "/api/database-v2/bot-stats") {
         return {
           status: 200,
@@ -1179,6 +1180,7 @@ describe("NodeSqlStorage browser client", () => {
           }),
         };
       }
+
       return { status: 404, json: async () => ({}) };
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1303,6 +1305,7 @@ describe("NodeSqlStorage portable database stream restore", () => {
             { status: 200, headers: { "content-type": "application/json" } },
           );
         }
+
         if (path.endsWith("/records")) {
           const input = JSON.parse(String(init?.body ?? "{}"));
           const state = await appendRecords("restore-session", input);
@@ -1321,6 +1324,7 @@ describe("NodeSqlStorage portable database stream restore", () => {
         if (init?.method === "DELETE") {
           return new Response(null, { status: 204 });
         }
+
         throw new Error(`Unexpected backup API request: ${path}`);
       }),
       resolve: (path: string) => `http://localhost${path}`,

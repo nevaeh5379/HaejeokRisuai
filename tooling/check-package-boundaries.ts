@@ -43,6 +43,7 @@ for (const file of packageFiles) {
     ) {
       specifiers.push(node.argument.literal.text);
     }
+
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -54,8 +55,9 @@ for (const file of packageFiles) {
     if (!specifier.startsWith(".")) continue;
     const target = resolve(file, "..", specifier.split("?")[0]);
     const insideApp = relative(appSource, target);
-    if (insideApp !== "" && !insideApp.startsWith(".."))
+    if (insideApp !== "" && !insideApp.startsWith("..")) {
       offenders.push(`${relative(root, file)}: ${specifier}`);
+    }
   }
 }
 

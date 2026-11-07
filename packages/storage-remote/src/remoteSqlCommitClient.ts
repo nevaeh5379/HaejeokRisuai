@@ -37,6 +37,7 @@ async function encodeJsonBody(payload: unknown): Promise<{
   if (json.length < 64 * 1024 || typeof CompressionStream === "undefined") {
     return { body: json };
   }
+
   const compressed = new Blob([json])
     .stream()
     .pipeThrough(new CompressionStream("gzip"));
@@ -51,8 +52,9 @@ async function responseError(
   fallback: string,
 ): Promise<Error> {
   const body = await response.json().catch(() => null);
-  if (typeof body?.code === "string" && body.code.startsWith("author_note_"))
+  if (typeof body?.code === "string" && body.code.startsWith("author_note_")) {
     return new AuthorNoteError(body.code.slice(12), body.noteId);
+  }
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
@@ -98,13 +100,15 @@ export class RemoteSqlCommitClient {
 
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        if (conflict?.code === "author_note_conflict")
+        if (conflict?.code === "author_note_conflict") {
           throw new AuthorNoteError("conflict", conflict.noteId);
+        }
         const revision =
           conflict?.revision === undefined ? NaN : Number(conflict.revision);
         // Illustration bodies are conditional on a fresh read; never replay one at a newer revision.
-        if (commit.action === "illustration")
+        if (commit.action === "illustration") {
           throw new NodeSqlRevisionConflictError(conflict?.revision);
+        }
         if (Number.isSafeInteger(revision) && attempt < 2) {
           pending = { ...pending, baseRevision: revision };
           continue;
@@ -120,6 +124,7 @@ export class RemoteSqlCommitClient {
       if (response.status < 200 || response.status >= 300) {
         throw await responseError(response, "SQL commit failed");
       }
+
       return (await response.json()) as SqlCommitResult;
     }
 

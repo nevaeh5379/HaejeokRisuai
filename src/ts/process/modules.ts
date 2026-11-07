@@ -77,9 +77,7 @@ export async function exportModule(
     filenameBase: `${module.name}.module`,
     showSuccessAlert: false,
   });
-  if (alertEnd) {
-    alertNormal(language.successExport);
-  }
+  if (alertEnd) alertNormal(language.successExport);
 }
 
 export async function exportModuleLegacy(
@@ -138,22 +136,18 @@ export async function exportModuleLegacy(
       msg: `Loading... (Adding Assets ${i} / ${assets.length})`,
     });
     let rData = await readImage(asset[1]);
-    if (!rData) {
-      rData = new Uint8Array(0); //blank buffer
-    }
-    let encoded = await encodeRPack(Buffer.from(await compressImage(rData)));
+    if (!rData) rData = new Uint8Array(0); //blank buffer
+
+    const encoded = await encodeRPack(Buffer.from(await compressImage(rData)));
     writeLength(encoded.length);
     apb.append(encoded);
   }
 
   writeByte(0); //end of file
 
-  if (saveData) {
-    await downloadFile(module.name + ".risum", apb.buffer);
-  }
-  if (alertEnd) {
-    alertNormal(language.successExport);
-  }
+  if (saveData) await downloadFile(module.name + ".risum", apb.buffer);
+
+  if (alertEnd) alertNormal(language.successExport);
 
   return apb.buffer;
 }
@@ -202,7 +196,7 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
     return;
   }
 
-  let module = main.module;
+  const module = main.module;
 
   const maxConcurrentAssetSaves = 10;
   const retryDelayMs = 5000;
@@ -216,9 +210,8 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
   };
 
   const runAssetTasks = async (tasks: AssetTask[]) => {
-    if (tasks.length === 0) {
-      return [];
-    }
+    if (tasks.length === 0) return [];
+
     const inFlight = new Set<Promise<void>>();
     const failed: AssetTask[] = [];
     const runTask = (task: AssetTask) => {
@@ -228,6 +221,7 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
           if (!module.assets?.[task.index]) {
             throw new Error(`Missing asset metadata for index ${task.index}`);
           }
+
           module.assets[task.index][1] = await saveAsset(decoded);
           completed += 1;
         } catch (error) {
@@ -244,6 +238,7 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
       while (inFlight.size >= maxConcurrentAssetSaves) {
         await Promise.race(inFlight);
       }
+
       runTask(task);
     }
 
@@ -255,9 +250,8 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
   let i = 0;
   while (true) {
     const mark = readByte();
-    if (mark === 0) {
-      break;
-    }
+    if (mark === 0) break;
+
     if (mark !== 1) {
       alertError(language.errors.noData);
       return;
@@ -292,10 +286,9 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
 
 export async function importModule() {
   const f = await selectSingleFile(["json", "lorebook", "risum", "charx"]);
-  if (!f) {
-    return;
-  }
-  let fileData = f.data;
+  if (!f) return;
+
+  const fileData = f.data;
   if (f.name.endsWith(".charx")) {
     try {
       const buf = Buffer.from(fileData);
@@ -339,9 +332,7 @@ export async function importModule() {
 
       if (importData.lowLevelAccess) {
         const conf = await alertConfirm(language.lowLevelAccessConfirm);
-        if (!conf) {
-          return false;
-        }
+        if (!conf) return false;
       }
       await moduleStore.installModule(importData);
       return;
@@ -395,15 +386,11 @@ export async function importModule() {
 
 function getModuleById(id: string) {
   const module = moduleStore.getById(id);
-  if (module) {
-    return module;
-  }
+  if (module) return module;
 
   if (id === "$embedded") {
     const persona = checkPersonaBinded();
-    if (persona && persona.embeddedModule) {
-      return persona.embeddedModule;
-    }
+    if (persona && persona.embeddedModule) return persona.embeddedModule;
   }
   return null;
 }
@@ -417,12 +404,11 @@ function getModuleByIds(ids: string[]) {
 }
 
 function deduplicateModuleById(modules: RisuModule[]) {
-  let ids: string[] = [];
-  let newModules: RisuModule[] = [];
+  const ids: string[] = [];
+  const newModules: RisuModule[] = [];
   for (let i = 0; i < modules.length; i++) {
-    if (ids.includes(modules[i].id)) {
-      continue;
-    }
+    if (ids.includes(modules[i].id)) continue;
+
     ids.push(modules[i].id);
     newModules.push(modules[i]);
   }
@@ -439,15 +425,14 @@ function getModulesForCharacter(
     ? personaStore.list.find((item) => item.id === currentChat.bindedPersona)
     : null;
   let ids = moduleStore.enabledModules ?? [];
-  if (currentChat) {
-    ids = ids.concat(currentChat.modules ?? []);
-  }
-  if (character && character.modules) {
-    ids = ids.concat(character.modules);
-  }
+  if (currentChat) ids = ids.concat(currentChat.modules ?? []);
+
+  if (character && character.modules) ids = ids.concat(character.modules);
+
   if (persona && persona.embeddedModule) {
     ids = ids.concat([persona.embeddedModule?.id]);
   }
+
   if (presetStore.state.moduleIntergration) {
     const intList = presetStore.state.moduleIntergration
       .split(",")
@@ -505,9 +490,8 @@ export function getModuleLorebooksWithSource(
   const modules = getModules(character, overrideIds, chat);
   const lorebooks: ModuleLorebookSource[] = [];
   for (const module of modules) {
-    if (!module?.lorebook) {
-      continue;
-    }
+    if (!module?.lorebook) continue;
+
     for (const lorebook of module.lorebook) {
       lorebooks.push({ lorebook, sourceModuleId: module.id });
     }
@@ -533,12 +517,9 @@ export function getModuleAssets(
   const modules = getModules(character, overrideIds, chat);
   let assets: [string, string, string][] = [];
   for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.assets) {
-      assets = assets.concat(module.assets);
-    }
+    if (!module) continue;
+
+    if (module.assets) assets = assets.concat(module.assets);
   }
   return assets;
 }
@@ -551,9 +532,9 @@ function normalizeModuleTrigger(value: unknown): triggerscript | null {
       return null;
     }
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
   return { ...(value as triggerscript) };
 }
 
@@ -565,9 +546,8 @@ export function getModuleTriggers(
   const modules = getModules(character, overrideIds, chat);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
-    if (!module?.trigger) {
-      continue;
-    }
+    if (!module?.trigger) continue;
+
     const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
       ? modules
           .filter(
@@ -589,9 +569,11 @@ export function getModuleTriggers(
         if (settingsStore.state.enableModuleSubModel && module.subModel) {
           trigger.subModel = module.subModel;
         }
+
         if (sandboxOwnerModuleIds.length > 0) {
           trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
         }
+
         return [trigger];
       }),
     );
@@ -625,6 +607,7 @@ export function getModuleTriggers(
       }
     }
   }
+
   return triggers;
 }
 
@@ -636,12 +619,9 @@ export function getModuleRegexScripts(
   const modules = getModules(character, overrideIds, chat);
   let customscripts: customscript[] = [];
   for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.regex) {
-      customscripts = customscripts.concat(module.regex);
-    }
+    if (!module) continue;
+
+    if (module.regex) customscripts = customscripts.concat(module.regex);
   }
   return customscripts;
 }
@@ -653,9 +633,8 @@ export function getModuleToggles(
   const modules = getModules(character, overrideIds);
   let costomModuleToggles: string = "";
   for (const module of modules) {
-    if (!module) {
-      continue;
-    }
+    if (!module) continue;
+
     if (module.customModuleToggle) {
       costomModuleToggles += "\n" + module.customModuleToggle + "\n";
     }
@@ -674,37 +653,28 @@ export function getModuleMcps(
 
 export async function applyModule() {
   const sel = await alertModuleSelect();
-  if (!sel) {
-    return;
-  }
+  if (!sel) return;
 
   const module = safeStructuredClone(getModuleById(sel));
-  if (!module) {
-    return;
-  }
+  if (!module) return;
 
   const currentChar = characterStore.currentCharacter;
-  if (!currentChar) {
-    return;
-  }
-  if (currentChar.type === "group") {
-    return;
-  }
+  if (!currentChar) return;
+
+  if (currentChar.type === "group") return;
 
   currentChar.globalLore ??= [];
   currentChar.customscript ??= [];
   currentChar.triggerscript ??= [];
 
   if (module.lorebook) {
-    for (const lore of module.lorebook) {
-      currentChar.globalLore.push(lore);
-    }
+    for (const lore of module.lorebook) currentChar.globalLore.push(lore);
   }
+
   if (module.regex) {
-    for (const regex of module.regex) {
-      currentChar.customscript.push(regex);
-    }
+    for (const regex of module.regex) currentChar.customscript.push(regex);
   }
+
   if (module.trigger) {
     for (const value of module.trigger) {
       const trigger = normalizeModuleTrigger(value);
@@ -736,13 +706,10 @@ export function moduleUpdate(
   let moduleHideIcon = false;
   let backgroundEmbedding = "";
   m.forEach((module) => {
-    if (!module) {
-      return;
-    }
+    if (!module) return;
 
-    if (module.hideIcon) {
-      moduleHideIcon = true;
-    }
+    if (module.hideIcon) moduleHideIcon = true;
+
     if (module.backgroundEmbedding) {
       backgroundEmbedding += "\n" + module.backgroundEmbedding + "\n";
     }
@@ -755,6 +722,7 @@ export function moduleUpdate(
     if (options.reloadMessages !== false) {
       ReloadGUIPointer.set(get(ReloadGUIPointer) + 1);
     }
+
     lastModuleIds = ids;
   }
 }

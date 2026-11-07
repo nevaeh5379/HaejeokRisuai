@@ -144,6 +144,7 @@ test("executes Stable Horde submit and polling on the server", async () => {
           text: async () => JSON.stringify({ id: "job-123", message: "" }),
         };
       }
+
       pollCount += 1;
       return {
         ok: true,
@@ -205,9 +206,11 @@ test("cancels Stable Horde jobs that become impossible", async () => {
             JSON.stringify({ id: "job-impossible", message: "queue warning" }),
         };
       }
+
       if (options.method === "DELETE") {
         return { ok: true, status: 200, text: async () => "" };
       }
+
       return {
         ok: true,
         status: 200,
@@ -288,6 +291,7 @@ test("cancels Stable Horde jobs when execution is aborted during polling", async
           text: async () => JSON.stringify({ id: "job-abort" }),
         };
       }
+
       return { ok: true, status: 200, text: async () => "" };
     },
   });

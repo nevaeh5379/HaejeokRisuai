@@ -33,6 +33,7 @@ export class FileSystemClient extends MCPClientLike {
       if (!this.directoryHandle) {
         throw new Error("Directory selection was cancelled or failed.");
       }
+
       console.log(
         `FileSystemClient: Selected directory: ${this.directoryHandle.name}`,
       );
@@ -349,9 +350,7 @@ export class FileSystemClient extends MCPClientLike {
     try {
       if (encoding === "base64") {
         return await this.readFileAsBase64(file, 0, maxImageLimit);
-      } else {
-        return await this.readFileAsText(file, 0, maxTextLimit);
-      }
+      } else return await this.readFileAsText(file, 0, maxTextLimit);
     } catch (error) {
       return [
         {
@@ -382,6 +381,7 @@ export class FileSystemClient extends MCPClientLike {
         },
       ];
     }
+
     const result: RPCToolCallContent[] = [];
     for (const image of images) {
       result.push({
@@ -390,6 +390,7 @@ export class FileSystemClient extends MCPClientLike {
         mimeType: "image/jpeg",
       });
     }
+
     return result;
   }
 
@@ -429,8 +430,9 @@ export class FileSystemClient extends MCPClientLike {
   ): Promise<RPCToolCallContent[]> {
     let content: string;
 
-    if (offset === 0 && file.size <= limit) {
-      // Read entire file
+    if (offset === 0 && file.size <= limit)
+    // Read entire file
+    {
       content = await file.text();
     } else {
       // Read partial file
@@ -443,9 +445,7 @@ export class FileSystemClient extends MCPClientLike {
     const wasTruncated = offset + content.length < file.size;
     const info: string[] = [];
 
-    if (offset > 0) {
-      info.push(`Reading from byte ${offset}`);
-    }
+    if (offset > 0) info.push(`Reading from byte ${offset}`);
 
     if (wasTruncated) {
       info.push(
@@ -471,8 +471,9 @@ export class FileSystemClient extends MCPClientLike {
   ): Promise<RPCToolCallContent[]> {
     let arrayBuffer: ArrayBuffer;
 
-    if (offset === 0 && file.size <= limit) {
-      // Read entire file
+    if (offset === 0 && file.size <= limit)
+    // Read entire file
+    {
       arrayBuffer = await file.arrayBuffer();
     } else {
       // Read partial file
@@ -492,9 +493,7 @@ export class FileSystemClient extends MCPClientLike {
       `Size: ${this.formatBytes(file.size)}`,
     ];
 
-    if (offset > 0) {
-      info.push(`Reading from byte ${offset}`);
-    }
+    if (offset > 0) info.push(`Reading from byte ${offset}`);
 
     if (wasTruncated) {
       info.push(
@@ -726,9 +725,7 @@ export class FileSystemClient extends MCPClientLike {
           }
         }
 
-        if (matches || (!pattern && !content)) {
-          results.push(fullPath);
-        }
+        if (matches || (!pattern && !content)) results.push(fullPath);
       } else if (handle.kind === "directory") {
         await this.searchInDirectory(
           handle,
@@ -917,9 +914,8 @@ export class FileSystemClient extends MCPClientLike {
           const arrayBuffer = await fileObj.arrayBuffer();
           const hash = await this.generateHash(arrayBuffer);
 
-          if (!hashMap.has(hash)) {
-            hashMap.set(hash, []);
-          }
+          if (!hashMap.has(hash)) hashMap.set(hash, []);
+
           hashMap.get(hash)!.push(file.path);
         } catch (error) {
           // Skip files that can't be read
@@ -949,9 +945,8 @@ export class FileSystemClient extends MCPClientLike {
       const nameMap = new Map<string, string[]>();
 
       for (const file of files) {
-        if (!nameMap.has(file.name)) {
-          nameMap.set(file.name, []);
-        }
+        if (!nameMap.has(file.name)) nameMap.set(file.name, []);
+
         nameMap.get(file.name)!.push(file.path);
       }
 
@@ -984,9 +979,8 @@ export class FileSystemClient extends MCPClientLike {
     for await (const [name, handle] of dirHandle.entries()) {
       const fullPath = currentPath ? `${currentPath}/${name}` : name;
 
-      if (handle.kind === "file") {
-        files.push({ path: fullPath, name });
-      } else if (handle.kind === "directory") {
+      if (handle.kind === "file") files.push({ path: fullPath, name });
+      else if (handle.kind === "directory") {
         await this.collectFiles(handle, fullPath, files);
       }
     }
@@ -1037,9 +1031,7 @@ export class FileSystemClient extends MCPClientLike {
     if (maxDepth <= 0) return;
 
     const entries: [string, FileSystemHandle][] = [];
-    for await (const entry of dirHandle.entries()) {
-      entries.push(entry);
-    }
+    for await (const entry of dirHandle.entries()) entries.push(entry);
 
     // Filter hidden files if needed
     const filteredEntries = showHidden
@@ -1051,6 +1043,7 @@ export class FileSystemClient extends MCPClientLike {
       if (handleA.kind !== handleB.kind) {
         return handleA.kind === "directory" ? -1 : 1;
       }
+
       return nameA.localeCompare(nameB);
     });
 

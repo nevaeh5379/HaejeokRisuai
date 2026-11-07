@@ -48,6 +48,7 @@ export function createBackupContainerEntryHeader(
       "invalid_size",
     );
   }
+
   const normalizedSize = typeof size === "bigint" ? size : BigInt(size);
   if (
     normalizedSize < 0n ||
@@ -145,6 +146,7 @@ export class BackupContainerParser {
           if (length === 0 || length > this.maxNameBytes) {
             throw new Error("Invalid backup entry name length");
           }
+
           this.nameBuffer = new Uint8Array(length);
           this.nameOffset = 0;
           this.phase = "name";
@@ -152,6 +154,7 @@ export class BackupContainerParser {
           if (length > this.maxEntryBytes) {
             throw new Error("Backup entry exceeds configured size limit");
           }
+
           this.entrySize = length;
           this.entryOffset = 0;
           this.currentEntry = { name: this.entryName, size: length };
@@ -223,9 +226,8 @@ export async function parseBackupContainer(
   options?: BackupContainerParserOptions,
 ): Promise<void> {
   const parser = new BackupContainerParser(handlers, options);
-  for await (const chunk of chunks) {
-    await parser.write(chunk);
-  }
+  for await (const chunk of chunks) await parser.write(chunk);
+
   parser.finish();
 }
 
@@ -282,6 +284,7 @@ export async function parseBufferedBackupContainer(
         if (classification.kind === "invalid") {
           throw new Error(`Invalid backup entry path: ${entry.name}`);
         }
+
         currentClassification = classification;
         currentData =
           classification.kind === "extension"
@@ -315,6 +318,7 @@ export async function parseBufferedBackupContainer(
           if (!data) {
             throw new Error(`Backup entry ${entry.name} has no payload`);
           }
+
           await handlers.onEntry(entry, data, classification);
           entriesHandled += 1;
         } finally {
@@ -341,9 +345,7 @@ export async function parseBufferedBackupContainer(
       await parser.write(chunk);
     }
   } finally {
-    if (!chunksExhausted) {
-      await chunkIterator.return?.();
-    }
+    if (!chunksExhausted) await chunkIterator.return?.();
   }
   parser.finish();
   return { bytesRead, entriesHandled, ignoredExtensionEntries };

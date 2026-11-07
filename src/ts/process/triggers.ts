@@ -106,13 +106,9 @@ async function collectStreamingText(
     const { done, value } = await reader.read();
     if (value) {
       const firstKey = Object.keys(value)[0];
-      if (firstKey) {
-        lastChunk = value[firstKey] ?? lastChunk;
-      }
+      if (firstKey) lastChunk = value[firstKey] ?? lastChunk;
     }
-    if (done) {
-      break;
-    }
+    if (done) break;
   }
 
   return lastChunk;
@@ -134,9 +130,8 @@ export async function runTrigger(
     tempVars?: Record<string, string>;
   },
 ) {
-  if (!char) {
-    return;
-  }
+  if (!char) return;
+
   arg.recursiveCount ??= 0;
   char = arg.displayMode ? char : safeStructuredClone(char);
   let varChanged = false;
@@ -165,9 +160,11 @@ export async function runTrigger(
           v = JSON.parse(v);
         } catch (e) {}
       }
+
       if (v && typeof v === "object") {
         v.lowLevelAccess = CharacterlowLevelAccess;
       }
+
       return v;
     })
     .filter((v) => v && typeof v === "object")
@@ -209,9 +206,7 @@ export async function runTrigger(
     ? arg.chat
     : safeStructuredClone(arg.chat ?? char.chats[char.chatPage]);
 
-  if (!triggers || triggers.length === 0) {
-    return null;
-  }
+  if (!triggers || triggers.length === 0) return null;
 
   const noteSource = NoteSource.get(chat);
   const sharedNote =
@@ -223,42 +218,38 @@ export async function runTrigger(
     try {
       authorNoteContent = sharedNote ? await sharedNote.getContent() : "";
     } catch (error) {
-      if (error instanceof AuthorNoteError && error.code === "missing")
+      if (error instanceof AuthorNoteError && error.code === "missing") {
         authorNoteContent = "";
-      else throw error;
+      } else throw error;
     }
   }
 
-  let tempVars: Record<string, string> = arg.tempVars ?? {};
+  const tempVars: Record<string, string> = arg.tempVars ?? {};
 
   let localVarScopes: Record<number, Record<string, string>>[] = [{}];
   let currentIndent = 0;
 
   function getLocalVar(key: string): string | null {
-    if (!localVarScopes || localVarScopes.length === 0) {
-      return null;
-    }
+    if (!localVarScopes || localVarScopes.length === 0) return null;
+
     const currentScope = localVarScopes[localVarScopes.length - 1];
-    if (!currentScope) {
-      return null;
-    }
+    if (!currentScope) return null;
+
     for (let indent = currentIndent; indent >= 0; indent--) {
       if (currentScope[indent] && currentScope[indent][key] !== undefined) {
         const value = currentScope[indent][key];
         return value;
       }
     }
+
     return null;
   }
 
   function setLocalVar(key: string, value: string, indent: number): boolean {
-    if (!localVarScopes || localVarScopes.length === 0) {
-      localVarScopes = [{}];
-    }
+    if (!localVarScopes || localVarScopes.length === 0) localVarScopes = [{}];
+
     const currentScope = localVarScopes[localVarScopes.length - 1];
-    if (!currentScope) {
-      return false;
-    }
+    if (!currentScope) return false;
 
     const finalValue = value === null || value === undefined ? "null" : value;
 
@@ -272,13 +263,9 @@ export async function runTrigger(
 
     const targetIndent = foundIndent !== -1 ? foundIndent : indent;
 
-    if (!currentScope[targetIndent]) {
-      currentScope[targetIndent] = {};
-    }
+    if (!currentScope[targetIndent]) currentScope[targetIndent] = {};
 
-    if (currentScope[targetIndent][key] === finalValue) {
-      return false;
-    }
+    if (currentScope[targetIndent][key] === finalValue) return false;
 
     currentScope[targetIndent][key] = finalValue;
     return true;
@@ -289,19 +276,16 @@ export async function runTrigger(
   }
 
   function clearLocalVarsAtIndent(indent: number) {
-    if (!localVarScopes || localVarScopes.length === 0) {
-      return;
-    }
+    if (!localVarScopes || localVarScopes.length === 0) return;
+
     const currentScope = localVarScopes[localVarScopes.length - 1];
-    if (!currentScope) {
-      return;
-    }
+    if (!currentScope) return;
+
     const indentsToDelete: string[] = [];
     for (const scopeIndent in currentScope) {
-      if (Number(scopeIndent) >= indent) {
-        indentsToDelete.push(scopeIndent);
-      }
+      if (Number(scopeIndent) >= indent) indentsToDelete.push(scopeIndent);
     }
+
     indentsToDelete.forEach((indentKey) => {
       delete currentScope[indentKey];
     });
@@ -309,21 +293,17 @@ export async function runTrigger(
 
   function getVar(key: string) {
     const localVar = getLocalVar(key);
-    if (localVar !== null) {
-      return localVar;
-    }
+    if (localVar !== null) return localVar;
 
     const state = chat.scriptstate?.["$" + key];
     if (state === undefined || state === null) {
       const findResult = defaultVariables.find((f) => {
         return f[0] === key;
       });
-      if (findResult) {
-        return findResult[1];
-      }
-      if (arg.displayMode) {
-        return tempVars[key] ?? "null";
-      }
+      if (findResult) return findResult[1];
+
+      if (arg.displayMode) return tempVars[key] ?? "null";
+
       return "null";
     }
     return state.toString();
@@ -342,23 +322,18 @@ export async function runTrigger(
 
   function setVar(key: string, value: string): boolean {
     if (arg.displayMode) {
-      if (tempVars[key] === value) {
-        return false;
-      }
+      if (tempVars[key] === value) return false;
+
       tempVars[key] = value;
       return true;
     }
 
     const localVar = getLocalVar(key);
-    if (localVar !== null) {
-      return setLocalVar(key, value, currentIndent);
-    }
+    if (localVar !== null) return setLocalVar(key, value, currentIndent);
 
     chat.scriptstate ??= {};
     const stateKey = "$" + key;
-    if (chat.scriptstate[stateKey] === value) {
-      return false;
-    }
+    if (chat.scriptstate[stateKey] === value) return false;
 
     varChanged = true;
     chat.scriptstate[stateKey] = value;
@@ -366,7 +341,7 @@ export async function runTrigger(
   }
 
   for (const trigger of triggers) {
-    let tempVars: Record<string, number> = {};
+    const tempVars: Record<string, number> = {};
 
     if (
       trigger.effect[0]?.type === "triggercode" ||
@@ -374,12 +349,8 @@ export async function runTrigger(
     ) {
       //
     } else if (arg.manualName) {
-      if (trigger.comment !== arg.manualName) {
-        continue;
-      }
-    } else if (mode !== trigger.type) {
-      continue;
-    }
+      if (trigger.comment !== arg.manualName) continue;
+    } else if (mode !== trigger.type) continue;
 
     let pass = true;
     for (const condition of trigger.conditions) {
@@ -407,45 +378,37 @@ export async function runTrigger(
           varValue = parseTriggerText(varValue, { chara: char });
           switch (condition.operator) {
             case "true": {
-              if (varValue !== "true" && varValue !== "1") {
-                pass = false;
-              }
+              if (varValue !== "true" && varValue !== "1") pass = false;
+
               break;
             }
             case "=":
-              if (varValue !== conditionValue) {
-                pass = false;
-              }
+              if (varValue !== conditionValue) pass = false;
+
               break;
             case "!=":
-              if (varValue === conditionValue) {
-                pass = false;
-              }
+              if (varValue === conditionValue) pass = false;
+
               break;
             case ">":
-              if (Number(varValue) <= Number(conditionValue)) {
-                pass = false;
-              }
+              if (Number(varValue) <= Number(conditionValue)) pass = false;
+
               break;
             case "<":
-              if (Number(varValue) >= Number(conditionValue)) {
-                pass = false;
-              }
+              if (Number(varValue) >= Number(conditionValue)) pass = false;
+
               break;
             case ">=":
-              if (Number(varValue) < Number(conditionValue)) {
-                pass = false;
-              }
+              if (Number(varValue) < Number(conditionValue)) pass = false;
+
               break;
             case "<=":
-              if (Number(varValue) > Number(conditionValue)) {
-                pass = false;
-              }
+              if (Number(varValue) > Number(conditionValue)) pass = false;
+
               break;
             case "null":
-              if (varValue !== "null") {
-                pass = false;
-              }
+              if (varValue !== "null") pass = false;
+
               break;
           }
         }
@@ -454,31 +417,25 @@ export async function runTrigger(
           chara: char,
         });
         const val = parseTriggerText(conditionValue, { chara: char });
-        let da = chat.message
+        const da = chat.message
           .slice(0 - condition.depth)
           .map((v) => v.data)
           .join(" ");
-        if (condition.type2 === "strict") {
-          pass = da.split(" ").includes(val);
-        } else if (condition.type2 === "loose") {
+        if (condition.type2 === "strict") pass = da.split(" ").includes(val);
+        else if (condition.type2 === "loose") {
           pass = da.toLowerCase().includes(val.toLowerCase());
-        } else if (condition.type2 === "regex") {
-          pass = new RegExp(val).test(da);
-        }
+        } else if (condition.type2 === "regex") pass = new RegExp(val).test(da);
       }
-      if (!pass) {
-        break;
-      }
+      if (!pass) break;
     }
-    if (!pass) {
-      continue;
-    }
+    if (!pass) continue;
 
     for (let index = 0; index < trigger.effect.length; index++) {
       const effect = trigger.effect[index];
       if (mode === "display" && !displayAllowList.includes(effect.type)) {
         continue;
       }
+
       if (mode === "request" && !requestAllowList.includes(effect.type)) {
         continue;
       }
@@ -490,18 +447,15 @@ export async function runTrigger(
         effect.indent >= 0
       ) {
         currentIndent = effect.indent;
-      } else if (!effect || !("indent" in effect)) {
-        currentIndent = 0;
-      }
+      } else if (!effect || !("indent" in effect)) currentIndent = 0;
 
       switch (effect.type) {
         case "setvar": {
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const varKey = parseTriggerText(effect.var, { chara: char });
           let originalVar = Number(getVar(varKey));
-          if (Number.isNaN(originalVar)) {
-            originalVar = 0;
-          }
+          if (Number.isNaN(originalVar)) originalVar = 0;
+
           let resultValue = "";
           switch (effect.operator) {
             case "=": {
@@ -540,6 +494,7 @@ export async function runTrigger(
           } else if (effect.role === "char") {
             chat.message.push({ role: "char", data: effectValue });
           }
+
           break;
         }
         case "command": {
@@ -581,21 +536,16 @@ export async function runTrigger(
         case "modifychat": {
           const index = Number(parseTriggerText(effect.index, { chara: char }));
           const value = parseTriggerText(effect.value, { chara: char });
-          if (chat.message[index]) {
-            chat.message[index].data = value;
-          }
+          if (chat.message[index]) chat.message[index].data = value;
+
           break;
         }
 
         // low level access only
         case "showAlert": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
 
-          if (arg.displayMode) {
-            return;
-          }
+          if (arg.displayMode) return;
 
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const inputVar = parseTriggerText(effect.inputVar, { chara: char });
@@ -623,23 +573,22 @@ export async function runTrigger(
         }
 
         case "sendAIprompt": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
+
           sendAIprompt = true;
           break;
         }
 
         case "runLLM": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
+
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const varName = effect.inputVar;
           let promptbody: OpenAIChat[] = parseChatML(effectValue);
           if (!promptbody) {
             promptbody = [{ role: "user", content: effectValue }];
           }
+
           const result = await requestChatData(
             {
               formated: promptbody,
@@ -658,23 +607,21 @@ export async function runTrigger(
             result.type === "multiline"
           ) {
             setVar(varName, "Error: " + result.result);
-          } else {
-            setVar(varName, result.result);
-          }
+          } else setVar(varName, result.result);
 
           break;
         }
 
         case "runAxLLM": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
+
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const varName = effect.inputVar;
           let promptbody: OpenAIChat[] = parseChatML(effectValue);
           if (!promptbody) {
             promptbody = [{ role: "user", content: effectValue }];
           }
+
           const result = await requestChatData(
             {
               formated: promptbody,
@@ -698,17 +645,13 @@ export async function runTrigger(
             result.type === "multiline"
           ) {
             setVar(varName, "Error: " + result.result);
-          } else {
-            setVar(varName, result.result);
-          }
+          } else setVar(varName, result.result);
 
           break;
         }
 
         case "checkSimilarity": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
 
           const processer = new HypaProcesser();
           const effectValue = parseTriggerText(effect.value, { chara: char });
@@ -720,9 +663,7 @@ export async function runTrigger(
         }
 
         case "extractRegex": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
 
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const regex = new RegExp(effect.regex, effect.flags);
@@ -740,9 +681,7 @@ export async function runTrigger(
         }
 
         case "runImgGen": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
 
           const effectValue = parseTriggerText(effect.value, { chara: char });
           const negValue = parseTriggerText(effect.negValue, { chara: char });
@@ -788,9 +727,8 @@ export async function runTrigger(
               sandboxModuleIds: trigger.sandboxModuleIds,
             });
 
-            if (triggerCodeResult.stopSending) {
-              stopSending = true;
-            }
+            if (triggerCodeResult.stopSending) stopSending = true;
+
             chat = triggerCodeResult.chat;
           }
           break;
@@ -808,9 +746,8 @@ export async function runTrigger(
               : getVar(parseTriggerText(effect.value, { chara: char }));
           const varKey = parseTriggerText(effect.var, { chara: char });
           let originalVar = Number(getVar(varKey));
-          if (Number.isNaN(originalVar)) {
-            originalVar = 0;
-          }
+          if (Number.isNaN(originalVar)) originalVar = 0;
+
           let resultValue = "";
           switch (effect.operator) {
             case "=": {
@@ -867,21 +804,21 @@ export async function runTrigger(
           let pass = false;
           switch (effect.condition) {
             case "=": {
-              if (!isNaN(Number(sourceValue)) && !isNaN(Number(targetValue))) {
-                //to check like 1.0 = 1
+              if (!isNaN(Number(sourceValue)) && !isNaN(Number(targetValue)))
+              //to check like 1.0 = 1
+              {
                 pass = Number(sourceValue) === Number(targetValue);
-              } else {
-                pass = sourceValue === targetValue;
-              }
+              } else pass = sourceValue === targetValue;
+
               break;
             }
             case "!=": {
-              if (!isNaN(Number(sourceValue)) && !isNaN(Number(targetValue))) {
-                //to check like 1.0 = 1
+              if (!isNaN(Number(sourceValue)) && !isNaN(Number(targetValue)))
+              //to check like 1.0 = 1
+              {
                 pass = Number(sourceValue) !== Number(targetValue);
-              } else {
-                pass = sourceValue !== targetValue;
-              }
+              } else pass = sourceValue !== targetValue;
+
               break;
             }
             case ">": {
@@ -939,9 +876,8 @@ export async function runTrigger(
                 pass =
                   sourceValue.toLocaleLowerCase().replace(/ /g, "") ===
                   targetValue.toLocaleLowerCase().replace(/ /g, "");
-              } else {
-                pass = Math.abs(num1 - num2) < 0.0001;
-              }
+              } else pass = Math.abs(num1 - num2) < 0.0001;
+
               break;
             }
             case "≡": {
@@ -949,9 +885,7 @@ export async function runTrigger(
                 pass = sourceValue === "true" || sourceValue === "1";
               } else if (targetValue === "false") {
                 pass = !(sourceValue === "true" || sourceValue === "1");
-              } else {
-                pass = sourceValue === targetValue;
-              }
+              } else pass = sourceValue === targetValue;
             }
           }
 
@@ -977,9 +911,7 @@ export async function runTrigger(
           const indent = effect.indent + 1;
           for (; index < trigger.effect.length; index++) {
             const ef = trigger.effect[index] as triggerEffectV2;
-            if (ef.type === "v2EndIndent" && indent === ef.indent) {
-              break;
-            }
+            if (ef.type === "v2EndIndent" && indent === ef.indent) break;
           }
           break;
         }
@@ -994,21 +926,18 @@ export async function runTrigger(
                 indent === ef.indent
               ) {
                 if (ef.type === "v2LoopNTimes") {
-                  let value =
+                  const value =
                     ef.valueType === "value"
                       ? parseTriggerText(ef.value, { chara: char })
                       : getVar(parseTriggerText(ef.value, { chara: char }));
                   let valueNum = Number(value);
-                  if (Number.isNaN(valueNum)) {
-                    valueNum = 0;
-                  }
+                  if (Number.isNaN(valueNum)) valueNum = 0;
+
                   tempVars[index + "LoopNTimes"] =
                     (tempVars[index + "LoopNTimes"] ?? 0) + 1;
                   if (tempVars[index + "LoopNTimes"] >= valueNum) {
                     index = originalIndex;
-                  } else {
-                    break;
-                  }
+                  } else break;
                 }
 
                 break;
@@ -1035,9 +964,7 @@ export async function runTrigger(
         case "v2BreakLoop": {
           for (; index < trigger.effect.length; index++) {
             const ef = trigger.effect[index] as triggerEffectV2;
-            if (ef.type === "v2EndIndent" && ef.endOfLoop) {
-              break;
-            }
+            if (ef.type === "v2EndIndent" && ef.endOfLoop) break;
           }
           break;
         }
@@ -1081,32 +1008,28 @@ export async function runTrigger(
             effect.endType === "value"
               ? Number(parseTriggerText(effect.end, { chara: char }))
               : Number(getVar(parseTriggerText(effect.end, { chara: char })));
-          if (isNaN(start)) {
-            start = 0;
-          }
-          if (isNaN(end)) {
-            end = chat.message.length;
-          }
+          if (isNaN(start)) start = 0;
+
+          if (isNaN(end)) end = chat.message.length;
 
           chat.message = chat.message.slice(start, end);
           break;
         }
         case "v2ModifyChat": {
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          if (chat.message[index]) {
-            chat.message[index].data = value;
-          }
+          if (chat.message[index]) chat.message[index].data = value;
+
           break;
         }
         case "v2SystemPrompt": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1114,7 +1037,7 @@ export async function runTrigger(
           break;
         }
         case "v2Impersonate": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1123,10 +1046,11 @@ export async function runTrigger(
           } else if (effect.role === "char") {
             chat.message.push({ role: "char", data: value });
           }
+
           break;
         }
         case "v2Command": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1134,51 +1058,48 @@ export async function runTrigger(
           break;
         }
         case "v2SendAIprompt": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
+          if (!trigger.lowLevelAccess) break;
+
           sendAIprompt = true;
           break;
         }
         case "v2ImgGen": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
-          let value =
+          if (!trigger.lowLevelAccess) break;
+
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          let negValue =
+          const negValue =
             effect.negValueType === "value"
               ? parseTriggerText(effect.negValue, { chara: char })
               : getVar(parseTriggerText(effect.negValue, { chara: char }));
-          let gen = await generateAIImage(value, char, negValue, "inlay");
+          const gen = await generateAIImage(value, char, negValue, "inlay");
           if (!gen) {
             setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
             break;
           }
-          let imgHTML = new Image();
+          const imgHTML = new Image();
           imgHTML.src = gen;
-          let inlay = await writeInlayImage(imgHTML);
-          let res = `{{inlay::${inlay}}}`;
+          const inlay = await writeInlayImage(imgHTML);
+          const res = `{{inlay::${inlay}}}`;
           setVar(parseTriggerText(effect.outputVar, { chara: char }), res);
           break;
         }
         case "v2CheckSimilarity": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
-          let source =
+          if (!trigger.lowLevelAccess) break;
+
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          let processer = new HypaProcesser();
+          const processer = new HypaProcesser();
           await processer.addText(value.split("§"));
-          let val = await processer.similaritySearch(source);
+          const val = await processer.similaritySearch(source);
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             val.join("§"),
@@ -1186,18 +1107,16 @@ export async function runTrigger(
           break;
         }
         case "v2RunLLM": {
-          if (!trigger.lowLevelAccess) {
-            break;
-          }
-          let value =
+          if (!trigger.lowLevelAccess) break;
+
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
           let promptbody = parseChatML(value);
-          if (!promptbody) {
-            promptbody = [{ role: "user", content: value }];
-          }
-          let result = await requestChatData(
+          if (!promptbody) promptbody = [{ role: "user", content: value }];
+
+          const result = await requestChatData(
             {
               formated: promptbody,
               bias: {},
@@ -1227,13 +1146,13 @@ export async function runTrigger(
               result.result,
             );
           }
+
           break;
         }
         case "v2ShowAlert": {
-          if (arg.displayMode) {
-            return;
-          }
-          let value =
+          if (arg.displayMode) return;
+
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1241,21 +1160,21 @@ export async function runTrigger(
           break;
         }
         case "v2ExtractRegex": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          let regexValue =
+          const regexValue =
             effect.regexType === "value"
               ? parseTriggerText(effect.regex, { chara: char })
               : getVar(parseTriggerText(effect.regex, { chara: char }));
-          let flagsValue =
+          const flagsValue =
             effect.flagsType === "value"
               ? parseTriggerText(effect.flags, { chara: char })
               : getVar(parseTriggerText(effect.flags, { chara: char }));
-          let regex = new RegExp(regexValue, flagsValue);
-          let regexResult = regex.exec(value);
-          let resultValue =
+          const regex = new RegExp(regexValue, flagsValue);
+          const regexResult = regex.exec(value);
+          const resultValue =
             effect.resultType === "value"
               ? parseTriggerText(effect.result, { chara: char })
               : getVar(parseTriggerText(effect.result, { chara: char }));
@@ -1264,7 +1183,7 @@ export async function runTrigger(
           if (regexResult !== null) {
             result = resultValue
               .replace(/\$[0-9]+/g, (match) => {
-                let index = Number(match.slice(1));
+                const index = Number(match.slice(1));
                 return regexResult[index] || "";
               })
               .replace(/\$&/g, regexResult[0] || "")
@@ -1287,7 +1206,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetMessageAtIndex": {
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -1316,9 +1235,7 @@ export async function runTrigger(
               : getVar(parseTriggerText(effect.value, { chara: char }));
 
           const index = char.globalLore.findIndex((v) => v[0] === target);
-          if (index !== -1) {
-            char.globalLore[index][1] = value;
-          }
+          if (index !== -1) char.globalLore[index][1] = value;
 
           persistGlobalLore();
           break;
@@ -1350,9 +1267,8 @@ export async function runTrigger(
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
-          if (Number.isNaN(index)) {
-            index = 0;
-          }
+          if (Number.isNaN(index)) index = 0;
+
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             char.globalLore[index]?.[1] ?? "null",
@@ -1361,11 +1277,11 @@ export async function runTrigger(
         }
         case "v2SetLorebookActivation": {
           char.globalLore = char.globalLore ?? [];
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
-          let value = effect.value;
+          const value = effect.value;
           char.globalLore[index][2] = value;
 
           persistGlobalLore();
@@ -1374,11 +1290,11 @@ export async function runTrigger(
         }
         case "v2GetLorebookIndexViaName": {
           char.globalLore = char.globalLore ?? [];
-          let name =
+          const name =
             effect.nameType === "value"
               ? parseTriggerText(effect.name, { chara: char })
               : getVar(parseTriggerText(effect.name, { chara: char }));
-          let index = char.globalLore.findIndex((v) => v[0] === name);
+          const index = char.globalLore.findIndex((v) => v[0] === name);
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             index.toString(),
@@ -1386,16 +1302,16 @@ export async function runTrigger(
           break;
         }
         case "v2Random": {
-          let min =
+          const min =
             effect.minType === "value"
               ? Number(parseTriggerText(effect.min, { chara: char }))
               : Number(getVar(parseTriggerText(effect.min, { chara: char })));
-          let max =
+          const max =
             effect.maxType === "value"
               ? Number(parseTriggerText(effect.max, { chara: char }))
               : Number(getVar(parseTriggerText(effect.max, { chara: char })));
 
-          let output = Math.floor(Math.random() * (max - min + 1) + min);
+          const output = Math.floor(Math.random() * (max - min + 1) + min);
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             output.toString(),
@@ -1403,11 +1319,11 @@ export async function runTrigger(
           break;
         }
         case "v2GetCharAt": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -1418,7 +1334,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetCharCount": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
@@ -1429,7 +1345,7 @@ export async function runTrigger(
           break;
         }
         case "v2ToLowerCase": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
@@ -1440,7 +1356,7 @@ export async function runTrigger(
           break;
         }
         case "v2ToUpperCase": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
@@ -1451,15 +1367,15 @@ export async function runTrigger(
           break;
         }
         case "v2SetCharAt": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1472,7 +1388,7 @@ export async function runTrigger(
           break;
         }
         case "v2SplitString": {
-          let source =
+          const source =
             effect.sourceType === "value"
               ? parseTriggerText(effect.source, { chara: char })
               : getVar(parseTriggerText(effect.source, { chara: char }));
@@ -1503,9 +1419,7 @@ export async function runTrigger(
             } catch (error) {
               result = [source];
             }
-          } else {
-            result = source.split(delimiter);
-          }
+          } else result = source.split(delimiter);
 
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
@@ -1515,12 +1429,12 @@ export async function runTrigger(
         }
         case "v2JoinArrayVar": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let arr = JSON.parse(varValue);
-            let delimiter =
+            const arr = JSON.parse(varValue);
+            const delimiter =
               effect.delimiterType === "value"
                 ? parseTriggerText(effect.delimiter, { chara: char })
                 : getVar(parseTriggerText(effect.delimiter, { chara: char }));
@@ -1541,7 +1455,7 @@ export async function runTrigger(
           break;
         }
         case "v2SetCharacterDesc": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1582,9 +1496,7 @@ export async function runTrigger(
         }
         case "v2MakeArrayVar": {
           const varName = parseTriggerText(effect.var, { chara: char });
-          if (varName.startsWith("[") && varName.endsWith("]")) {
-            return;
-          }
+          if (varName.startsWith("[") && varName.endsWith("]")) return;
 
           setVar(varName, "[]");
           break;
@@ -1592,8 +1504,8 @@ export async function runTrigger(
         case "v2GetArrayVarLength": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               arr.length.toString(),
@@ -1606,9 +1518,9 @@ export async function runTrigger(
         case "v2GetArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let index =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const index =
               effect.indexType === "value"
                 ? Number(parseTriggerText(effect.index, { chara: char }))
                 : Number(
@@ -1626,9 +1538,9 @@ export async function runTrigger(
         case "v2PushArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let value =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const value =
               effect.valueType === "value"
                 ? parseTriggerText(effect.value, { chara: char })
                 : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1643,8 +1555,8 @@ export async function runTrigger(
         case "v2PopArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               arr.pop() ?? "null",
@@ -1660,8 +1572,8 @@ export async function runTrigger(
         case "v2ShiftArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               arr.shift() ?? "null",
@@ -1677,9 +1589,9 @@ export async function runTrigger(
         case "v2UnshiftArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let value =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const value =
               effect.valueType === "value"
                 ? parseTriggerText(effect.value, { chara: char })
                 : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1694,15 +1606,15 @@ export async function runTrigger(
         case "v2SpliceArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let start =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const start =
               effect.startType === "value"
                 ? Number(parseTriggerText(effect.start, { chara: char }))
                 : Number(
                     getVar(parseTriggerText(effect.start, { chara: char })),
                   );
-            let value =
+            const value =
               effect.itemType === "value"
                 ? parseTriggerText(effect.item, { chara: char })
                 : getVar(parseTriggerText(effect.item, { chara: char }));
@@ -1717,15 +1629,15 @@ export async function runTrigger(
         case "v2SliceArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let start =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const start =
               effect.startType === "value"
                 ? Number(parseTriggerText(effect.start, { chara: char }))
                 : Number(
                     getVar(parseTriggerText(effect.start, { chara: char })),
                   );
-            let end =
+            const end =
               effect.endType === "value"
                 ? Number(parseTriggerText(effect.end, { chara: char }))
                 : Number(getVar(parseTriggerText(effect.end, { chara: char })));
@@ -1742,9 +1654,9 @@ export async function runTrigger(
         case "v2GetIndexOfValueInArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let value =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const value =
               effect.valueType === "value"
                 ? parseTriggerText(effect.value, { chara: char })
                 : getVar(parseTriggerText(effect.value, { chara: char }));
@@ -1760,9 +1672,9 @@ export async function runTrigger(
         case "v2RemoveIndexFromArrayVar": {
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
-            let index =
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
+            const index =
               effect.indexType === "value"
                 ? Number(parseTriggerText(effect.index, { chara: char }))
                 : Number(
@@ -1777,11 +1689,11 @@ export async function runTrigger(
           break;
         }
         case "v2ConcatString": {
-          let source1 =
+          const source1 =
             effect.source1Type === "value"
               ? parseTriggerText(effect.source1, { chara: char })
               : getVar(parseTriggerText(effect.source1, { chara: char }));
-          let source2 =
+          const source2 =
             effect.source2Type === "value"
               ? parseTriggerText(effect.source2, { chara: char })
               : getVar(parseTriggerText(effect.source2, { chara: char }));
@@ -1792,7 +1704,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastUserMessage": {
-          let lastUserMessage = chat.message
+          const lastUserMessage = chat.message
             .slice()
             .reverse()
             .find((v) => v.role === "user");
@@ -1803,7 +1715,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastCharMessage": {
-          let lastCharMessage = chat.message
+          const lastCharMessage = chat.message
             .slice()
             .reverse()
             .find((v) => v.role === "char");
@@ -1823,10 +1735,9 @@ export async function runTrigger(
           break;
         }
         case "v2GetAlertInput": {
-          if (arg.displayMode) {
-            return;
-          }
-          let value = await alertInput(
+          if (arg.displayMode) return;
+
+          const value = await alertInput(
             effect.displayType === "value"
               ? parseTriggerText(effect.display, { chara: char })
               : getVar(parseTriggerText(effect.display, { chara: char })),
@@ -1835,9 +1746,8 @@ export async function runTrigger(
           break;
         }
         case "v2GetAlertSelect": {
-          if (arg.displayMode) {
-            return;
-          }
+          if (arg.displayMode) return;
+
           const display =
             effect.displayType === "value"
               ? parseTriggerText(effect.display, { chara: char })
@@ -1847,7 +1757,7 @@ export async function runTrigger(
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
           const options = value.split("|");
-          let result = await alertSelect(options, display);
+          const result = await alertSelect(options, display);
           setVar(parseTriggerText(effect.outputVar, { chara: char }), result);
           break;
         }
@@ -1860,22 +1770,19 @@ export async function runTrigger(
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
-          if (Number.isNaN(index)) {
-            break;
-          }
+          if (Number.isNaN(index)) break;
+
           try {
             const varName = parseTriggerText(effect.var, { chara: char });
-            let varValue = getVar(varName);
-            let arr = JSON.parse(varValue);
+            const varValue = getVar(varName);
+            const arr = JSON.parse(varValue);
             arr[index] = value;
             setVar(varName, JSON.stringify(arr));
           } catch (error) {}
           break;
         }
         case "v2GetDisplayState": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
 
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
@@ -1884,9 +1791,8 @@ export async function runTrigger(
           break;
         }
         case "v2SetDisplayState": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           arg.displayData =
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
@@ -1905,7 +1811,7 @@ export async function runTrigger(
           break;
         }
         case "v2Wait": {
-          let value =
+          const value =
             effect.valueType === "value"
               ? Number(parseTriggerText(effect.value, { chara: char }))
               : Number(getVar(parseTriggerText(effect.value, { chara: char })));
@@ -1913,9 +1819,8 @@ export async function runTrigger(
           break;
         }
         case "v2GetRequestState": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
@@ -1926,9 +1831,8 @@ export async function runTrigger(
           break;
         }
         case "v2SetRequestState": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
@@ -1943,9 +1847,8 @@ export async function runTrigger(
           break;
         }
         case "v2GetRequestStateRole": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
@@ -1956,9 +1859,8 @@ export async function runTrigger(
           break;
         }
         case "v2SetRequestStateRole": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           const index =
             effect.indexType === "value"
@@ -1971,14 +1873,14 @@ export async function runTrigger(
           if (value === "user" || value === "assistant" || value === "system") {
             json[index].role = value;
           }
+
           arg.displayData = JSON.stringify(json);
           break;
         }
 
         case "v2GetRequestStateLength": {
-          if (!arg.displayMode) {
-            return;
-          }
+          if (!arg.displayMode) return;
+
           const json = JSON.parse(arg.displayData) as OpenAIChat[];
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
@@ -2002,17 +1904,15 @@ export async function runTrigger(
             break;
           }
           let pass = false;
-          let da = chat.message
+          const da = chat.message
             .slice(0 - depth)
             .map((v) => v.data)
             .join(" ");
-          if (condition === "strict") {
-            pass = da.split(" ").includes(value);
-          } else if (condition === "loose") {
+          if (condition === "strict") pass = da.split(" ").includes(value);
+          else if (condition === "loose") {
             pass = da.toLowerCase().includes(value.toLowerCase());
-          } else if (condition === "regex") {
-            pass = new RegExp(value).test(da);
-          }
+          } else if (condition === "regex") pass = new RegExp(value).test(da);
+
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             pass ? "1" : "0",
@@ -2038,6 +1938,7 @@ export async function runTrigger(
               allPrompts.push(lore.content);
             }
           }
+
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             JSON.stringify(allPrompts),
@@ -2070,7 +1971,7 @@ export async function runTrigger(
         }
         case "v2GetLorebookByIndex": {
           char.globalLore = char.globalLore ?? [];
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -2133,7 +2034,7 @@ export async function runTrigger(
         }
         case "v2ModifyLorebookByIndex": {
           char.globalLore = char.globalLore ?? [];
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -2188,7 +2089,7 @@ export async function runTrigger(
         }
         case "v2DeleteLorebookByIndex": {
           char.globalLore = char.globalLore ?? [];
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -2217,7 +2118,7 @@ export async function runTrigger(
         }
         case "v2SetLorebookAlwaysActive": {
           char.globalLore = char.globalLore ?? [];
-          let index =
+          const index =
             effect.indexType === "value"
               ? Number(parseTriggerText(effect.index, { chara: char }))
               : Number(getVar(parseTriggerText(effect.index, { chara: char })));
@@ -2293,21 +2194,19 @@ export async function runTrigger(
           break;
         }
         case "v2MakeDictVar": {
-          if (effect.var.startsWith("{") && effect.var.endsWith("}")) {
-            return;
-          }
+          if (effect.var.startsWith("{") && effect.var.endsWith("}")) return;
 
           setVar(parseTriggerText(effect.var, { chara: char }), "{}");
           break;
         }
         case "v2GetDictVar": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let dict = JSON.parse(varValue);
-            let key =
+            const dict = JSON.parse(varValue);
+            const key =
               effect.keyType === "value"
                 ? parseTriggerText(effect.key, { chara: char })
                 : getVar(parseTriggerText(effect.key, { chara: char }));
@@ -2331,14 +2230,12 @@ export async function runTrigger(
                 ? parseTriggerText(effect.key, { chara: char })
                 : getVar(parseTriggerText(effect.key, { chara: char }));
 
-            if (effect.varType === "value") {
-              break;
-            }
+            if (effect.varType === "value") break;
 
-            let varValue = getVar(
+            const varValue = getVar(
               parseTriggerText(effect.var, { chara: char }),
             );
-            let dict = JSON.parse(varValue);
+            const dict = JSON.parse(varValue);
             dict[key] = value;
             setVar(
               parseTriggerText(effect.var, { chara: char }),
@@ -2354,7 +2251,7 @@ export async function runTrigger(
                 effect.keyType === "value"
                   ? parseTriggerText(effect.key, { chara: char })
                   : getVar(parseTriggerText(effect.key, { chara: char }));
-              let dict = {};
+              const dict = {};
               dict[key] = value;
               setVar(
                 parseTriggerText(effect.var, { chara: char }),
@@ -2366,15 +2263,13 @@ export async function runTrigger(
         }
         case "v2DeleteDictKey": {
           try {
-            if (effect.varType === "value") {
-              break;
-            }
+            if (effect.varType === "value") break;
 
-            let varValue = getVar(
+            const varValue = getVar(
               parseTriggerText(effect.var, { chara: char }),
             );
-            let dict = JSON.parse(varValue);
-            let key =
+            const dict = JSON.parse(varValue);
+            const key =
               effect.keyType === "value"
                 ? parseTriggerText(effect.key, { chara: char })
                 : getVar(parseTriggerText(effect.key, { chara: char }));
@@ -2392,12 +2287,12 @@ export async function runTrigger(
         }
         case "v2HasDictKey": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let dict = JSON.parse(varValue);
-            let key =
+            const dict = JSON.parse(varValue);
+            const key =
               effect.keyType === "value"
                 ? parseTriggerText(effect.key, { chara: char })
                 : getVar(parseTriggerText(effect.key, { chara: char }));
@@ -2411,19 +2306,18 @@ export async function runTrigger(
           break;
         }
         case "v2ClearDict": {
-          if (effect.var.startsWith("{") && effect.var.endsWith("}")) {
-            return;
-          }
+          if (effect.var.startsWith("{") && effect.var.endsWith("}")) return;
+
           setVar(parseTriggerText(effect.var, { chara: char }), "{}");
           break;
         }
         case "v2GetDictSize": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let dict = JSON.parse(varValue);
+            const dict = JSON.parse(varValue);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               Object.keys(dict).length.toString(),
@@ -2435,12 +2329,12 @@ export async function runTrigger(
         }
         case "v2GetDictKeys": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let dict = JSON.parse(varValue);
-            let keys = Object.keys(dict);
+            const dict = JSON.parse(varValue);
+            const keys = Object.keys(dict);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               JSON.stringify(keys),
@@ -2452,12 +2346,12 @@ export async function runTrigger(
         }
         case "v2GetDictValues": {
           try {
-            let varValue =
+            const varValue =
               effect.varType === "value"
                 ? parseTriggerText(effect.var, { chara: char })
                 : getVar(parseTriggerText(effect.var, { chara: char }));
-            let dict = JSON.parse(varValue);
-            let values = Object.values(dict);
+            const dict = JSON.parse(varValue);
+            const values = Object.values(dict);
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               JSON.stringify(values),
@@ -2523,9 +2417,8 @@ export async function runTrigger(
               const targetGroupMatch = resultFormat.match(/^\$(\d+)$/);
               if (targetGroupMatch) {
                 const targetIndex = Number(targetGroupMatch[1]);
-                if (targetIndex === 0) {
-                  return replacement;
-                } else {
+                if (targetIndex === 0) return replacement;
+                else {
                   const targetGroup = groups[targetIndex - 1];
                   if (targetGroup) {
                     return match.replace(targetGroup, replacement);
@@ -2562,12 +2455,15 @@ export async function runTrigger(
   if (additonalSysPrompt.start) {
     caculatedTokens += await tokenize(additonalSysPrompt.start);
   }
+
   if (additonalSysPrompt.historyend) {
     caculatedTokens += await tokenize(additonalSysPrompt.historyend);
   }
+
   if (additonalSysPrompt.promptend) {
     caculatedTokens += await tokenize(additonalSysPrompt.promptend);
   }
+
   if (varChanged) {
     const targetChat = getTargetChat();
     if (targetChat) {

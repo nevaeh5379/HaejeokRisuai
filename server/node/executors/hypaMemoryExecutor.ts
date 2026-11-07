@@ -95,8 +95,10 @@ function queryProviderFingerprint(config?: any): any {
   if (model === "custom") {
     return `custom:${appendEmbeddingsPath(config.customEmbedding?.url || "")}:${config.customEmbedding?.model || ""}:${secretFingerprint(config.customEmbedding?.key || "")}`;
   }
-  if (model === "voyageContext3")
+
+  if (model === "voyageContext3") {
     return `voyageContext3:${secretFingerprint(config.voyageApiKey || "")}`;
+  }
   return `${model}:${secretFingerprint(config.supaMemoryKey || "")}`;
 }
 
@@ -177,6 +179,7 @@ function cleanSessions(): any {
   for (const [id, session] of sessions) {
     if (now - session.lastAccess > SESSION_TTL_MS) sessions.delete(id);
   }
+
   // 💡 What: Replaced array spread and sorting (`[...sessions.entries()].sort()`) with a single pass loop.
   // 🎯 Why: Avoid O(N log N) sorting and array allocation per eviction inside a while loop.
   // 📊 Impact: Lowers complexity of cache eviction to O(N) from O(K * N log N). Reduces GC pressure.
@@ -189,6 +192,7 @@ function cleanSessions(): any {
         oldestId = id;
       }
     }
+
     if (oldestId === undefined) break;
     sessions.delete(oldestId);
   }
@@ -198,12 +202,14 @@ function normalizeMessage(message?: any, index?: any): any {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     throw new TypeError(`chats[${index}] must be an object`);
   }
+
   if (
     !["system", "user", "assistant", "function"].includes(message.role) ||
     typeof message.content !== "string"
   ) {
     throw new TypeError(`chats[${index}] has an invalid role or content`);
   }
+
   return {
     ...message,
     memo: typeof message.memo === "string" ? message.memo : "",
@@ -211,27 +217,33 @@ function normalizeMessage(message?: any, index?: any): any {
 }
 
 function normalizeStartRequest(input?: any): any {
-  if (!input || typeof input !== "object" || Array.isArray(input))
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError("Request body must be an object");
-  if (!["legacy", "v2", "v3"].includes(input.mode))
+  }
+  if (!["legacy", "v2", "v3"].includes(input.mode)) {
     throw new TypeError("mode must be legacy, v2, or v3");
-  if (!Array.isArray(input.chats) || input.chats.length > 4096)
+  }
+  if (!Array.isArray(input.chats) || input.chats.length > 4096) {
     throw new TypeError("chats must be an array of at most 4096 messages");
+  }
   const chats: any = input.chats.map(normalizeMessage);
   for (const key of ["currentTokens", "maxContextTokens"]) {
     if (
       !Number.isFinite(input[key]) ||
       input[key] < 0 ||
       input[key] > 10_000_000
-    )
+    ) {
       throw new TypeError(`${key} is invalid`);
+    }
   }
+
   if (
     !input.config ||
     typeof input.config !== "object" ||
     Array.isArray(input.config)
-  )
+  ) {
     throw new TypeError("config must be an object");
+  }
   const room: any =
     input.room && typeof input.room === "object" ? input.room : {};
   const character: any =
@@ -260,10 +272,11 @@ async function fetchJson(url?: any, options?: any): Promise<any> {
   } catch {
     data = text;
   }
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(
       `Embedding HTTP ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`,
     );
+  }
   return data;
 }
 
@@ -282,8 +295,9 @@ async function embedRegular(texts?: any, config?: any): Promise<any> {
   let apiModel: any;
   let key: any = config.supaMemoryKey || "";
   if (model === "custom") {
-    if (!config.customEmbedding?.url)
+    if (!config.customEmbedding?.url) {
       throw new Error("Custom model requires a Custom Server URL");
+    }
     url = appendEmbeddingsPath(config.customEmbedding.url);
     apiModel = config.customEmbedding.model || undefined;
     key = config.customEmbedding.key || "";
@@ -294,6 +308,7 @@ async function embedRegular(texts?: any, config?: any): Promise<any> {
       openai3large: "text-embedding-3-large",
     }[model];
   }
+
   const headers: any = { "content-type": "application/json" };
   if (key) headers.authorization = `Bearer ${key}`;
   const output: any = [];
@@ -306,8 +321,9 @@ async function embedRegular(texts?: any, config?: any): Promise<any> {
         ...(apiModel ? { model: apiModel } : {}),
       }),
     });
-    if (!Array.isArray(data?.data))
+    if (!Array.isArray(data?.data)) {
       throw new Error("Embedding response has no data array");
+    }
     output.push(...data.data.map((item?: any) => item.embedding));
   }
   return output;
@@ -349,9 +365,8 @@ async function embedQueries(
       pending = { key, text, indexes: [] };
       misses.set(key, pending);
       metric.misses += 1;
-    } else {
-      metric.coalesced += 1;
-    }
+    } else metric.coalesced += 1;
+
     pending.indexes.push(index);
   });
 
@@ -373,23 +388,27 @@ async function embedQueries(
           config,
         );
       }
-      if (vectors.length !== pending.length)
+
+      if (vectors.length !== pending.length) {
         throw new Error(
           "Query embedding response length does not match request",
         );
+      }
       const byKey: any = new Map();
       pending.forEach((item?: any, position?: any) => {
         const vector: any = vectors[position];
-        if (queryCacheEpoch(scope) === epoch)
+        if (queryCacheEpoch(scope) === epoch) {
           putQueryCache(item.key, scope, vector);
+        }
         byKey.set(item.key, vector);
       });
       return byKey;
     })();
 
     const inflightEntry: any = { scope, epoch, promise: batchPromise };
-    for (const item of pending)
+    for (const item of pending) {
       queryEmbeddingInflight.set(item.key, inflightEntry);
+    }
     try {
       const vectorsByKey: any = await batchPromise;
       for (const item of pending) {
@@ -398,8 +417,9 @@ async function embedQueries(
       }
     } finally {
       for (const item of pending) {
-        if (queryEmbeddingInflight.get(item.key) === inflightEntry)
+        if (queryEmbeddingInflight.get(item.key) === inflightEntry) {
           queryEmbeddingInflight.delete(item.key);
+        }
       }
     }
   }
@@ -460,10 +480,12 @@ async function embedVoyageGroups(
         }),
       },
     );
-    if (!Array.isArray(data?.data))
+    if (!Array.isArray(data?.data)) {
       throw new Error("Voyage embedding response has no data array");
-    for (const group of data.data)
+    }
+    for (const group of data.data) {
       output.push(group.data.map((item?: any) => item.embedding));
+    }
   }
   return output;
 }
@@ -489,13 +511,14 @@ async function prepareIndex(
       for (const index of indexes) contextByIndex.set(index, context);
     }
   }
+
   const descriptors: any = documents.map((text?: any, index?: any) => ({
     id: String(index),
     signature: hash(`${text}\0${contextByIndex.get(index) || ""}`),
   }));
   const revision: any = descriptorRevision(descriptors);
   const cached: any = checkVectorIndexRevision(scopedId, revision);
-  let status: any = cached.ready
+  const status: any = cached.ready
     ? cached
     : syncVectorIndex(scopedId, descriptors, revision);
   if (status.missingIds.length > 0) {
@@ -515,12 +538,13 @@ async function prepareIndex(
           )
         )[0];
         indexes.forEach((index?: any, pos?: any) => {
-          if (missing.has(index))
+          if (missing.has(index)) {
             entries.push({
               id: String(index),
               signature: descriptors[index].signature,
               embedding: vectors[pos],
             });
+          }
         });
       }
     } else {
@@ -537,8 +561,9 @@ async function prepareIndex(
         }),
       );
     }
-    for (let offset: any = 0; offset < entries.length; offset += 64)
+    for (let offset: any = 0; offset < entries.length; offset += 64) {
       upsertVectorIndex(scopedId, entries.slice(offset, offset + 64));
+    }
   }
   return scopedId;
 }
@@ -551,8 +576,9 @@ async function rankDocuments(
   config?: any,
   { metric = "dot", topK = null, contextualGroups = null }: any = {},
 ): Promise<any> {
-  if (documents.length === 0 || queries.length === 0)
+  if (documents.length === 0 || queries.length === 0) {
     return queries.map(() => []);
+  }
   const scopedId: any = await prepareIndex(
     scope,
     indexId,
@@ -596,8 +622,9 @@ function parseChatMLRaw(data?: any): any {
         }
       }
       value = value.trim();
-      if (value.endsWith(ender))
+      if (value.endsWith(ender)) {
         value = value.substring(0, value.length - ender.length);
+      }
       const thoughts: any = [];
       value = value.replace(
         /<Thoughts>(.+)<\/Thoughts>/gms,
@@ -637,6 +664,7 @@ function validateCounts(value?: any, expected?: any): any {
   ) {
     throw new TypeError("Tokenizer action returned invalid counts");
   }
+
   return value;
 }
 
@@ -668,6 +696,7 @@ async function* summarizeTextWithClient(
   ) {
     throw new Error(result?.error || "Empty summary returned");
   }
+
   let output: any = result.text.trim();
   output = output
     .replace(/<Thoughts>[\s\S]*?<\/Thoughts>/g, "")
@@ -709,8 +738,9 @@ async function directV2Summary(text?: any, config?: any): Promise<any> {
 async function* summarizeV2(text?: any, config?: any): AsyncGenerator<any> {
   if (config.supaModelType === "distilbart") {
     const result: any = yield { type: "distilbart", text };
-    if (!result || result.ok !== true || typeof result.text !== "string")
+    if (!result || result.ok !== true || typeof result.text !== "string") {
       throw new Error(result?.error || "DistilBART summarization failed");
+    }
     return result.text;
   }
   if (config.supaModelType === "subModel") {
@@ -725,15 +755,17 @@ async function* summarizeV2(text?: any, config?: any): AsyncGenerator<any> {
 async function* summarizeLegacy(text?: any, config?: any): AsyncGenerator<any> {
   if (config.supaModelType === "distilbart") {
     const result: any = yield { type: "distilbart", text };
-    if (!result || result.ok !== true || typeof result.text !== "string")
+    if (!result || result.ok !== true || typeof result.text !== "string") {
       throw new Error(result?.error || "DistilBART summarization failed");
+    }
     return result.text;
   }
   const prompt: any =
     config.supaMemoryPrompt ||
     "[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output to reduce tokens for gpt3 and other sublanguage models]\n";
-  if (config.supaModelType === "subModel")
+  if (config.supaModelType === "subModel") {
     return yield* summarizeTextWithClient(text, prompt);
+  }
   return directV2Summary(text, { ...config, supaMemoryPrompt: prompt });
 }
 
@@ -765,7 +797,7 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
 
   if (currentTokens <= maxContextTokens) return { currentTokens, chats };
 
-  let chatTokenCounts: any = yield* tokenize(chats);
+  const chatTokenCounts: any = yield* tokenize(chats);
   const prefixTokens: any = (count?: any) =>
     chatTokenCounts
       .slice(0, Math.max(0, count))
@@ -804,12 +836,13 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
           error: "hypaMemory: hypaMemory is not valid JSON",
         };
       }
-      if (!Array.isArray(hypaData))
+      if (!Array.isArray(hypaData)) {
         return {
           currentTokens,
           chats,
           error: "hypaMemory: hypaMemory isn't Array",
         };
+      }
       let selected: any = -1;
       for (let index: any = 0; index < hypaData.length; index++) {
         const chatIndex: any = chats.findIndex(
@@ -821,8 +854,9 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
         selected = index;
         break;
       }
-      if (selected === -1)
+      if (selected === -1) {
         return { currentTokens, chats, error: "hypaMemory: chat ID not found" };
+      }
       supaMemory = String(hypaData[selected]?.supa || "");
       hypaChunks = Array.isArray(hypaData[selected]?.hypa)
         ? hypaData[selected].hypa.slice()
@@ -850,8 +884,9 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
         stripHypaPunctuation(supaMemory).includes(
           stripHypaPunctuation(normalized),
         )
-      )
+      ) {
         continue;
+      }
       retrievalTexts.push(normalized);
     }
     if (retrievalTexts.length > 0) {
@@ -899,8 +934,9 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
   while (currentTokens > maxContextTokens) {
     const beforeToken: any = currentTokens;
     let maxChunkSize: any = Math.floor(maxContextTokens / 3);
-    if (Number(config.maxSupaChunkSize || 0) < maxChunkSize)
+    if (Number(config.maxSupaChunkSize || 0) < maxChunkSize) {
       maxChunkSize = Number(config.maxSupaChunkSize || 0);
+    }
     let summarized: any = false;
     let chunkSize: any = 0;
     let stringlizedChat: any = "";
@@ -914,12 +950,13 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
         chunkSize = 0;
         spiceLen = 0;
         if (summarized) {
-          if (maxChunkSize < 500)
+          if (maxChunkSize < 500) {
             return {
               currentTokens,
               chats,
               error: "Not Enough Tokens to summarize in SupaMemory",
             };
+          }
           maxChunkSize *= 0.7;
         } else {
           let result: any;
@@ -1011,15 +1048,14 @@ async function* runLegacy(request?: any, context?: any): AsyncGenerator<any> {
   }
 
   chats.unshift({ role: "system", content: supaMemory, memo: "supaMemory" });
-  if (hypaResult !== "")
+  if (hypaResult !== "") {
     chats.unshift({ role: "system", content: hypaResult, memo: "hypaMemory" });
+  }
 
   if (hypaData[0] && hypaData[0].id === lastId) {
     hypaData[0].hypa = hypaChunks;
     hypaData[0].supa = supaMemory;
-  } else {
-    hypaData.unshift({ id: lastId, hypa: hypaChunks, supa: supaMemory });
-  }
+  } else hypaData.unshift({ id: lastId, hypa: hypaChunks, supa: supaMemory });
 
   return {
     currentTokens,
@@ -1058,8 +1094,9 @@ function normalizeV2Data(raw?: any, chats?: any): any {
       });
       for (const chunk of oldChunks.filter(
         (chunk?: any) => chunk.targetId === old.targetId,
-      ))
+      )) {
         data.chunks.push({ mainChunkID: id, text: chunk.text });
+      }
       previousTarget = old.targetId;
     }
     return data;
@@ -1157,17 +1194,19 @@ async function* runV2(request?: any, context?: any): AsyncGenerator<any> {
       for (const text of summary
         .split("\n\n")
         .map((value?: any) => value.trim())
-        .filter(Boolean))
+        .filter(Boolean)) {
         data.chunks.push({ mainChunkID: id, text });
+      }
       currentTokens -= batchTokens;
     } catch (error: any) {
-      if (++failures >= 3)
+      if (++failures >= 3) {
         return {
           currentTokens,
           chats,
           error:
             "[HypaV2] Summarization failed multiple times. Aborting to prevent infinite loop.",
         };
+      }
     }
   }
   const mainCandidates: any = data.mainChunks.map((chunk?: any) => ({
@@ -1220,8 +1259,12 @@ async function* runV2(request?: any, context?: any): AsyncGenerator<any> {
   let details: any = "";
   let detailTokens: any = 0;
   for (let i: any = 0; i < candidateTexts.length; i++) {
-    if (candidateCounts[i] > allocatedTokens - mainPromptTokens - detailTokens)
+    if (
+      candidateCounts[i] >
+      allocatedTokens - mainPromptTokens - detailTokens
+    ) {
       break;
+    }
     details += candidateTexts[i] + "\n\n";
     detailTokens += candidateCounts[i];
   }
@@ -1233,9 +1276,11 @@ async function* runV2(request?: any, context?: any): AsyncGenerator<any> {
     { role: "system", content: fullResult, memo: "supaMemory" },
     ...chats.slice(idx),
   ];
-  for (const chat of lastTwoChats)
-    if (!resultChats.some((item?: any) => item.memo === chat.memo))
+  for (const chat of lastTwoChats) {
+    if (!resultChats.some((item?: any) => item.memo === chat.memo)) {
       resultChats.push(chat);
+    }
+  }
   currentTokens -= allocatedTokens;
   return { currentTokens, chats: resultChats, memory: data };
 }
@@ -1416,6 +1461,7 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
         "[HypaV3] The sum of Recent Memory Ratio and Similar Memory Ratio is greater than 1.",
     };
   }
+
   const data: any = normalizeV3Data(request.room.hypaV3Data);
   if (!settings.preserveOrphanedMemory) {
     const memos: any = new Set(chats.map((chat?: any) => chat.memo));
@@ -1499,15 +1545,17 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
           chat.memo !== "NewChat" &&
           chat.content.trim() &&
           !(settings.doNotSummarizeUserMessage && chat.role === "user")
-        )
+        ) {
           batch.push(chat);
+        }
         index++;
       }
       if (
         currentTokens <= maxContextTokens &&
         currentTokens - tokens < targetTokens
-      )
+      ) {
         break;
+      }
       if (batch.length) batches.push(batch);
       currentTokens -= tokens;
       startIdx = index;
@@ -1558,14 +1606,16 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
           chat.memo !== "NewChat" &&
           chat.content.trim() &&
           !(settings.doNotSummarizeUserMessage && chat.role === "user")
-        )
+        ) {
           batch.push(chat);
+        }
       }
       if (
         currentTokens <= maxContextTokens &&
         currentTokens - tokens < targetTokens
-      )
+      ) {
         break;
+      }
       if (batch.length) {
         try {
           const text: any = yield* summarizeV3(batch, settings);
@@ -1584,10 +1634,12 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
           };
         }
       }
+
       currentTokens -= tokens;
       startIdx = end;
     }
   }
+
   if (!data.summaries.length) {
     const resultChats: any = experimental
       ? chats.slice(startIdx)
@@ -1612,7 +1664,7 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
   const important: any = data.summaries.filter(
     (summary?: any) => summary.isImportant,
   );
-  let importantUsed: any = addWithinBudget(
+  const importantUsed: any = addWithinBudget(
     important,
     tokenMap,
     availableMemoryTokens,
@@ -1622,7 +1674,7 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
   const recentRatio: any = Number(settings.recentMemoryRatio || 0);
   const similarRatio: any = Number(settings.similarMemoryRatio || 0);
   const randomRatio: any = 1 - recentRatio - similarRatio;
-  let reservedRecent: any = Math.floor(availableMemoryTokens * recentRatio);
+  const reservedRecent: any = Math.floor(availableMemoryTokens * recentRatio);
   let usedRecent: any = 0;
   const recentSelected: any = [];
   if (recentRatio > 0) {
@@ -1678,6 +1730,7 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
             };
           }
         }
+
         const lists: any = await rankDocuments(
           context.scope,
           `hypav3:${request.character.id || ""}:${request.room.id || ""}`,
@@ -1732,10 +1785,11 @@ async function* runV3(request?: any, context?: any): AsyncGenerator<any> {
   if (reserveKind === "full") currentTokens -= memoryTokens;
   else if (reserveKind === "empty") currentTokens -= emptyTokens;
   currentTokens += realMemoryTokens;
-  if (currentTokens > maxContextTokens)
+  if (currentTokens > maxContextTokens) {
     throw new Error(
       `Unexpected error: input token count (${currentTokens}) exceeds max context size (${maxContextTokens})`,
     );
+  }
   data.metrics = {
     lastImportantSummaries: important
       .filter((summary?: any) => selected.includes(summary))
@@ -1821,8 +1875,9 @@ function createHypaMemoryExecutor(): any {
       error.code = "hypa_session_missing";
       throw error;
     }
-    if (!actionId || actionId !== session.actionId)
+    if (!actionId || actionId !== session.actionId) {
       throw new TypeError("Hypa memory action id does not match");
+    }
     session.actionId = null;
     try {
       return await advanceSession(sessionId, session, value, false);
@@ -1847,8 +1902,9 @@ function createHypaMemoryExecutor(): any {
         try {
           res.send(await start(req.body, { scope: await getScope(req) }));
         } catch (error: any) {
-          if (error instanceof TypeError || error instanceof RangeError)
+          if (error instanceof TypeError || error instanceof RangeError) {
             return res.status(400).send({ error: error.message });
+          }
           next(error);
         }
       },
@@ -1868,12 +1924,14 @@ function createHypaMemoryExecutor(): any {
             ),
           );
         } catch (error: any) {
-          if (error?.code === "hypa_session_missing")
+          if (error?.code === "hypa_session_missing") {
             return res
               .status(404)
               .send({ error: error.message, code: error.code });
-          if (error instanceof TypeError || error instanceof RangeError)
+          }
+          if (error instanceof TypeError || error instanceof RangeError) {
             return res.status(400).send({ error: error.message });
+          }
           next(error);
         }
       },

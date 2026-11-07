@@ -141,6 +141,7 @@ function oracleStorage(rows: StoredRow[]) {
             `NJS-098: ${placeholders.length} bind placeholders were used in the SQL statement but ${binds.length} bind values were provided`,
           );
         }
+
         const values = Array.isArray(binds)
           ? binds
           : placeholders.map((name) => binds[name]);
@@ -301,9 +302,7 @@ describe.each(["postgres", "azure", "oracle"] as const)(
       // store NUL bytes. The payload must therefore be free of raw \u0000
       // escapes (wrapped losslessly instead) before it reaches the cast.
       for (const row of rows) {
-        if (row.restoreId === id) {
-          expect(row.payload).not.toContain("\\u0000");
-        }
+        if (row.restoreId === id) expect(row.payload).not.toContain("\\u0000");
       }
 
       const dynamicStorage = storage as unknown as {

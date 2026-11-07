@@ -69,6 +69,7 @@ export class AIAccessClient extends MCPClientLike {
           },
         ];
       }
+
       const r = await requestChatData(
         {
           formated: messages.map((msg: any) => ({

@@ -59,24 +59,19 @@ export async function checkDriver(
     return authorizationUrl;
   }
 
-  if (type === "save" || type === "load") {
-    location.href = authorizationUrl;
-  } else {
+  if (type === "save" || type === "load") location.href = authorizationUrl;
+  else {
     try {
-      if (isTauri) {
-        openURL(authorizationUrl);
-      } else {
-        window.open(authorizationUrl);
-      }
+      if (isTauri) openURL(authorizationUrl);
+      else window.open(authorizationUrl);
+
       let code = await alertInput(language.pasteAuthCode);
       if (code.includes(" ")) {
         code = code.substring(code.lastIndexOf(" ")).trim();
       }
-      if (type === "loadtauri") {
-        await loadDrive(code, "backup");
-      } else {
-        await backupDrive(code);
-      }
+
+      if (type === "loadtauri") await loadDrive(code, "backup");
+      else await backupDrive(code);
     } catch (error) {
       console.error(error);
       alertError(`Backup Error: ${error}`);
@@ -99,11 +94,9 @@ export async function checkDriverInit() {
           expires_in: number;
         } = await res.json();
         const da = loc.get("state");
-        if (da === "save") {
-          await backupDrive(json.access_token);
-        } else if (da === "load") {
-          await loadDrive(json.access_token, "backup");
-        } else if (da === "savetauri" || da === "loadtauri") {
+        if (da === "save") await backupDrive(json.access_token);
+        else if (da === "load") await loadDrive(json.access_token, "backup");
+        else if (da === "savetauri" || da === "loadtauri") {
           alertStore.set({
             type: "wait2",
             msg: `Copy and paste this Auth Code: ${json.access_token}`,
@@ -114,14 +107,11 @@ export async function checkDriverInit() {
             msg: JSON.stringify(json),
           });
         }
-      } else {
-        alertError(await res.text());
-        // location.search = ''
-      }
+      } else alertError(await res.text());
+      // location.search = ''
+
       return true;
-    } else {
-      return false;
-    }
+    } else return false;
   } catch (error) {
     console.error(error);
     alertError(`Backup Error: ${error}`);
@@ -170,7 +160,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
     const assets = await readDir("assets", { baseDir: BaseDirectory.AppData });
     const totalAssets = assets.length;
     let i = 0;
-    for (let asset of assets) {
+    for (const asset of assets) {
       i += 1;
       const percent = totalAssets > 0 ? (i / totalAssets) * 80 : 80;
       alertProgress(
@@ -178,9 +168,8 @@ async function backupDrive(ACCESS_TOKEN: string) {
         percent,
       );
       const key = asset.name;
-      if (!key || !key.endsWith(".png")) {
-        continue;
-      }
+      if (!key || !key.endsWith(".png")) continue;
+
       const formatedKey = newFormatKeys(key);
       if (!fileNames.includes(formatedKey)) {
         await createFileInFolder(
@@ -203,9 +192,8 @@ async function backupDrive(ACCESS_TOKEN: string) {
         percent,
       );
       const key = keys[i];
-      if (!key.endsWith(".png")) {
-        continue;
-      }
+      if (!key.endsWith(".png")) continue;
+
       const formatedKey = newFormatKeys(key);
       if (!fileNames.includes(formatedKey)) {
         await createFileInFolder(
@@ -225,9 +213,8 @@ async function backupDrive(ACCESS_TOKEN: string) {
       `Uploading Cold Storage... (${i + 1} / ${totalCold})`,
       percent,
     );
-    if (fileNames.includes(payload.backupName)) {
-      continue;
-    }
+    if (fileNames.includes(payload.backupName)) continue;
+
     await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded);
   }
 
@@ -274,15 +261,15 @@ async function loadDrive(
       msg: "Loading Backup...",
     });
   }
+
   const files: DriveFile[] = await getFilesInFolder(ACCESS_TOKEN);
   let foragekeys: string[] = [];
   let loadedForageKeys = false;
-  let db = settingsStore.state;
+  const db = settingsStore.state;
 
   async function checkImageExists(images: string) {
-    if (db?.account?.useSync) {
-      return false;
-    }
+    if (db?.account?.useSync) return false;
+
     if (isTauri) {
       return await exists(`assets/` + images, {
         baseDir: BaseDirectory.AppData,
@@ -299,20 +286,18 @@ async function loadDrive(
     return d.name;
   });
 
-  let dbs: [DriveFile, number][] = [];
+  const dbs: [DriveFile, number][] = [];
   let noSyncData = true;
 
   if (mode === "backup") {
     for (const f of files) {
       if (f.name.endsWith("-database.risudat")) {
         const tm = parseInt(f.name.split("-")[0]);
-        if (isNaN(tm)) {
-          continue;
-        } else {
-          dbs.push([f, tm]);
-        }
+        if (isNaN(tm)) continue;
+        else dbs.push([f, tm]);
       }
     }
+
     dbs.sort((a, b) => {
       return b[1] - a[1];
     });
@@ -320,24 +305,21 @@ async function loadDrive(
     for (const f of files) {
       if (f.name.endsWith("-database.risudat2")) {
         const tm = parseInt(f.name.split("-")[0]);
-        if (isNaN(tm)) {
-          continue;
-        } else {
-          if (tm > lastSaved) {
-            dbs.push([f, tm]);
-          }
+        if (isNaN(tm)) continue;
+        else {
+          if (tm > lastSaved) dbs.push([f, tm]);
+
           noSyncData = false;
         }
       }
     }
+
     dbs.sort((a, b) => {
       return b[1] - a[1];
     });
   }
 
-  if (noSyncData && mode === "sync") {
-    return "noSync";
-  }
+  if (noSyncData && mode === "sync") return "noSync";
 
   if (dbs.length !== 0) {
     if (mode === "sync") {
@@ -346,15 +328,14 @@ async function loadDrive(
         msg: "Sync Data...",
       });
     }
+
     async function getDbFromList() {
-      let selectables: string[] = [];
+      const selectables: string[] = [];
       for (let i = 0; i < dbs.length; i++) {
         selectables.push(
           `Backup saved in ${new Date(dbs[i][1] * 1000).toLocaleString()}`,
         );
-        if (selectables.length > 7) {
-          break;
-        }
+        if (selectables.length > 7) break;
       }
       const selectedIndex =
         (await alertSelect([language.loadLatest, language.loadOthers])) === "0"
@@ -400,7 +381,7 @@ async function loadDrive(
     }
     const requiredImages = await getUncleanables(db);
     let ind = 0;
-    let errorLogs: string[] = [];
+    const errorLogs: string[] = [];
     for (const images of requiredImages) {
       ind += 1;
       for (let tries = 0; tries < 3; tries++) {
@@ -417,31 +398,29 @@ async function loadDrive(
             msg: `Loading Backup... (${ind} / ${requiredImages.length})`,
           });
         }
+
         if (await checkImageExists(images)) {
           //skip process
-        } else {
-          if (formatedImage.length >= 7) {
-            if (fileNames.includes(formatedImage)) {
-              for (const file of files) {
-                if (file.name === formatedImage) {
-                  const fData = await getFileData(ACCESS_TOKEN, file.id);
-                  if (isTauri) {
-                    await writeFile(`assets/` + images, fData, {
-                      baseDir: BaseDirectory.AppData,
-                    });
-                  } else {
-                    await forageStorage.setItem("assets/" + images, fData);
-                  }
-                  tries = 3;
-                }
+        } else if (formatedImage.length >= 7) {
+          if (fileNames.includes(formatedImage)) {
+            for (const file of files) {
+              if (file.name === formatedImage) {
+                const fData = await getFileData(ACCESS_TOKEN, file.id);
+                if (isTauri) {
+                  await writeFile(`assets/` + images, fData, {
+                    baseDir: BaseDirectory.AppData,
+                  });
+                } else await forageStorage.setItem("assets/" + images, fData);
+
+                tries = 3;
               }
-            } else {
-              alertStore.set({
-                type: "wait",
-                msg: `Loading Backup... (${ind} / ${requiredImages.length}) (Error in ${formatedImage})`,
-              });
-              await sleep(1000);
             }
+          } else {
+            alertStore.set({
+              type: "wait",
+              msg: `Loading Backup... (${ind} / ${requiredImages.length}) (Error in ${formatedImage})`,
+            });
+            await sleep(1000);
           }
         }
       }
@@ -467,9 +446,7 @@ async function loadDrive(
       });
       location.reload();
     }
-  } else if (mode === "backup") {
-    location.search = "";
-  }
+  } else if (mode === "backup") location.search = "";
 }
 
 async function restoreColdStorageFromDrive(
@@ -502,9 +479,7 @@ async function restoreColdStorageFromDrive(
         new TextDecoder().decode(await getFileData(ACCESS_TOKEN, file.id)),
       );
       if (isColdStorageBackupData(jsonData)) {
-        if (!(await setColdStorageItem(key, jsonData))) {
-          failures.push(key);
-        }
+        if (!(await setColdStorageItem(key, jsonData))) failures.push(key);
       } else {
         console.warn(`Skipping invalid cold storage Drive item ${file.name}`);
         failures.push(key);
@@ -529,7 +504,7 @@ function formatKeys(name: string) {
 }
 
 function newFormatKeys(name: string) {
-  let n = getBasename(name);
+  const n = getBasename(name);
   const bf = Buffer.from(n).toString("hex");
   return n + ".bin";
 }
@@ -560,10 +535,9 @@ async function getFilesInFolder(
         ),
       );
     }
+
     return data.files as DriveFile[];
-  } else {
-    throw `Error: ${response.status}`;
-  }
+  } else throw `Error: ${response.status}`;
 }
 
 async function createFileInFolder(
@@ -598,9 +572,8 @@ async function createFileInFolder(
 
   const result = await response.json();
 
-  if (response.ok) {
-    return result;
-  } else {
+  if (response.ok) return result;
+  else {
     console.error("Error creating file:", result);
     throw new Error(result.error.message);
   }
@@ -628,7 +601,5 @@ async function getFileData(ACCESS_TOKEN: string, fileId: string) {
   if (response.ok) {
     const data = new Uint8Array(await response.arrayBuffer());
     return data;
-  } else {
-    throw "Error in response when reading files in folder";
-  }
+  } else throw "Error in response when reading files in folder";
 }

@@ -1,11 +1,7 @@
 import { get } from "svelte/store";
 import type { AndroidNativeEntry } from "./androidNativeIntegration";
 import { queueAndroidComposerPrefill } from "./androidNativeEntryState";
-import {
-  loadedStore,
-  MobileSideBar,
-  settingsOpen,
-} from "../stores.svelte";
+import { loadedStore, MobileSideBar, settingsOpen } from "../stores.svelte";
 import { characterStore } from "../stores/domain";
 import { changeChar } from "../characters";
 import { findChatTarget } from "../chatTabs.svelte";
@@ -29,6 +25,7 @@ function resolveTarget(entry: AndroidNativeEntry): {
   if (entry.characterId) {
     return { characterId: entry.characterId, chatId: entry.chatId };
   }
+
   if (!entry.chatId) return {};
   const target = findChatTarget(entry.chatId);
   return target
@@ -82,9 +79,8 @@ export async function routeAndroidNativeEntry(
   }
 
   if (entry.type === "share-text" || entry.type === "process-text") {
-    if (target.characterId) {
-      await openTarget(target.characterId, target.chatId);
-    }
+    if (target.characterId) await openTarget(target.characterId, target.chatId);
+
     queueSharedText(entry, target.characterId, target.chatId);
   }
 }

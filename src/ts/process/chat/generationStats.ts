@@ -132,6 +132,7 @@ export function getChatGenerationStats(
     ) {
       continue;
     }
+
     if (!match || current.startedAt > match.startedAt) match = current;
   }
   return match;

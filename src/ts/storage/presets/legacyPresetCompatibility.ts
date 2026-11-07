@@ -7,8 +7,9 @@ const legacyPresetKeys = {
 
 export function readLegacyPresetFields(root: Record<string, unknown>): void {
   for (const [legacy, current] of Object.entries(legacyPresetKeys)) {
-    if (root[current] == null && root[legacy] != null)
+    if (root[current] == null && root[legacy] != null) {
       root[current] = root[legacy];
+    }
     delete root[legacy];
   }
 }
@@ -25,5 +26,6 @@ export function writeLegacyPresetFields(
       delete result[current];
     }
   }
+
   return result;
 }

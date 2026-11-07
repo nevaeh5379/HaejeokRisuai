@@ -203,9 +203,8 @@ async function collectStream(stream: ReadableStream<Record<string, string>>) {
   const chunks: Record<string, string>[] = [];
   while (true) {
     const { done, value } = await reader.read();
-    if (done) {
-      return chunks;
-    }
+    if (done) return chunks;
+
     chunks.push(value);
   }
 }
@@ -214,9 +213,8 @@ function sseStream(events: string[]) {
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const event of events) {
-        controller.enqueue(encoder.encode(event));
-      }
+      for (const event of events) controller.enqueue(encoder.encode(event));
+
       controller.close();
     },
   });

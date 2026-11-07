@@ -28,6 +28,7 @@ function snapshotId(value?: any): any {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
     throw new StorageSyncRecoveryError("Invalid recovery snapshot id");
   }
+
   return id;
 }
 
@@ -49,6 +50,7 @@ async function copyOpenedAsset(opened?: any, destination?: any): Promise<any> {
       "Asset storage returned no readable body",
     );
   }
+
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
   const temporary: any = `${destination}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
@@ -64,6 +66,7 @@ async function copyOpenedAsset(opened?: any, destination?: any): Promise<any> {
         "recovery_asset_changed",
       );
     }
+
     await fs.promises.rename(temporary, destination);
     return { size, sha256: hash.digest("hex") };
   } catch (error: any) {
@@ -124,6 +127,7 @@ class StorageSyncRecoveryStore {
     if (!/^[0-9a-f]{64}$/.test(assetId)) {
       throw new StorageSyncRecoveryError("Invalid recovery asset id");
     }
+
     return path.join(this.snapshotDirectory(id), "assets", `${assetId}.bin`);
   }
 
@@ -134,6 +138,7 @@ class StorageSyncRecoveryStore {
         "Recovery snapshot metadata is invalid",
       );
     }
+
     return raw;
   }
 
@@ -217,6 +222,7 @@ class StorageSyncRecoveryStore {
         "recovery_asset_read_unsupported",
       );
     }
+
     let cursor: any = 0;
     const recovered: any = new Array(assets.length);
     const workers: any = Array.from(
@@ -275,6 +281,7 @@ class StorageSyncRecoveryStore {
     if (metadata.state !== "prepared") {
       throw new StorageSyncRecoveryError("Recovery snapshot is not prepared");
     }
+
     metadata.database = {
       storageRevision: Number(recoveryPoint.storageRevision),
       revisionId:
@@ -291,6 +298,7 @@ class StorageSyncRecoveryStore {
     if (metadata.state !== "prepared") {
       throw new StorageSyncRecoveryError("Recovery snapshot is not prepared");
     }
+
     let previousId: any = null;
     try {
       previousId = this.getCurrent()?.id || null;
@@ -309,6 +317,7 @@ class StorageSyncRecoveryStore {
         force: true,
       });
     }
+
     return metadata;
   }
 
@@ -329,6 +338,7 @@ class StorageSyncRecoveryStore {
         "Recovery snapshot metadata is invalid",
       );
     }
+
     let cursor: any = 0;
     const assets: any = metadata.assets || [];
     const workers: any = Array.from(

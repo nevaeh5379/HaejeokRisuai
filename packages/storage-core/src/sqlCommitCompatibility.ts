@@ -33,6 +33,7 @@ export function mergeLegacyModulesIntoCommit<TPreset extends object>(
     ) {
       return [];
     }
+
     const data = module as { id: string } & Record<string, unknown>;
     if (deleted.has(data.id) || changed.has(data.id)) return [];
     return [{ id: data.id, position: positions.get(data.id) ?? 0, data }];

@@ -82,9 +82,7 @@ export { hubURL };
 export async function importCharacter() {
   try {
     const files = await selectFileByDom(["*"], "multiple");
-    if (!files) {
-      return;
-    }
+    if (!files) return;
 
     for (const f of files) {
       await importCharacterProcess({
@@ -106,9 +104,8 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
   returnCharacter?: T; //note That this option only works with v3 charx
 }): Promise<T extends true ? character | number | null : number | null> {
   if (f.name.endsWith("json")) {
-    if (f.data instanceof ReadableStream) {
-      return null;
-    }
+    if (f.data instanceof ReadableStream) return null;
+
     const data =
       f.data instanceof Uint8Array
         ? f.data
@@ -117,6 +114,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
     if (await importCharacterCardSpec(da)) {
       return (characterStore.characters.length - 1) as any;
     }
+
     if (
       (da.char_name || da.name) &&
       (da.char_persona || da.description) &&
@@ -130,7 +128,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       return;
     }
   }
-  let db = settingsStore.state;
+  const db = settingsStore.state;
   db.statics.imports += 1;
 
   if (
@@ -164,12 +162,10 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       card.data.extensions.risuai ??= {};
       card.data.extensions.risuai.triggerscript = md.trigger ?? [];
       card.data.extensions.risuai.customScripts = md.regex ?? [];
-      if (md.lorebook) {
-        lorebook = md.lorebook;
-      }
+      if (md.lorebook) lorebook = md.lorebook;
     }
     await importer.done();
-    let v = await importCharacterCardSpec(
+    const v = await importCharacterCardSpec(
       card,
       undefined,
       "normal",
@@ -177,9 +173,8 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       lorebook,
       f.returnCharacter,
     );
-    if (f.returnCharacter) {
-      return v as any;
-    }
+    if (f.returnCharacter) return v as any;
+
     return characterStore.characters.length - 1;
   }
 
@@ -207,19 +202,14 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       const tee = f.data.tee();
       f.data = tee[0];
       readData = tee[1];
-    } else {
-      readData = f.data;
-    }
+    } else readData = f.data;
 
     const prereader = PngChunk.readGenerator(readData, {});
 
     for await (const chunk of prereader) {
-      if (chunk instanceof AppendableBuffer) {
-        break;
-      }
-      if (chunk.key.startsWith("chara-ext-asset_")) {
-        pngChunks++;
-      }
+      if (chunk instanceof AppendableBuffer) break;
+
+      if (chunk.key.startsWith("chara-ext-asset_")) pngChunks++;
     }
   }
 
@@ -231,24 +221,21 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
   let queueFetchKey: string[] = [];
   let queueFetchData: Buffer[] = [];
   for await (const chunk of readGenerator) {
-    if (!chunk) {
-      continue;
-    }
+    if (!chunk) continue;
+
     if (chunk instanceof AppendableBuffer) {
       img = chunk.buffer;
       break;
     }
     if (chunk.key === "chara") {
       //For memory reason, limit to 5MB
-      if (readedChara.length < 5 * 1024 * 1024) {
-        readedChara = chunk.value;
-      }
+      if (readedChara.length < 5 * 1024 * 1024) readedChara = chunk.value;
+
       continue;
     }
     if (chunk.key === "ccv3") {
-      if (readedCCv3.length < 5 * 1024 * 1024) {
-        readedCCv3 = chunk.value;
-      }
+      if (readedCCv3.length < 5 * 1024 * 1024) readedCCv3 = chunk.value;
+
       continue;
     }
     if (chunk.key.startsWith("chara-ext-asset_")) {
@@ -283,6 +270,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         assets[queueFetchKey[i]] = assets[queueFetchKey[i]].replace("xid:", "");
       }
     }
+
     queueFetch = [];
     queueFetchKey = [];
     queueFetchData = [];
@@ -293,9 +281,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
     return;
   }
 
-  if (readedCCv3) {
-    readedChara = readedCCv3;
-  }
+  if (readedCCv3) readedChara = readedCCv3;
 
   if (!img) {
     alertError(language.errors.noData);
@@ -321,9 +307,8 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       );
       if (metaData.usePassword) {
         const password = await alertInput(language.inputCardPassword);
-        if (!password) {
-          return;
-        } else {
+        if (!password) return;
+        else {
           try {
             const decrypted = await decryptBuffer(encrypted, password);
             const charaData: CharacterCardV2Risu = JSON.parse(
@@ -333,9 +318,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
               await importCharacterCardSpec(charaData, img, "normal", assets)
             ) {
               return characterStore.characters.length - 1;
-            } else {
-              throw new Error("Error while importing");
-            }
+            } else throw new Error("Error while importing");
           } catch (error) {
             alertError(language.errors.wrongPassword);
             return;
@@ -385,9 +368,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
 
 async function fetchRealmInfo(realmPath: string): Promise<hubType> {
   const res = await fetch(`${hubURL}/hub/info/${realmPath}`);
-  if (res.status !== 200) {
-    throw new Error(await res.text());
-  }
+  if (res.status !== 200) throw new Error(await res.text());
 
   return await res.json();
 }
@@ -413,9 +394,8 @@ export const getRealmInfo = async (realmPath: string) => {
 
   try {
     const realmInfo = await fetchRealmInfo(realmPath);
-    if (!canAccessRealmCreator(realmInfo.creator)) {
-      return;
-    }
+    if (!canAccessRealmCreator(realmInfo.creator)) return;
+
     showRealmInfoStore.set(realmInfo);
   } catch (error) {
     alertError(error);
@@ -437,8 +417,9 @@ async function importFiles(paths: string[]) {
           signal: controller.signal,
         });
 
-        if (!response.ok || !response.body)
+        if (!response.ok || !response.body) {
           throw new Error(`Failed to read file: ${response.status}`);
+        }
 
         await importCharacterProcess({
           name: name.toLowerCase(),
@@ -451,7 +432,7 @@ async function importFiles(paths: string[]) {
   }
 }
 
-let importQueue = Promise.resolve();
+const importQueue = Promise.resolve();
 
 export async function enqueueFiles(paths: string[]) {
   return importQueue
@@ -463,9 +444,7 @@ export async function enqueueFiles(paths: string[]) {
 export async function characterURLImport() {
   const realmPath = new URLSearchParams(location.search).get("realm");
   try {
-    if (realmPath) {
-      getRealmInfo(realmPath);
-    }
+    if (realmPath) getRealmInfo(realmPath);
   } catch (error) {}
 
   const charPath = new URLSearchParams(location.search).get("charahub");
@@ -522,9 +501,7 @@ export async function characterURLImport() {
 
     if (importData.lowLevelAccess) {
       const conf = await alertConfirm(language.lowLevelAccessConfirm);
-      if (!conf) {
-        return false;
-      }
+      if (!conf) return false;
     }
     await moduleStore.installModule(importData);
     alertNormal(language.successImport);
@@ -545,9 +522,8 @@ export async function characterURLImport() {
   }
   if (hash.startsWith("#share_character")) {
     const data = await fetch("/sw/share/character");
-    if (data.status !== 200) {
-      return;
-    }
+    if (data.status !== 200) return;
+
     const charx = new Uint8Array(await data.arrayBuffer());
     await importCharacterProcess({
       name: "shared.charx",
@@ -556,9 +532,8 @@ export async function characterURLImport() {
   }
   if (hash.startsWith("#share_module")) {
     const data = await fetch("/sw/share/module");
-    if (data.status !== 200) {
-      return;
-    }
+    if (data.status !== 200) return;
+
     const module = new Uint8Array(await data.arrayBuffer());
     const md = await readModule(Buffer.from(module));
     md.id = v4();
@@ -569,9 +544,8 @@ export async function characterURLImport() {
   }
   if (hash.startsWith("#share_preset")) {
     const data = await fetch("/sw/share/preset");
-    if (data.status !== 200) {
-      return;
-    }
+    if (data.status !== 200) return;
+
     const preset = new Uint8Array(await data.arrayBuffer());
     await importPreset({
       name: "shared.risup",
@@ -669,12 +643,10 @@ export async function characterURLImport() {
         /filename\*=UTF-8''([^"';\n]+)|filename[^;\n=]*=["']?([^"';\n]+)["']?/;
       const matches = contentDisposition.match(pattern);
       if (matches) {
-        if (matches[1]) {
-          return decodeURIComponent(matches[1]);
-        } else if (matches[2]) {
-          return matches[2];
-        }
+        if (matches[1]) return decodeURIComponent(matches[1]);
+        else if (matches[2]) return matches[2];
       }
+
       return null;
     }
 
@@ -763,9 +735,8 @@ function convertOffSpecCards(
 async function hydrateCharacterForExport(
   char: character | groupChat,
 ): Promise<character | groupChat> {
-  if (char.detailsLoaded !== false) {
-    return char;
-  }
+  if (char.detailsLoaded !== false) return char;
+
   if (!char.chaId) {
     throw new Error("Cannot export shallow character without an id");
   }
@@ -775,20 +746,18 @@ async function hydrateCharacterForExport(
   if (!loaded || loaded.detailsLoaded === false) {
     throw new Error(`Failed to hydrate character before export: ${char.chaId}`);
   }
+
   return loaded;
 }
 
 export async function exportChar(charaID: number): Promise<string> {
   const targetChar = characterStore.characters[charaID];
-  if (targetChar) {
-    await hydrateCharacterForExport(targetChar);
-  }
-  const db = createDatabaseSnapshot();
-  let char = safeStructuredClone(db.characters[charaID]);
+  if (targetChar) await hydrateCharacterForExport(targetChar);
 
-  if (char.type === "group") {
-    return "";
-  }
+  const db = createDatabaseSnapshot();
+  const char = safeStructuredClone(db.characters[charaID]);
+
+  if (char.type === "group") return "";
 
   if (!char.image) {
     const res = await fetch("/none.webp");
@@ -811,11 +780,9 @@ export async function exportChar(charaID: number): Promise<string> {
     );
   } else if (option.type === "ccv2") {
     exportCharacterCard(char, "png", { spec: "v2" });
-  } else if (option.type === "realm") {
-    ShowRealmFrameStore.set("character");
-  } else {
-    return option.type;
-  }
+  } else if (option.type === "realm") ShowRealmFrameStore.set("character");
+  else return option.type;
+
   return "";
 }
 
@@ -823,9 +790,7 @@ async function readCardExportImage(image?: string) {
   if (image) {
     try {
       const img = await readImage(image);
-      if (img?.length) {
-        return { data: img, source: image };
-      }
+      if (img?.length) return { data: img, source: image };
     } catch (e) {
       console.warn(
         "readCardExportImage: failed to read character image, falling back to none.webp",
@@ -840,10 +805,12 @@ async function readCardExportImage(image?: string) {
       `Failed to load fallback character image: ${res.status} ${res.statusText}`,
     );
   }
+
   const fallbackImage = new Uint8Array(await res.arrayBuffer());
   if (!fallbackImage.length) {
     throw new Error("Failed to load fallback character image: empty response");
   }
+
   return { data: fallbackImage, source: undefined };
 }
 
@@ -868,14 +835,14 @@ async function importCharacterCardSpec<T extends boolean = false>(
   let im = img ? await saveAsset(img) : undefined;
 
   const risuext = safeStructuredClone(data.extensions.risuai);
-  let emotions: [string, string][] = [];
+  const emotions: [string, string][] = [];
   let bias: [string, number][] = [];
   let viewScreen: "none" | "emotion" | "imggen" = "none";
   let customScripts: customscript[] = [];
   let utilityBot = false;
   let sdData = defaultSdDataFunc();
-  let extAssets: [string, string, string][] = [];
-  let ccAssets: {
+  const extAssets: [string, string, string][] = [];
+  const ccAssets: {
     type: string;
     uri: string;
     name: string;
@@ -900,6 +867,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
               "Error while importing, asset " + key + " not found",
             );
           }
+
           emotions.push([risuext.emotions[i][0], imgp]);
           continue;
         }
@@ -911,6 +879,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
         emotions.push([risuext.emotions[i][0], imgp]);
       }
     }
+
     if (risuext.additionalAssets) {
       for (let i = 0; i < risuext.additionalAssets.length; i++) {
         alertStore.set({
@@ -919,12 +888,12 @@ async function importCharacterCardSpec<T extends boolean = false>(
           submsg: ((i / risuext.additionalAssets.length) * 100).toFixed(2),
         });
 
-        if (i % 100 === 0) {
-          await sleep(10);
-        }
+        if (i % 100 === 0) await sleep(10);
+
         let fileName = "";
-        if (risuext.additionalAssets[i].length >= 3)
+        if (risuext.additionalAssets[i].length >= 3) {
           fileName = risuext.additionalAssets[i][2];
+        }
         if (risuext.additionalAssets[i][1].startsWith("__asset:")) {
           const key = risuext.additionalAssets[i][1].replace("__asset:", "");
           const imgp = assetDict[key];
@@ -933,6 +902,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
               "Error while importing, asset " + key + " not found",
             );
           }
+
           extAssets.push([risuext.additionalAssets[i][0], imgp, fileName]);
           continue;
         }
@@ -946,6 +916,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
         extAssets.push([risuext.additionalAssets[i][0], imgp, fileName]);
       }
     }
+
     if (risuext.vits) {
       const keys = Object.keys(risuext.vits);
       for (let i = 0; i < keys.length; i++) {
@@ -964,6 +935,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
               "Error while importing, asset " + rkey + " not found",
             );
           }
+
           risuext.vits[key] = imgp;
           continue;
         }
@@ -1001,14 +973,12 @@ async function importCharacterCardSpec<T extends boolean = false>(
           msg: `Loading... (Assets)`,
           submsg: ((i / data.assets.length) * 100).toFixed(2),
         });
-        if (i % 100 === 0) {
-          await sleep(10);
-        }
+        if (i % 100 === 0) await sleep(10);
+
         let fileName = "";
         let imgp = "";
-        if (data.assets[i].name) {
-          fileName = data.assets[i].name;
-        }
+        if (data.assets[i].name) fileName = data.assets[i].name;
+
         if (data.assets[i].uri.startsWith("__asset:")) {
           const key = data.assets[i].uri.replace("__asset:", "");
           imgp = assetDict[key];
@@ -1017,9 +987,8 @@ async function importCharacterCardSpec<T extends boolean = false>(
               "Error while importing, asset " + key + " not found",
             );
           }
-        } else if (data.assets[i].uri === "ccdefault:") {
-          imgp = im;
-        } else if (data.assets[i].uri.startsWith("embeded://")) {
+        } else if (data.assets[i].uri === "ccdefault:") imgp = im;
+        else if (data.assets[i].uri.startsWith("embeded://")) {
           const key = data.assets[i].uri.replace("embeded://", "");
           imgp = assetDict[key];
           if (!imgp) {
@@ -1036,12 +1005,10 @@ async function importCharacterCardSpec<T extends boolean = false>(
             alertError("Data URI too large");
             continue;
           }
-        } else {
-          continue;
-        }
-        if (data.assets[i].type === "emotion") {
-          emotions.push([fileName, imgp]);
-        } else if (data.assets[i].type === "x-risu-asset") {
+        } else continue;
+
+        if (data.assets[i].type === "emotion") emotions.push([fileName, imgp]);
+        else if (data.assets[i].type === "x-risu-asset") {
           extAssets.push([fileName, imgp, data.assets[i].ext ?? "unknown"]);
         } else if (
           data.assets[i].type === "icon" &&
@@ -1070,9 +1037,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
 
   if (risuext && risuext?.lowLevelAccess) {
     const conf = await alertConfirm(language.lowLevelAccessConfirm);
-    if (!conf) {
-      return false;
-    }
+    if (!conf) return false;
   }
   const charbook = data.character_book;
   let lorebook: loreBook[] = overrideLorebook ?? [];
@@ -1086,25 +1051,21 @@ async function importCharacterCardSpec<T extends boolean = false>(
       loreExt,
     });
 
-    if (!overrideLorebook) {
-      lorebook = a.lorebook;
-    }
+    if (!overrideLorebook) lorebook = a.lorebook;
+
     loresettings = a.loresettings;
     loreExt = a.loreExt;
   }
 
-  let ext = safeStructuredClone(data?.extensions ?? {});
+  const ext = safeStructuredClone(data?.extensions ?? {});
 
   for (const key in ext) {
-    if (key === "risuai") {
-      delete ext[key];
-    }
-    if (key === "depth_prompt") {
-      delete ext[key];
-    }
+    if (key === "risuai") delete ext[key];
+
+    if (key === "depth_prompt") delete ext[key];
   }
 
-  let char: character = {
+  const char: character = {
     name: data.name ?? "",
     firstMessage: data.first_mes ?? "",
     desc: data.description ?? "",
@@ -1186,9 +1147,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
     char.modification_date = card.data.modification_date ?? 0;
   }
 
-  if (returnValue) {
-    return char as any;
-  }
+  if (returnValue) return char as any;
 
   characterStore.characters.push(char);
   await characterFormatUpdate(char);
@@ -1259,6 +1218,7 @@ function convertCharbook(arg: {
           if (!book.secondary_keys || book.secondary_keys.length === 0) {
             book.selective = false;
           }
+
           break;
         }
         case 1: {
@@ -1272,6 +1232,7 @@ function convertCharbook(arg: {
           for (const secKey of book.secondary_keys) {
             content = `@@exclude_keys ${secKey}\n` + content;
           }
+
           break;
         }
         case 3: {
@@ -1279,10 +1240,12 @@ function convertCharbook(arg: {
           for (const secKey of book.secondary_keys) {
             content = `@@additional_keys ${secKey}\n` + content;
           }
+
           break;
         }
       }
     }
+
     if (typeof extensions.delay === "number" && extensions.delay > 0) {
       content = `@@activate_only_after ${extensions.delay}\n` + content;
       delete extensions.delay;
@@ -1321,9 +1284,9 @@ function convertCharbook(arg: {
 }
 
 function createBaseV2(char: character) {
-  let charBook: charBookEntry[] = [];
+  const charBook: charBookEntry[] = [];
   for (const lore of char.globalLore ?? []) {
-    let ext: {
+    const ext: {
       risu_case_sensitive?: boolean;
       risu_activationPercent?: number;
       risu_loreCache?: {
@@ -1332,7 +1295,7 @@ function createBaseV2(char: character) {
       };
     } = safeStructuredClone(lore.extentions ?? {});
 
-    let caseSensitive = ext.risu_case_sensitive ?? false;
+    const caseSensitive = ext.risu_case_sensitive ?? false;
     ext.risu_activationPercent = lore.activationPercent;
     ext.risu_loreCache = lore.loreCache;
 
@@ -1410,12 +1373,12 @@ function createBaseV2(char: character) {
 
   if (char.extentions) {
     for (const key in char.extentions) {
-      if (key === "risuai" || key === "depth_prompt") {
-        continue;
-      }
+      if (key === "risuai" || key === "depth_prompt") continue;
+
       card.data.extensions[key] = char.extentions[key];
     }
   }
+
   return card;
 }
 
@@ -1501,11 +1464,9 @@ async function exportCharacterCardNodeStream(
   for (let index = 0; index < (card.data.assets?.length ?? 0); index++) {
     const asset = card.data.assets[index];
     let source = asset.uri;
-    if (source === "ccdefault:") {
-      source = imageSource;
-    } else if (isKnownUri(source)) {
-      continue;
-    }
+    if (source === "ccdefault:") source = imageSource;
+    else if (isKnownUri(source)) continue;
+
     if (!source?.startsWith("assets/")) {
       throw new Error(`Cannot stream non-local CharX asset: ${source}`);
     }
@@ -1518,9 +1479,8 @@ async function exportCharacterCardNodeStream(
 
     const { type, contentType } = getCharXAssetDirectory(asset);
     let name = asset.name || `asset_${index + 1}`;
-    if (name.length > 100) {
-      name = name.substring(0, 100);
-    }
+    if (name.length > 100) name = name.substring(0, 100);
+
     const ext = asset.ext === "unknown" ? "png" : asset.ext || "png";
     const baseDir =
       asset.ext === "unknown"
@@ -1601,9 +1561,8 @@ async function exportCharacterCardNodeStream(
     throw new Error(body?.error ?? `CharX export failed (${response.status})`);
   }
   const body = (await response.json()) as { id?: string };
-  if (!body.id) {
-    throw new Error("CharX export job has no download ID");
-  }
+  if (!body.id) throw new Error("CharX export job has no download ID");
+
   const anchor = document.createElement("a");
   anchor.href = `/api/charx-export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
   anchor.download = `${(options.filenameBase ?? char.name) || "character"}.${type === "charxJpeg" ? "jpeg" : "charx"}`;
@@ -1627,9 +1586,8 @@ async function exportCharacterCardNodeStream(
       completionBody?.error ?? `CharX download failed (${completed.status})`,
     );
   }
-  if (options.showSuccessAlert !== false) {
-    alertNormal(language.successExport);
-  }
+
+  if (options.showSuccessAlert !== false) alertNormal(language.successExport);
 }
 
 export async function exportCharacterCard(
@@ -1645,13 +1603,12 @@ export async function exportCharacterCard(
 ) {
   if (char.detailsLoaded === false) {
     const loaded = await hydrateCharacterForExport(char);
-    if (loaded !== char) {
-      Object.assign(char, safeStructuredClone(loaded));
-    }
+    if (loaded !== char) Object.assign(char, safeStructuredClone(loaded));
   }
   const exportedChats = [];
-  for (const chat of char.chats ?? [])
+  for (const chat of char.chats ?? []) {
     exportedChats.push(await materializeChatNote(chat));
+  }
   char = { ...char, chats: exportedChats };
   const requestedSpec = arg.spec ?? "v2";
   if (
@@ -1665,6 +1622,7 @@ export async function exportCharacterCard(
       if (!(forageStorage.realStorage instanceof NodeStorage)) {
         throw new Error("Node CharX export requires NodeStorage");
       }
+
       await exportCharacterCardNodeStream(char, type, {
         filenameBase: arg.filenameBase,
         showSuccessAlert: arg.showSuccessAlert,
@@ -1701,6 +1659,7 @@ export async function exportCharacterCard(
     if (writer instanceof CharXWriter && type === "charxJpeg") {
       await writer.writeJpeg(img);
     }
+
     let assetIndex = 0;
     if (spec === "v2") {
       const card = await createBaseV2(char);
@@ -1807,11 +1766,9 @@ export async function exportCharacterCard(
           if (key === "ccdefault:" && type !== "png") {
             key = char.image;
             rData = img;
-          } else if (isKnownUri(key)) {
-            continue;
-          } else {
-            rData = await readImage(key);
-          }
+          } else if (isKnownUri(key)) continue;
+          else rData = await readImage(key);
+
           assetIndex++;
           if (type === "png") {
             const b64encoded = Buffer.from(await compressImage(rData)).toString(
@@ -1887,9 +1844,8 @@ export async function exportCharacterCard(
 
             let path = "";
             let name = card.data.assets[i].name || `asset_${assetIndex}`;
-            if (name.length > 100) {
-              name = name.substring(0, 100);
-            }
+            if (name.length > 100) name = name.substring(0, 100);
+
             const ext =
               card.data.assets[i].ext === "unknown"
                 ? "png"
@@ -1916,9 +1872,8 @@ export async function exportCharacterCard(
               const metadatas: Record<string, string> = {};
               const gen = PngChunk.readGenerator(rData);
               for await (const chunk of gen) {
-                if (!chunk || chunk instanceof AppendableBuffer) {
-                  continue;
-                }
+                if (!chunk || chunk instanceof AppendableBuffer) continue;
+
                 metadatas[chunk.key] = chunk.value;
               }
               if (Object.keys(metadatas).length > 0) {
@@ -1951,10 +1906,12 @@ export async function exportCharacterCard(
                 6,
               );
             }
+
             await writer.write(path, Buffer.from(await compressImage(rData)));
           }
         }
       }
+
       if (type === "json") {
         await downloadFile(
           `${char.name.replace(/[<>:"/\\|?*\.\,]/g, "")}_export.json`,
@@ -2018,8 +1975,8 @@ type RisuLorebookEntry = LorebookEntry & {
 };
 
 export function createBaseV3(char: character) {
-  let charBook: RisuLorebookEntry[] = [];
-  let assets: Array<{
+  const charBook: RisuLorebookEntry[] = [];
+  const assets: Array<{
     type: string;
     uri: string;
     name: string;
@@ -2058,7 +2015,7 @@ export function createBaseV3(char: character) {
   }
 
   for (const lore of char.globalLore ?? []) {
-    let ext: {
+    const ext: {
       risu_case_sensitive?: boolean;
       risu_activationPercent?: number;
       risu_loreCache?: {
@@ -2067,7 +2024,7 @@ export function createBaseV3(char: character) {
       };
     } = safeStructuredClone(lore.extentions ?? {});
 
-    let caseSensitive = ext.risu_case_sensitive ?? false;
+    const caseSensitive = ext.risu_case_sensitive ?? false;
     ext.risu_activationPercent = lore.activationPercent;
     ext.risu_loreCache = lore.loreCache;
 
@@ -2161,12 +2118,12 @@ export function createBaseV3(char: character) {
 
   if (char.extentions) {
     for (const key in char.extentions) {
-      if (key === "risuai" || key === "depth_prompt") {
-        continue;
-      }
+      if (key === "risuai" || key === "depth_prompt") continue;
+
       card.data.extensions[key] = char.extentions[key];
     }
   }
+
   return card;
 }
 
@@ -2183,15 +2140,13 @@ export async function shareRisuHub2(
   try {
     char = safeStructuredClone(char);
     char.license = arg.license;
-    let tagList = arg.tag.split(",");
+    const tagList = arg.tag.split(",");
 
-    if (arg.nsfw) {
-      tagList.push("nsfw");
-    }
+    if (arg.nsfw) tagList.push("nsfw");
 
     alertWait("Uploading...");
 
-    let tags = tagList.filter((v, i) => {
+    const tags = tagList.filter((v, i) => {
       return !!v && tagList.indexOf(v) === i;
     });
     char.tags = tags;
@@ -2231,14 +2186,12 @@ export async function downloadRisuHub(
         return;
       }
     }
-    if (!canAccessRealmCreator(creator)) {
-      return;
-    }
+
+    if (!canAccessRealmCreator(creator)) return;
 
     if (!arg.forceRedirect) {
-      if (!(await alertRisuServiceTOS())) {
-        return;
-      }
+      if (!(await alertRisuServiceTOS())) return;
+
       alertStore.set({
         type: "wait",
         msg: "Downloading...",
@@ -2279,6 +2232,7 @@ export async function downloadRisuHub(
           lightningRealmImport: db.lightningRealmImport,
         });
       }
+
       checkCharOrder();
       db = settingsStore.state;
       if (
@@ -2320,28 +2274,19 @@ export async function downloadRisuHub(
 
 export async function getHubResources(id: string) {
   const res = await fetch(`${hubURL}/resource/${id}`);
-  if (res.status !== 200) {
-    throw await res.text();
-  }
+  if (res.status !== 200) throw await res.text();
+
   return Buffer.from(await res.arrayBuffer());
 }
 
 export function isCharacterHasAssets(char: character | groupChat) {
-  if (char.type === "group") {
-    return false;
-  }
+  if (char.type === "group") return false;
 
-  if (char.additionalAssets && char.additionalAssets.length > 0) {
-    return true;
-  }
+  if (char.additionalAssets && char.additionalAssets.length > 0) return true;
 
-  if (char.emotionImages && char.emotionImages.length > 0) {
-    return true;
-  }
+  if (char.emotionImages && char.emotionImages.length > 0) return true;
 
-  if (char.ccAssets && char.ccAssets.length > 0) {
-    return true;
-  }
+  if (char.ccAssets && char.ccAssets.length > 0) return true;
 
   return false;
 }

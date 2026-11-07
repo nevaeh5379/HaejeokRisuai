@@ -38,6 +38,7 @@ function hasUsableFallbackAfter(
   for (let index = fallbackIndex + 1; index < fallbackModels.length; index++) {
     if (fallbackModels[index]) return true;
   }
+
   return false;
 }
 
@@ -78,9 +79,7 @@ async function executeChatRequestFallbacks(
     });
 
     while (true) {
-      if (runtime.isAborted?.()) {
-        return { type: "fail", result: "Aborted" };
-      }
+      if (runtime.isAborted?.()) return { type: "fail", result: "Aborted" };
 
       const context: ChatRequestAttemptContext = {
         fallbackIndex,
@@ -91,9 +90,7 @@ async function executeChatRequestFallbacks(
       const response = await runtime.executeAttempt(context);
       lastResponse = response;
 
-      if (runtime.isAborted?.()) {
-        return { type: "fail", result: "Aborted" };
-      }
+      if (runtime.isAborted?.()) return { type: "fail", result: "Aborted" };
 
       if (
         response.type === "success" &&
@@ -133,6 +130,7 @@ async function executeChatRequestFallbacks(
       if (retryDecision.delayMs > 0) {
         await (runtime.sleep ?? defaultSleep)(retryDecision.delayMs);
       }
+
       if (retryDecision.action === "return") return response;
       if (retryDecision.action === "fallback") break;
     }

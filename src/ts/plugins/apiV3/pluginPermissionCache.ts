@@ -14,9 +14,7 @@ export async function runWithPluginPermission<T>(
   onAllowed: () => Promise<T>,
   deniedResult: T,
 ): Promise<T> {
-  if (!(await requestPermission())) {
-    return deniedResult;
-  }
+  if (!(await requestPermission())) return deniedResult;
 
   return onAllowed();
 }

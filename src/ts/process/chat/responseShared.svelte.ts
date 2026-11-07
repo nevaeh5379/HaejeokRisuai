@@ -51,6 +51,7 @@ function runCurrentChatVariables(
       chatTarget,
     });
   }
+
   return chat;
 }
 

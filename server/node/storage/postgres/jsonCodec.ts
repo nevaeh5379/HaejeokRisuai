@@ -15,13 +15,15 @@ function encodeScript(script?: unknown): unknown {
 function decodeScript(script: string): string;
 function decodeScript(script?: unknown): unknown;
 function decodeScript(script?: unknown): unknown {
-  if (typeof script !== "string" || !script.startsWith(SCRIPT_TAG))
+  if (typeof script !== "string" || !script.startsWith(SCRIPT_TAG)) {
     return script;
+  }
 
   const encoded = script.slice(SCRIPT_TAG.length);
   const buffer = Buffer.from(encoded, "base64");
-  if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded)
+  if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded) {
     return script;
+  }
 
   return buffer.toString("utf16le");
 }
@@ -64,8 +66,9 @@ function encodeJsonValue(value?: unknown): unknown {
       [TEXT_TAG]: Buffer.from(value, "utf16le").toString("base64"),
     };
   }
-  if (Array.isArray(value))
+  if (Array.isArray(value)) {
     return mapJsonArrayCopyOnWrite(value, encodeJsonValue);
+  }
 
   if (!value || typeof value !== "object") return value;
 
@@ -100,8 +103,9 @@ function encodeObjectEntries(
   const entries: Array<[string | TextWrapper, unknown]> = new Array(
     keys.length,
   );
-  for (let i = 0; i < keys.length; i++)
+  for (let i = 0; i < keys.length; i++) {
     entries[i] = [encodeJsonValue(keys[i]), encodeJsonValue(rec[keys[i]])];
+  }
 
   return {
     [OBJECT_ENTRIES_TAG]: entries,
@@ -109,15 +113,17 @@ function encodeObjectEntries(
 }
 
 function decodeTextWrapper(value: Record<string, unknown>): string | null {
-  if (!Object.hasOwn(value, TEXT_TAG) || typeof value[TEXT_TAG] !== "string")
+  if (!Object.hasOwn(value, TEXT_TAG) || typeof value[TEXT_TAG] !== "string") {
     return null;
+  }
 
   for (const k in value) if (k !== TEXT_TAG) return null;
 
   const encoded = value[TEXT_TAG];
   const buffer = Buffer.from(encoded, "base64");
-  if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded)
+  if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded) {
     return null;
+  }
 
   const decoded = buffer.toString("utf16le");
   return decoded.includes("\0") ? decoded : null;
@@ -125,8 +131,9 @@ function decodeTextWrapper(value: Record<string, unknown>): string | null {
 
 // Decoding storage tags does not validate the caller's domain schema.
 function decodeJsonValue(value?: unknown): unknown {
-  if (Array.isArray(value))
+  if (Array.isArray(value)) {
     return mapJsonArrayCopyOnWrite(value, decodeJsonValue);
+  }
 
   if (!value || typeof value !== "object") return value;
 
@@ -139,19 +146,21 @@ function decodeJsonValue(value?: unknown): unknown {
     Array.isArray(rec[OBJECT_ENTRIES_TAG])
   ) {
     let onlyEntriesTag = true;
-    for (const k in rec)
+    for (const k in rec) {
       if (k !== OBJECT_ENTRIES_TAG) {
         onlyEntriesTag = false;
         break;
       }
+    }
 
     if (onlyEntriesTag) {
       const entries = rec[OBJECT_ENTRIES_TAG] as unknown[];
       const decodedObject: Record<string, unknown> = {};
       for (const element of entries) {
         const entry = element;
-        if (!Array.isArray(entry) || entry.length !== 2)
+        if (!Array.isArray(entry) || entry.length !== 2) {
           return decodeJsonObject(rec);
+        }
 
         const key = decodeJsonValue(entry[0]);
         if (typeof key !== "string") return decodeJsonObject(rec);

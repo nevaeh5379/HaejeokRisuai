@@ -39,8 +39,9 @@ describe("TauriAssetStorage.setItem", () => {
     });
     fsMocks.writeFile.mockImplementation(
       async (key: string, data: Uint8Array) => {
-        if (!directoryReady)
+        if (!directoryReady) {
           throw new Error("ENOENT: assets directory missing");
+        }
         files.set(key, data);
       },
     );
@@ -140,6 +141,7 @@ describe("TauriAssetStorage.hasStoredData", () => {
           { name: "nested", isFile: false, isDirectory: true },
         ];
       }
+
       return [{ name: "deep.bin", isFile: true, isDirectory: false }];
     });
     fsMocks.stat.mockResolvedValue({ size: 8 });

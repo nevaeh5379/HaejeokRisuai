@@ -63,8 +63,9 @@ it("routes prompt and model CBS values to PresetStore", () => {
     axmodel: "sub-test",
     maxcontext: "4096",
     prefillsupported: "1",
-  }))
+  })) {
     expect(run(name), name).toBe(value);
+  }
   presetStore.state.mainPrompt = "changed";
   expect(run("mainprompt")).toBe("changed");
 });

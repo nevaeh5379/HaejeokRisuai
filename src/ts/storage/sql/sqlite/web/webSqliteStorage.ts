@@ -166,6 +166,7 @@ function getWorkerRpc(): WorkerRpc {
   if (workerState.initFailed) {
     throw new Error("SQLite WASM worker is not available");
   }
+
   if (workerState.rpc) return workerState.rpc;
 
   // Vite understands `new Worker(new URL(..., import.meta.url), { type: 'module' })`
@@ -194,6 +195,7 @@ function getWorkerRpc(): WorkerRpc {
     for (const resolver of pending.values()) {
       resolver({ id: 0, ok: false, error: "Worker crashed" });
     }
+
     pending.clear();
   };
 
@@ -274,6 +276,7 @@ export class WebSqliteStorage implements ISqlStorage {
       if (!this._enabled && !(await this.init())) {
         throw new Error("Browser SQLite storage is not available");
       }
+
       const selectRowSets: SqliteSelectRowSets = async (queries) =>
         (await this.selectBatchResults(queries)).map(
           (result) => result.rows ?? [],
@@ -621,6 +624,7 @@ export class WebSqliteStorage implements ISqlStorage {
       ) {
         return this.chat.load(chatId, options);
       }
+
       if (!activeBranch) {
         await this.ensureBranchGraph(chatId);
         return this.chat.load(chatId, options);
@@ -825,6 +829,7 @@ export class WebSqliteStorage implements ISqlStorage {
       ) {
         throw new Error("Chat branch does not exist");
       }
+
       await this.runBranchTransaction([
         sqliteBranch.buildActivateStatement(chatId, branchId),
       ]);
@@ -870,6 +875,7 @@ export class WebSqliteStorage implements ISqlStorage {
         this.initPromise = null;
       });
     }
+
     return this.initPromise;
   }
 
@@ -894,13 +900,14 @@ export class WebSqliteStorage implements ISqlStorage {
       const result = await rpc.init();
       this._enabled = result.enabled;
       this.currentRevision = result.revision;
-      if (result.enabled)
+      if (result.enabled) {
         await authorNoteSql.ensureAuthorNoteReceipts({
           ...this.authorNoteDatabase(),
           execute: async (sql, bind = []) => {
             await this.run(sql, bind);
           },
         });
+      }
       console.info(`[WebSqliteStorage] SQLite VFS: ${result.vfs ?? "unknown"}`);
       this.initialized = true;
       return result.enabled;
@@ -915,6 +922,7 @@ export class WebSqliteStorage implements ISqlStorage {
       ) {
         throw error;
       }
+
       return false;
     }
   }
@@ -1070,8 +1078,9 @@ export class WebSqliteStorage implements ISqlStorage {
         await this.run("COMMIT");
         return receipt;
       }
-      if (commit.baseRevision !== currentRevision)
+      if (commit.baseRevision !== currentRevision) {
         throw new SqlRevisionConflictError(currentRevision);
+      }
       await sqliteCommitPrep.prepareModules(
         this.selectRows.bind(this) as SqliteSelectRows,
         commit,
@@ -1107,6 +1116,7 @@ export class WebSqliteStorage implements ISqlStorage {
           [revision, action],
         );
       }
+
       await authorNoteSql.writeAuthorNoteReceipt(
         { ...this.authorNoteDatabase(), execute: append },
         commit,
@@ -1162,6 +1172,7 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
+
     const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,
@@ -1180,6 +1191,7 @@ export class WebSqliteStorage implements ISqlStorage {
             if (currentRevision !== baseRevision) {
               throw new SqlRevisionConflictError(currentRevision);
             }
+
             const pending: SqliteBatchStatement[] = [];
             const flush = async () => {
               if (pending.length === 0) return;
@@ -1270,6 +1282,7 @@ export class WebSqliteStorage implements ISqlStorage {
     ) {
       return false;
     }
+
     const currentCount = await sqliteBranch.count(
       this.selectRows.bind(this) as SqliteSelectRows,
       chatId,

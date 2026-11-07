@@ -23,9 +23,8 @@ type SqliteTransactionProgressEvent = {
 let SQL: typeof import("@tauri-apps/plugin-sql") | null = null;
 
 async function getSQL() {
-  if (!SQL) {
-    SQL = await import("@tauri-apps/plugin-sql");
-  }
+  if (!SQL) SQL = await import("@tauri-apps/plugin-sql");
+
   return SQL;
 }
 
@@ -118,9 +117,7 @@ export class TauriSqliteStorage
           if (typeof value === "string") bindChars += value.length;
         }
         pendingChars += sql.length + bindChars;
-        if (pending.length >= 64 || pendingChars >= 256 * 1024) {
-          await flush();
-        }
+        if (pending.length >= 64 || pendingChars >= 256 * 1024) await flush();
       });
       await flush();
       await invoke("sqlite_commit_stream_transaction", { transactionId });
@@ -151,6 +148,7 @@ export class TauriSqliteStorage
     if (!this._enabled && !(await this.init())) {
       throw new Error("SQLite storage is not enabled");
     }
+
     const baseRevision = this.currentRevision;
     return await createPortableDatabaseStreamSqliteSession({
       baseRevision,

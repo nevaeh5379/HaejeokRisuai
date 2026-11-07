@@ -11,44 +11,55 @@ function isNonNegativeSafeInteger(value?: any): any {
 }
 
 function normalizeFinalizedResult(value?: any): any {
-  if (!value || typeof value !== "object" || value.status !== "completed")
+  if (!value || typeof value !== "object" || value.status !== "completed") {
     return null;
+  }
   if (!isNonNegativeSafeInteger(value.revision)) return null;
   if (!isNonNegativeSafeInteger(value.sourceRevision)) return null;
   if (!isNonNegativeSafeInteger(value.recordCount)) return null;
   if (
     typeof value.recoveryId !== "string" ||
     !SESSION_ID_PATTERN.test(value.recoveryId)
-  )
+  ) {
     return null;
+  }
   return value;
 }
 
 function normalizeStoredSession(raw?: any): any {
   if (!raw || typeof raw !== "object") return null;
   if (raw.version !== STORAGE_SYNC_SESSION_FILE_VERSION) return null;
-  if (typeof raw.id !== "string" || !SESSION_ID_PATTERN.test(raw.id))
+  if (typeof raw.id !== "string" || !SESSION_ID_PATTERN.test(raw.id)) {
     return null;
-  if (!["local-to-remote", "remote-to-local"].includes(raw.direction))
+  }
+  if (!["local-to-remote", "remote-to-local"].includes(raw.direction)) {
     return null;
+  }
   const expectedRole: any =
     raw.direction === "local-to-remote" ? "target" : "source";
   if (raw.role !== expectedRole) return null;
   if (!isNonNegativeSafeInteger(raw.serverRevision)) return null;
-  if (raw.peerRevision !== null && !isNonNegativeSafeInteger(raw.peerRevision))
+  if (
+    raw.peerRevision !== null &&
+    !isNonNegativeSafeInteger(raw.peerRevision)
+  ) {
     return null;
+  }
   if (
     !isNonNegativeSafeInteger(raw.createdAt) ||
     !isNonNegativeSafeInteger(raw.expiresAt)
-  )
+  ) {
     return null;
+  }
   if (
     !isNonNegativeSafeInteger(raw.chunkSizeBytes) ||
     !isNonNegativeSafeInteger(raw.maxConcurrency)
-  )
+  ) {
     return null;
-  if (!raw.summary || Number(raw.summary.revision) !== raw.serverRevision)
+  }
+  if (!raw.summary || Number(raw.summary.revision) !== raw.serverRevision) {
     return null;
+  }
   const finalizedResult: any = normalizeFinalizedResult(raw.finalizedResult);
   const finalized: any = raw.status === "finalized" && finalizedResult !== null;
   return {
@@ -105,6 +116,7 @@ class StorageSyncSessionPersistence {
     if (!SESSION_ID_PATTERN.test(id)) {
       throw new Error("Invalid storage sync session id");
     }
+
     return path.join(this.rootPath, id);
   }
 
@@ -129,8 +141,9 @@ class StorageSyncSessionPersistence {
     for (const entry of fs.readdirSync(this.rootPath, {
       withFileTypes: true,
     })) {
-      if (!entry.isDirectory() || !SESSION_ID_PATTERN.test(entry.name))
+      if (!entry.isDirectory() || !SESSION_ID_PATTERN.test(entry.name)) {
         continue;
+      }
       const metadataPath: any = this.metadataPath(entry.name);
       let session: any = null;
       try {

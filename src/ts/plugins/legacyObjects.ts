@@ -106,8 +106,9 @@ export function toLegacyModule(value: ModuleFields): RisuModule {
 
 export function toLegacyPersona(value: PersonaFields): RisuPersona {
   const { position: _position, ...persona } = value;
-  if (persona.embeddedModule)
+  if (persona.embeddedModule) {
     persona.embeddedModule = legacyModuleFields(persona.embeddedModule);
+  }
   return structuredClone(persona);
 }
 

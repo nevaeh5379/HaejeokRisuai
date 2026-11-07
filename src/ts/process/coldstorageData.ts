@@ -33,9 +33,8 @@ function replaceData(
   data: string | undefined,
   replacer: { [key: string]: string },
 ) {
-  if (!data) {
-    return data;
-  }
+  if (!data) return data;
+
   return replacer[data] ?? data;
 }
 
@@ -104,12 +103,9 @@ export function listColdDataKeysFromDb(
 ): string[] {
   const keys = new Set<string>();
   for (const character of db?.characters ?? []) {
-    if (!character) {
-      continue;
-    }
-    for (const key of listColdDataKeysFromCharacter(character)) {
-      keys.add(key);
-    }
+    if (!character) continue;
+
+    for (const key of listColdDataKeysFromCharacter(character)) keys.add(key);
   }
   return Array.from(keys);
 }
@@ -126,9 +122,7 @@ export function getColdStorageAffectedCharacters(
   const characterNames: string[] = [];
 
   for (const character of db?.characters ?? []) {
-    if (!character) {
-      continue;
-    }
+    if (!character) continue;
 
     let isAffected = false;
     for (const key of listColdDataKeysFromCharacter(character)) {

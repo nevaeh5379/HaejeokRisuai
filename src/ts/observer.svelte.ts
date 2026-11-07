@@ -4,14 +4,12 @@ let bgmElement: HTMLAudioElement | null = null;
 const observedNodes = new WeakSet<HTMLElement>();
 
 function nodeObserve(node: HTMLElement) {
-  if (observedNodes.has(node)) {
-    return;
-  }
+  if (observedNodes.has(node)) return;
+
   const hlLang = node.getAttribute("x-hl-lang");
   const ctrlName = node.getAttribute("risu-ctrl");
-  if (!hlLang && !ctrlName) {
-    return;
-  }
+  if (!hlLang && !ctrlName) return;
+
   observedNodes.add(node);
 
   if (hlLang) {
@@ -19,9 +17,7 @@ function nodeObserve(node: HTMLElement) {
       e.preventDefault();
 
       const prevContextMenu = document.getElementById("code-contextmenu");
-      if (prevContextMenu) {
-        prevContextMenu.remove();
-      }
+      if (prevContextMenu) prevContextMenu.remove();
 
       const menu = document.createElement("div");
       menu.id = "code-contextmenu";
@@ -101,6 +97,7 @@ export function startObserveDom() {
       ) {
         nodeObserve(mutation.target);
       }
+
       mutation.addedNodes.forEach((node) => {
         if (node instanceof HTMLElement) {
           nodeObserve(node);
@@ -157,9 +154,8 @@ function stopClaudeObserver() {
 }
 
 function claudeObserver() {
-  if (claudeObserverRunning) {
-    return;
-  }
+  if (claudeObserverRunning) return;
+
   claudeObserverRunning = true;
 
   const fetchIt = async (tries = 0) => {
@@ -168,18 +164,12 @@ function claudeObserver() {
       headers: lastClaudeObserverHeaders,
       method: "POST",
     });
-    if (res.status >= 400) {
-      if (tries < 3) {
-        void fetchIt(tries + 1);
-      }
-    }
+    if (res.status >= 400) if (tries < 3) void fetchIt(tries + 1);
   };
 
   const func = () => {
     //request every 4 minutes and 30 seconds
-    if (lastClaudeObserverLoad > Date.now() - 1000 * 60 * 4.5) {
-      return;
-    }
+    if (lastClaudeObserverLoad > Date.now() - 1000 * 60 * 4.5) return;
 
     if (lastClaudeRequestTimes > 4) {
       stopClaudeObserver();

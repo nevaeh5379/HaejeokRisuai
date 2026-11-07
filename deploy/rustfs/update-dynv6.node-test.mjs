@@ -94,7 +94,11 @@ test("performs a bounded one-shot IPv4 update", async () => {
 test("does not mask an IPv4 curl failure or continue to IPv6", async () => {
   const f = await fixture();
   try {
-    const result = await run({ ...f.env, DYNV6_IPV6: "true", FAKE_CURL_FAIL: "ipv4" });
+    const result = await run({
+      ...f.env,
+      DYNV6_IPV6: "true",
+      FAKE_CURL_FAIL: "ipv4",
+    });
     assert.equal(result.code, 1);
     assert.match(result.stderr, /IPv4 update failed/);
     assert.equal((await f.calls()).length, 1);
@@ -106,7 +110,11 @@ test("does not mask an IPv4 curl failure or continue to IPv6", async () => {
 test("reports a partial dual-stack update as failure", async () => {
   const f = await fixture();
   try {
-    const result = await run({ ...f.env, DYNV6_IPV6: "true", FAKE_CURL_FAIL: "ipv6" });
+    const result = await run({
+      ...f.env,
+      DYNV6_IPV6: "true",
+      FAKE_CURL_FAIL: "ipv6",
+    });
     assert.equal(result.code, 1);
     assert.match(result.stderr, /IPv6 update failed after the IPv4 update/);
     assert.equal((await f.calls()).length, 2);
@@ -138,7 +146,10 @@ test("rejects invalid permanent settings before curl", async (t) => {
 test("terminates its background interval sleep cleanly", async () => {
   const f = await fixture();
   try {
-    const result = await run({ ...f.env, DYNV6_ONCE: "false" }, { signalAfterOutput: true });
+    const result = await run(
+      { ...f.env, DYNV6_ONCE: "false" },
+      { signalAfterOutput: true },
+    );
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.signal, null);
   } finally {

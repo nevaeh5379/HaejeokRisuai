@@ -75,14 +75,10 @@ async function ask(d: alertData): Promise<string> {
 
 /** Show a TOS dialog once per acceptance key and remember the answer. */
 async function askTos(type: "tos" | "risu-tos", acceptanceKey: string) {
-  if (localStorage.getItem(acceptanceKey) === "true") {
-    return true;
-  }
+  if (localStorage.getItem(acceptanceKey) === "true") return true;
 
   const accepted = (await ask({ type, msg: type })) === "yes";
-  if (accepted) {
-    localStorage.setItem(acceptanceKey, "true");
-  }
+  if (accepted) localStorage.setItem(acceptanceKey, "true");
 
   return accepted;
 }
@@ -98,9 +94,8 @@ export const alert = {
   /** Wait until the currently shown alert is dismissed. */
   async waitUntilClosed() {
     while (true) {
-      if (get(alertStoreImported).type === "none") {
-        break;
-      }
+      if (get(alertStoreImported).type === "none") break;
+
       await sleep(10);
     }
   },
@@ -200,9 +195,7 @@ export const alert = {
         if (msg instanceof Error) {
           stackTrace = msg.stack;
           msg = msg.message;
-        } else {
-          msg = JSON.stringify(msg);
-        }
+        } else msg = JSON.stringify(msg);
       } catch {
         msg = `${msg}`;
       }
@@ -212,9 +205,7 @@ export const alert = {
 
     const ignoredErrors = ["{}"];
 
-    if (ignoredErrors.includes(msg)) {
-      return;
-    }
+    if (ignoredErrors.includes(msg)) return;
 
     let submsg = "";
 

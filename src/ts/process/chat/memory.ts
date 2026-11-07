@@ -46,9 +46,11 @@ async function trimHistoryToContext(
   while (currentTokens > maxContextTokens && removeCount < chats.length - 1) {
     currentTokens -= tokenCounts[removeCount++];
   }
+
   if (currentTokens > maxContextTokens) {
     return { ok: false as const, chats, currentTokens };
   }
+
   if (removeCount > 0) chats.splice(0, removeCount);
   return { ok: true as const, chats, currentTokens };
 }
@@ -234,8 +236,9 @@ function runConfiguredMemory(
   options: ApplyChatMemoryOptions,
   state: MemoryState,
 ) {
-  if (settingsStore.state.hanuraiEnable)
+  if (settingsStore.state.hanuraiEnable) {
     return applyHanuraiMemory(options, state);
+  }
   if (settingsStore.state.hypav2) return applyHypaV2Memory(options, state);
   if (settingsStore.state.hypaV3) return applyHypaV3Memory(options, state);
   return applySupaMemory(options, state);

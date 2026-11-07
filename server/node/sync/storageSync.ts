@@ -15,6 +15,7 @@ async function createStorageSyncSummary(
   if (typeof sqlStorage?.getStorageSyncSummary !== "function") {
     throw new Error("SQL storage does not support storage sync summaries");
   }
+
   if (typeof assetStorage?.getStats !== "function") {
     throw new Error("Asset storage does not support storage sync summaries");
   }
@@ -107,14 +108,17 @@ class StorageSyncSessionManager {
     if (!STORAGE_SYNC_DIRECTIONS.has(direction)) {
       throw new StorageSyncValidationError("Invalid storage sync direction");
     }
+
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
       throw new StorageSyncValidationError(
         "expectedRevision must be a non-negative integer",
       );
     }
+
     if (summary.revision !== expectedRevision) {
       throw new StorageSyncRevisionConflictError(summary.revision);
     }
+
     if (
       peerRevision !== null &&
       (!Number.isSafeInteger(peerRevision) || peerRevision < 0)
@@ -123,6 +127,7 @@ class StorageSyncSessionManager {
         "peerRevision must be null or a non-negative integer",
       );
     }
+
     const id: any = this.randomId();
     const createdAt: any = this.now();
     const session: any = {

@@ -43,9 +43,8 @@ export async function hotReloadPluginFiles() {
   const callback = async () => {
     try {
       const file = await fileHandle.getFile();
-      if (file.lastModified === lastModified) {
-        return;
-      }
+      if (file.lastModified === lastModified) return;
+
       console.log("Detected change in plugin file, reloading...");
       lastModified = file.lastModified;
       const content = await file.text();

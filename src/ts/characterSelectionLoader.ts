@@ -45,9 +45,7 @@ export async function loadCharacterSelectionData({
       ensureCharacterDetails(initialCharacter!.chaId!),
       preLoadChat(initialChatPage),
     ]);
-  } else {
-    await ensureCharacterDetails(initialCharacter!.chaId!);
-  }
+  } else await ensureCharacterDetails(initialCharacter!.chaId!);
 
   const currentCharacter = getCharacter();
   const currentChatPage = currentCharacter?.chatPage ?? 0;

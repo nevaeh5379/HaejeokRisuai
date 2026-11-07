@@ -22,6 +22,7 @@ function formatMistralMessages<T extends MistralMessage>(
           content: `${chat.role}:${chat.content}`,
         });
       }
+
       continue;
     }
 
@@ -34,9 +35,8 @@ function formatMistralMessages<T extends MistralMessage>(
     if (chat.role === "system") {
       if (previous?.role === "user") {
         previous.content = `${previous.content}\nSystem:${chat.content}`;
-      } else {
-        result.push({ role: "user", content: `System:${chat.content}` });
-      }
+      } else result.push({ role: "user", content: `System:${chat.content}` });
+
       continue;
     }
     if (chat.role === "function") {

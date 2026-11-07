@@ -131,6 +131,7 @@ class SafeElement {
     if (element.getAttribute("freezed")) {
       throw new Error("This element cannot be accessed by SafeELement");
     }
+
     this.#element = element;
     this.#eventTarget = eventTarget ?? element;
   }
@@ -186,6 +187,7 @@ class SafeElement {
         "Can only set attributes starting with 'x-' for security reasons. for other attributes, use dedicated methods.",
       );
     }
+
     this.#element.setAttribute(name, value);
   }
   public getAttribute(name: string): string | null {
@@ -194,6 +196,7 @@ class SafeElement {
         "Can only get attributes starting with 'x-' for security reasons. for other attributes, use dedicated methods.",
       );
     }
+
     return this.#element.getAttribute(name);
   }
   public setStyle(property: string, value: string) {
@@ -232,9 +235,7 @@ class SafeElement {
   public getChildren(): SafeClassArray<SafeElement> {
     const children: SafeElement[] = [];
     this.#element.childNodes.forEach((node) => {
-      if (node instanceof HTMLElement) {
-        children.push(new SafeElement(node));
-      }
+      if (node instanceof HTMLElement) children.push(new SafeElement(node));
     });
     return new SafeClassArray<SafeElement>(children);
   }
@@ -242,6 +243,7 @@ class SafeElement {
     if (this.#element.parentElement) {
       return new SafeElement(this.#element.parentElement);
     }
+
     return null;
   }
   public getInnerHTML(): string {
@@ -272,17 +274,14 @@ class SafeElement {
     const nodeList = this.#element.querySelectorAll(selector);
     const elements: SafeElement[] = [];
     nodeList.forEach((node) => {
-      if (node instanceof HTMLElement) {
-        elements.push(new SafeElement(node));
-      }
+      if (node instanceof HTMLElement) elements.push(new SafeElement(node));
     });
     return new SafeClassArray<SafeElement>(elements);
   }
   public querySelector(selector: string): SafeElement | null {
     const element = this.#element.querySelector(selector);
-    if (element instanceof HTMLElement) {
-      return new SafeElement(element);
-    }
+    if (element instanceof HTMLElement) return new SafeElement(element);
+
     return null;
   }
   public getElementById(id: string): SafeElement | null {
@@ -472,6 +471,7 @@ class SafeDocument extends SafeElement {
         `<a> can be created but href attribute cannot be set directly for security reasons. Use .createAnchorElement(href: string) to create safe anchor elements.`,
       );
     }
+
     const element = document.createElement(tagName);
     return new SafeElement(element);
   }
@@ -482,6 +482,7 @@ class SafeDocument extends SafeElement {
       if (url.protocol !== "http:" && url.protocol !== "https:") {
         throw new Error("Invalid protocol");
       }
+
       anchor.setAttribute("href", url.toString());
     } catch (error) {
       console.warn(
@@ -573,6 +574,7 @@ class SafeMutationObserver {
           new SafeMutationRecord(record.type, record.target, record.addedNodes),
         );
       }
+
       callback(safeClassed);
     });
   }
@@ -600,23 +602,20 @@ const addPluginUnloadCallback = (pluginName: string, callback: Function) => {
   if (!pluginUnloadCallbacks.has(pluginName)) {
     pluginUnloadCallbacks.set(pluginName, []);
   }
+
   pluginUnloadCallbacks.get(pluginName)?.push(callback);
 };
 
 const makeMenuUnloadCallback = (menuId: string, menuStore: MenuDef[]) => {
   return () => {
     const index = menuStore.findIndex((item) => item.id === menuId);
-    if (index !== -1) {
-      menuStore.splice(index, 1);
-    }
+    if (index !== -1) menuStore.splice(index, 1);
   };
 };
 
 const removeChatPanel = (id: string) => {
   const index = chatPanelStore.findIndex((item) => item.id === id);
-  if (index !== -1) {
-    chatPanelStore.splice(index, 1);
-  }
+  if (index !== -1) chatPanelStore.splice(index, 1);
 };
 
 const removePluginChatPanels = (pluginName: string) => {
@@ -632,18 +631,14 @@ const unloadV3Plugin = async (pluginName: string) => {
   const instance = v3PluginInstances.find((p) => p.name === pluginName);
   if (instance) {
     const index = v3PluginInstances.findIndex((p) => p.name === pluginName);
-    if (index !== -1) {
-      v3PluginInstances.splice(index, 1);
-    }
+    if (index !== -1) v3PluginInstances.splice(index, 1);
   }
   if (callbacks) {
     pluginUnloadCallbacks.delete(pluginName);
-    let promises: Promise<void>[] = [];
+    const promises: Promise<void>[] = [];
     for (const callback of callbacks) {
       const result = callback();
-      if (result instanceof Promise) {
-        promises.push(result);
-      }
+      if (result instanceof Promise) promises.push(result);
     }
 
     await Promise.any([
@@ -678,9 +673,7 @@ const getPluginPermission = async (
     scriptHash,
     permissionDesc,
   );
-  if (cachedPermission !== undefined) {
-    return cachedPermission;
-  }
+  if (cachedPermission !== undefined) return cachedPermission;
 
   const permissionKey = getPluginPermissionKey(scriptHash, permissionDesc);
 
@@ -691,20 +684,19 @@ const getPluginPermission = async (
       pluginName + "_" + permissionDesc + "_lastGrantTime",
     );
     const now = Date.now();
-    if (!lastGrantTime || now - lastGrantTime > 3 * 24 * 60 * 60 * 1000) {
-      //3 days
+    if (!lastGrantTime || now - lastGrantTime > 3 * 24 * 60 * 60 * 1000)
+    //3 days
+    {
       requiresReconfirm = true;
     }
-  } else if (reconfirm === true) {
-    requiresReconfirm = true;
-  }
+  } else if (reconfirm === true) requiresReconfirm = true;
 
   if (!requiresReconfirm && (await permissionForage.getItem(permissionKey))) {
     permissionSessionCache.set(scriptHash, permissionDesc, true);
     return true;
   }
 
-  let alertTitle =
+  const alertTitle =
     permissionDesc === "fetchLogs"
       ? language.fetchLogConsent.replace("{}", pluginName)
       : permissionDesc === "db"
@@ -720,9 +712,8 @@ const getPluginPermission = async (
                 : permissionDesc === "inlay"
                   ? language.inlayPermissionConsent.replace("{}", pluginName)
                   : `Error`;
-  if (alertTitle === "Error") {
-    return false;
-  }
+  if (alertTitle === "Error") return false;
+
   const conf = await alertConfirm(alertTitle);
   if (conf && permissionKey) {
     permissionSessionCache.set(scriptHash, permissionDesc, true);
@@ -733,6 +724,7 @@ const getPluginPermission = async (
         Date.now(),
       );
     }
+
     return true;
   }
   permissionSessionCache.set(scriptHash, permissionDesc, false);
@@ -788,6 +780,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
           );
         }
       }
+
       return oldApis.risuFetch(url, options);
     },
     nativeFetch: (url, options) => {
@@ -808,6 +801,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
           );
         }
       }
+
       return oldApis.nativeFetch(url, options);
     },
     getChar: oldApis.getChar,
@@ -826,7 +820,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       console.warn(
         `[WARN] addProvider is a powerful API that can potentially be unsafe if used incorrectly. addProvider's functionality might be limited or changed in future updates to ensure security. please use other APIs if possible.`,
       );
-      let provs = get(customProviderStore);
+      const provs = get(customProviderStore);
       provs.push(name);
       (pluginV2.providers.set(name, (arg, abortSignal) => {
         return runWithPluginPermission(
@@ -891,18 +885,16 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     addRisuReplacer: async (name: string, func: Function) => {
       //permission check for replacer
       const conf = await getPermission("replacer", "periodically");
-      if (!conf) {
-        return;
-      }
+      if (!conf) return;
+
       oldApis.addRisuReplacer(name, func as any);
     },
     removeRisuReplacer: oldApis.removeRisuReplacer,
     addRisuChatListener: async (mode: "output", func: Function) => {
       //permission check, lets use same as replacer
       const conf = await getPermission("replacer", "periodically");
-      if (!conf) {
-        return;
-      }
+      if (!conf) return;
+
       oldApis.addRisuChatListener(mode, func as any);
       addPluginUnloadCallback(plugin.name, () =>
         oldApis.removeRisuChatListener(mode, func as any),
@@ -922,18 +914,16 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     readImage: oldApis.readImage,
     readInlay: async (id: string) => {
       const conf = await getPermission("inlay", "periodically");
-      if (!conf) {
-        return null;
-      }
+      if (!conf) return null;
+
       return await getInlayAsset(id);
     },
     saveAsset: oldApis.saveAsset,
     //Same functionality, but new implementation
     getDatabase: async (includeOnly: string[] | "all" = "all") => {
       const conf = await getPermission("db", "periodically");
-      if (!conf) {
-        return null;
-      }
+      if (!conf) return null;
+
       return prepareDatabaseSnapshot(
         oldApis.getDatabase(),
         allowedDbKeys,
@@ -967,9 +957,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
           throw new Error(`Invalid color scheme: missing or invalid '${key}'`);
         }
       }
+
       if (scheme.type !== "light" && scheme.type !== "dark") {
         throw new Error('Invalid color scheme type: must be "light" or "dark"');
       }
+
       settingsStore.state.colorSchemeName = "custom";
       settingsStore.state.customColorScheme = scheme;
       settingsStore.state.colorScheme = scheme;
@@ -987,6 +979,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       if (!["standard", "highcontrast"].includes(name)) {
         throw new Error(`Invalid text theme: ${name}`);
       }
+
       settingsStore.state.textTheme = name;
       updateTextThemeAndCSS();
     },
@@ -1011,6 +1004,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
           throw new Error(`Invalid text theme: missing or invalid '${key}'`);
         }
       }
+
       settingsStore.state.textTheme = "custom";
       settingsStore.state.customTextTheme = theme;
       updateTextThemeAndCSS();
@@ -1050,13 +1044,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       },
     ) => {
       const char = characterStore.characters[get(selectedCharID)];
-      if (!char) {
-        throw new Error("No character selected");
-      }
+      if (!char) throw new Error("No character selected");
+
       const chat = char.chats?.[char.chatPage];
-      if (!chat) {
-        throw new Error("No active chat found");
-      }
+      if (!chat) throw new Error("No active chat found");
+
       const chatTarget = requireChatTargetFromIndexes(
         get(selectedCharID),
         char.chatPage,
@@ -1069,6 +1061,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       ) {
         throw new Error(`Invalid messageIndex: ${chatID}`);
       }
+
       const role = options?.role;
       const cbsConditions: CbsConditions = {
         ...(role ? { chatRole: role } : {}),
@@ -1085,9 +1078,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
         cbsConditions,
       });
 
-      if (!options?.processRegex) {
-        return parsed;
-      }
+      if (!options?.processRegex) return parsed;
 
       return (
         await processScriptFull(
@@ -1114,9 +1105,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     getCurrentLorebookEntries: () => {
       const charId = get(selectedCharID);
       const char = characterStore.characters[charId];
-      if (!char) {
-        return [];
-      }
+      if (!char) return [];
+
       const page = char.chatPage;
       const characterLore = char.globalLore ?? [];
       const chatLore = char.chats?.[page]?.localLore ?? [];
@@ -1160,9 +1150,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     },
     getRootDocument: async () => {
       const conf = await getPermission("mainDom");
-      if (!conf) {
-        return null;
-      }
+      if (!conf) return null;
+
       return new SafeDocument(document);
     },
     registerSetting: (
@@ -1175,9 +1164,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       if (iconType !== "html" && iconType !== "img" && iconType !== "none") {
         throw new Error("iconType must be 'html', 'img' or 'none'");
       }
+
       if (typeof name !== "string" || name.trim() === "") {
         throw new Error("name must be a non-empty string");
       }
+
       const menuId = id || v4();
       const menuDef: MenuDef = {
         id: menuId,
@@ -1207,9 +1198,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     registerBodyIntercepter: async (
       callback: (body: any, type: string) => any,
     ) => {
-      if ((await getPermission("replacer")) === false) {
-        return null;
-      }
+      if ((await getPermission("replacer")) === false) return null;
 
       const id = v4();
       bodyIntercepterStore.push({
@@ -1218,18 +1207,14 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       });
       addPluginUnloadCallback(plugin.name, () => {
         const index = bodyIntercepterStore.findIndex((item) => item.id === id);
-        if (index !== -1) {
-          bodyIntercepterStore.splice(index, 1);
-        }
+        if (index !== -1) bodyIntercepterStore.splice(index, 1);
       });
       return { id: id };
     },
 
     unregisterBodyIntercepter: (id: string) => {
       const index = bodyIntercepterStore.findIndex((item) => item.id === id);
-      if (index !== -1) {
-        bodyIntercepterStore.splice(index, 1);
-      }
+      if (index !== -1) bodyIntercepterStore.splice(index, 1);
     },
 
     registerButton: (
@@ -1247,12 +1232,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       if (iconType !== "html" && iconType !== "img" && iconType !== "none") {
         throw new Error("iconType must be 'html', 'img' or 'none'");
       }
+
       if (typeof name !== "string" || name.trim() === "") {
         throw new Error("name must be a non-empty string");
       }
-      if (typeof icon !== "string") {
-        throw new Error("icon must be a string");
-      }
+
+      if (typeof icon !== "string") throw new Error("icon must be a string");
+
       const id = providedId || v4();
       const menuDef: MenuDef = {
         name,
@@ -1342,11 +1328,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       };
 
       const existingIndex = chatPanelStore.findIndex((item) => item.id === id);
-      if (existingIndex !== -1) {
-        chatPanelStore[existingIndex] = panel;
-      } else {
-        chatPanelStore.push(panel);
-      }
+      if (existingIndex !== -1) chatPanelStore[existingIndex] = panel;
+      else chatPanelStore.push(panel);
+
       addPluginUnloadCallback(plugin.name, () =>
         removePluginChatPanels(plugin.name),
       );
@@ -1357,9 +1341,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     unregisterUIPart: (id: string) => {
       const removeFromMenuStore = (menuStore: MenuDef[]) => {
         const index = menuStore.findIndex((item) => item.id === id);
-        if (index !== -1) {
-          menuStore.splice(index, 1);
-        }
+        if (index !== -1) menuStore.splice(index, 1);
       };
 
       removeFromMenuStore(additionalSettingsMenu);
@@ -1386,9 +1368,8 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     getFetchLogs: async () => {
       const unsafeFetchLog = getFetchLogs();
       const conf = await getPermission("fetchLogs");
-      if (!conf) {
-        return null;
-      }
+      if (!conf) return null;
+
       return unsafeFetchLog.map((log) => {
         const url = new URL(log.url);
         return {
@@ -1513,9 +1494,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     },
     sendChat: async (message: string) => {
       const conf = await getPermission("sendChat");
-      if (!conf) {
-        return false;
-      }
+      if (!conf) return false;
 
       if (typeof message !== "string") {
         throw new Error("Message must be a string");
@@ -1523,8 +1502,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
 
       if (
         getModelInfo(presetStore.state.aiModel).id.startsWith("pluginmodel:::")
-      ) {
-        // Executing plugin provider is block because it can be used for loopholes for ipc right now.
+      )
+      // Executing plugin provider is block because it can be used for loopholes for ipc right now.
+      {
         throw new Error(
           "Sending chat with plugin-based model is currently blocked",
         );
@@ -1532,14 +1512,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
 
       const charId = get(selectedCharID);
       const char = characterStore.characters[charId];
-      if (!char) {
-        throw new Error("No character selected");
-      }
+      if (!char) throw new Error("No character selected");
 
       const chat = char.chats[char.chatPage];
-      if (!chat) {
-        throw new Error("No active chat found");
-      }
+      if (!chat) throw new Error("No active chat found");
+
       const chatWasNew = !chat.id;
       chat.id ??= v4();
       if (isChatGenerationActive(chat.id)) {
@@ -1660,6 +1637,7 @@ export async function loadV3Plugins(plugins: PluginMetadata[]) {
       entry.options,
     );
   }
+
   pluginEventListeners.length = 0;
 
   // Each sandbox creates an independent JavaScript realm. Starting every
@@ -1683,6 +1661,7 @@ export async function loadV3Plugins(plugins: PluginMetadata[]) {
   if (crashGuardLedgerClearTimer !== null) {
     clearTimeout(crashGuardLedgerClearTimer);
   }
+
   crashGuardLedgerClearTimer = setTimeout(() => {
     crashGuardLedgerClearTimer = null;
     void crashGuard?.clearLoading();
@@ -1731,15 +1710,12 @@ globalThis.__debugV3Plugin = (
   code: string | Function,
   pluginName: string = "",
 ) => {
-  if (code instanceof Function) {
-    code = `(${code.toString()})()`;
-  }
-  if (pluginName === "") {
-    return v3PluginInstances[0].host.executeInIframe(code);
-  }
+  if (code instanceof Function) code = `(${code.toString()})()`;
+
+  if (pluginName === "") return v3PluginInstances[0].host.executeInIframe(code);
+
   const instance = v3PluginInstances.find((p) => p.name === pluginName);
-  if (!instance) {
-    throw new Error(`Plugin ${pluginName} not found.`);
-  }
+  if (!instance) throw new Error(`Plugin ${pluginName} not found.`);
+
   return instance.host.executeInIframe(code);
 };

@@ -46,8 +46,9 @@ type BufferLike = {
 function nodeBuffer(): BufferLike {
   const candidate = (globalThis as typeof globalThis & { Buffer?: BufferLike })
     .Buffer;
-  if (!candidate)
+  if (!candidate) {
     throw new Error("Base64 codec is unavailable in this runtime");
+  }
   return candidate;
 }
 
@@ -80,13 +81,15 @@ function encodeUtf16(value: string): string {
 
 function decodeUtf16(value: string): string {
   const bytes = base64ToBytes(value);
-  if (bytes.length % 2 !== 0)
+  if (bytes.length % 2 !== 0) {
     throw new Error("Invalid UTF-16 relational node value");
+  }
   let result = "";
   // Avoid apply/spread argument limits for large prompts.
   for (let index = 0; index < bytes.length; index += 2) {
     result += String.fromCharCode(bytes[index] | (bytes[index + 1] << 8));
   }
+
   return result;
 }
 
@@ -124,6 +127,7 @@ export function decodeText(text: unknown, encoded: unknown): string {
   if (encoded !== null && encoded !== undefined && encoded !== "") {
     return decodeUtf16(String(encoded));
   }
+
   return String(text ?? "");
 }
 
@@ -158,10 +162,12 @@ export function flatten(value: unknown, options: Options = {}): NodeRow[] {
     key: string | null,
     depth: number,
   ): void => {
-    if (depth > maxDepth)
+    if (depth > maxDepth) {
       throw new Error(`Relational value exceeds maximum depth ${maxDepth}`);
-    if (rows.length >= maxRows)
+    }
+    if (rows.length >= maxRows) {
       throw new Error(`Relational value exceeds maximum row count ${maxRows}`);
+    }
 
     const nodeId = rows.length;
     const encodedKey =
@@ -193,12 +199,13 @@ export function flatten(value: unknown, options: Options = {}): NodeRow[] {
     if (typeof current === "number") {
       row.value_type = "number";
       if (Number.isFinite(current)) row.number_value = current;
-      else
+      else {
         row.text_value = Number.isNaN(current)
           ? "NaN"
           : current > 0
             ? "Infinity"
             : "-Infinity";
+      }
       return;
     }
     if (typeof current === "string") {
@@ -213,8 +220,10 @@ export function flatten(value: unknown, options: Options = {}): NodeRow[] {
         `Unsupported relational value type: ${typeof current}`,
       );
     }
-    if (ancestors.has(current))
+
+    if (ancestors.has(current)) {
       throw new TypeError("Relational values cannot contain cycles");
+    }
     ancestors.add(current);
     row.value_type = Array.isArray(current) ? "array" : "object";
     if (Array.isArray(current)) {
@@ -226,6 +235,7 @@ export function flatten(value: unknown, options: Options = {}): NodeRow[] {
         append(item, nodeId, index, childKey, depth + 1),
       );
     }
+
     ancestors.delete(current);
   };
 
@@ -241,11 +251,13 @@ export function rebuild(input: readonly Record<string, unknown>[]): unknown {
   if (Number(rows[0].node_id) !== 0 || rows[0].parent_node_id !== null) {
     throw new Error("Relational value has an invalid root node");
   }
+
   const children = new Map<number, Record<string, unknown>[]>();
   for (const row of rows.slice(1)) {
     const parent = Number(row.parent_node_id);
-    if (!Number.isSafeInteger(parent))
+    if (!Number.isSafeInteger(parent)) {
       throw new Error("Relational node has no parent");
+    }
     const list = children.get(parent) ?? [];
     list.push(row);
     children.set(parent, list);
@@ -257,8 +269,9 @@ export function rebuild(input: readonly Record<string, unknown>[]): unknown {
   }
 
   const build = (row: Record<string, unknown>, depth: number): unknown => {
-    if (depth > MAX_NODE_DEPTH)
+    if (depth > MAX_NODE_DEPTH) {
       throw new Error("Relational value exceeds maximum depth");
+    }
     switch (row.value_type) {
       case "null":
         return null;

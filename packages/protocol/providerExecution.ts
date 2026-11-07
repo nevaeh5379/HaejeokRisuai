@@ -47,6 +47,7 @@ function normalizeNodeProviderExecutionRequest(input?: any): any {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { error: "Request body must be an object" };
   }
+
   if (
     !Number.isInteger(input.format) ||
     input.format < 0 ||
@@ -54,6 +55,7 @@ function normalizeNodeProviderExecutionRequest(input?: any): any {
   ) {
     return { error: "format must be an integer from 0 to 1000" };
   }
+
   if (
     !input.payload ||
     typeof input.payload !== "object" ||
@@ -61,6 +63,7 @@ function normalizeNodeProviderExecutionRequest(input?: any): any {
   ) {
     return { error: "payload must be an object" };
   }
+
   return {
     value: {
       format: input.format,

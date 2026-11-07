@@ -48,6 +48,7 @@ export function getImageCacheLimit(
         ? limits.mobile
         : limits.standard;
   }
+
   return Math.min(limits.max, Math.floor(value));
 }
 

@@ -33,16 +33,10 @@ function mergeStringArrays(
 ): string[] | undefined {
   if (!left?.length && !right?.length) return undefined;
   const set = new Set<string>();
-  if (left) {
-    for (const item of left) {
-      if (item) set.add(item);
-    }
-  }
-  if (right) {
-    for (const item of right) {
-      if (item) set.add(item);
-    }
-  }
+  if (left) for (const item of left) if (item) set.add(item);
+
+  if (right) for (const item of right) if (item) set.add(item);
+
   return Array.from(set);
 }
 
@@ -82,6 +76,7 @@ export function mergeDatabaseChanges(
   if (Number.isSafeInteger(incoming.revision)) {
     merged.revision = Math.max(merged.revision ?? 0, incoming.revision!);
   }
+
   if (incoming.action === "plugin-toggle") merged.pluginsChanged = true;
   return merged;
 }

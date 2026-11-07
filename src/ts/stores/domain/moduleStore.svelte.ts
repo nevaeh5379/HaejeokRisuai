@@ -148,6 +148,7 @@ class ModuleStore
     if (this.hasPendingWrites()) {
       throw new Error("Cannot refresh modules while local changes are pending");
     }
+
     await this.init(storage);
   }
 
@@ -217,11 +218,9 @@ class ModuleStore
           seen.add(item);
           result.push(item);
         }
-      } else {
-        if (validUngrouped.has(item) && !seen.has(item)) {
-          seen.add(item);
-          result.push(item);
-        }
+      } else if (validUngrouped.has(item) && !seen.has(item)) {
+        seen.add(item);
+        result.push(item);
       }
     }
 
@@ -253,6 +252,7 @@ class ModuleStore
     ) {
       return;
     }
+
     this.moduleOrder = sanitized;
     this.markOrderDirty();
   }
@@ -284,6 +284,7 @@ class ModuleStore
         }
       }
     }
+
     return items;
   }
 
@@ -339,6 +340,7 @@ class ModuleStore
     ) {
       return;
     }
+
     const [moved] = current.splice(fromIndex, 1);
     current.splice(toIndex, 0, moved);
     this.moduleOrder = current;
@@ -422,6 +424,7 @@ class ModuleStore
         nextModules[i] = orderedFolderModules[insertIdx++];
       }
     }
+
     this.modules = nextModules;
     this.markModulesDirty();
     await this.flush();
@@ -453,14 +456,10 @@ class ModuleStore
       } else if (previousFolderId) {
         const folderKey = `folder:${previousFolderId}`;
         const folderIdx = order.indexOf(folderKey);
-        if (folderIdx >= 0) {
-          order.splice(folderIdx + 1, 0, moduleId);
-        } else {
-          order.push(moduleId);
-        }
-      } else {
-        order.push(moduleId);
-      }
+        if (folderIdx >= 0) order.splice(folderIdx + 1, 0, moduleId);
+        else order.push(moduleId);
+      } else order.push(moduleId);
+
       this.moduleOrder = order;
       this.syncModulesOrderToRoot();
       this.markOrderDirty();
@@ -655,9 +654,9 @@ class ModuleStore
         unparentedIds.push(module.id);
       }
     }
-    if (folderIdx >= 0) {
-      this.moduleOrder.splice(folderIdx, 1, ...unparentedIds);
-    } else {
+
+    if (folderIdx >= 0) this.moduleOrder.splice(folderIdx, 1, ...unparentedIds);
+    else {
       this.moduleOrder = this.moduleOrder.filter((k) => k !== folderKey);
       this.moduleOrder.push(...unparentedIds);
     }
@@ -686,8 +685,9 @@ class ModuleStore
       !this.dirtyOrder &&
       !this.dirtySandboxGroups &&
       !this.hasPendingContentChange(moduleBaseline)
-    )
+    ) {
       return;
+    }
 
     const storage = this.storage;
     if (!storage) {
@@ -727,6 +727,7 @@ class ModuleStore
         value: $state.snapshot(this.enabledModules),
       });
     }
+
     if (
       this.dirtyFolders ||
       fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint
@@ -736,6 +737,7 @@ class ModuleStore
         value: $state.snapshot(this.moduleFolders),
       });
     }
+
     if (
       this.dirtyOrder ||
       fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint
@@ -745,6 +747,7 @@ class ModuleStore
         value: $state.snapshot(this.moduleOrder),
       });
     }
+
     if (
       this.dirtySandboxGroups ||
       fingerprintOf(this.sandboxGroups) !==
@@ -755,6 +758,7 @@ class ModuleStore
         value: $state.snapshot(this.sandboxGroups),
       });
     }
+
     const operation = this.queue.enqueue(() =>
       commitSqlChanges(storage, commit),
     );
@@ -807,6 +811,7 @@ class ModuleStore
         this.moduleFingerprints.delete(module);
       }
     }
+
     return new Map(
       this.modules.map((module) => {
         let cached = this.moduleFingerprints.get(module);

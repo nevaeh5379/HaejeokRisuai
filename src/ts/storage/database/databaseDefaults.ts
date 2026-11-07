@@ -52,6 +52,7 @@ function requireObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError(`${label} must be a non-array object`);
   }
+
   return input as Record<string, unknown>;
 }
 
@@ -150,9 +151,8 @@ function normalizeAggregateDomains(data: Database): void {
         largePortrait: false,
       },
     ];
-  } else {
-    for (const persona of data.personas) persona.largePortrait ??= false;
-  }
+  } else for (const persona of data.personas) persona.largePortrait ??= false;
+
   if (
     typeof data.selectedPersona !== "number" ||
     !Number.isInteger(data.selectedPersona) ||
@@ -170,6 +170,7 @@ function normalizeAggregateDomains(data: Database): void {
       },
     ];
   }
+
   for (const preset of portable.botPresets) normalizePortablePreset(preset);
   portable.botPresetsId ??= 0;
 

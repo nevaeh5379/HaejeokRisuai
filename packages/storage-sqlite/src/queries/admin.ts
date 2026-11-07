@@ -141,6 +141,7 @@ export async function getBotChatStats(
       ) {
         lastActiveDate = chat.lastMessageTime;
       }
+
       const messages = msgsByChat.get(chat.id) ?? [];
       longestSessionMessages = Math.max(
         longestSessionMessages,
@@ -154,6 +155,7 @@ export async function getBotChatStats(
         ) {
           lastActiveDate = message.sentTime;
         }
+
         if (message.role === "user") {
           userMessages += 1;
           totalUserLen += message.len;
@@ -246,8 +248,9 @@ export async function getTableData(
   const columns = requested?.length
     ? allColumns.filter((column) => requested.includes(column.name))
     : allColumns;
-  if (columns.length === 0)
+  if (columns.length === 0) {
     throw new Error(`SQLite table has no columns: ${table}`);
+  }
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const limit = normalizeLimit(options.limit ?? 50);
   const quotedTable = quoteIdentifier(table);

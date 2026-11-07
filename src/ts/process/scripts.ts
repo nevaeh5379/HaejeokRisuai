@@ -57,7 +57,7 @@ export async function processScript(
 }
 
 export function exportRegex(s?: customscript[]) {
-  let db = settingsStore.state;
+  const db = settingsStore.state;
   const script = s ?? db.globalscript;
   const data = Buffer.from(
     JSON.stringify({
@@ -73,29 +73,25 @@ export function exportRegex(s?: customscript[]) {
 export async function importRegex(o?: customscript[]): Promise<customscript[]> {
   o = o ?? [];
   const filedata = (await selectSingleFile(["json"])).data;
-  if (!filedata) {
-    return o;
-  }
-  let db = settingsStore.state;
+  if (!filedata) return o;
+
+  const db = settingsStore.state;
   try {
     const imported = JSON.parse(Buffer.from(filedata).toString("utf-8"));
     if (imported.type === "regex" && imported.data) {
       const datas: customscript[] = imported.data;
       const script = o;
-      for (const data of datas) {
-        script.push(data);
-      }
+      for (const data of datas) script.push(data);
+
       return o;
-    } else {
-      alertError("File invaid or corrupted");
-    }
+    } else alertError("File invaid or corrupted");
   } catch (error) {
     alertError(error);
   }
   return o;
 }
 
-let bestMatchCache = new Map<string, string>();
+const bestMatchCache = new Map<string, string>();
 let processScriptCache = new Map<string, string>();
 const SCRIPT_CACHE_MAX_ENTRIES = 128;
 const SCRIPT_CACHE_MAX_CHARS = 1024 * 1024;
@@ -119,8 +115,9 @@ function generateScriptCacheKey(
           script.ableFlag ||
           /author_?note/i.test(script.in + script.out)),
     )
-  )
+  ) {
     return "";
+  }
   const targetKey = chatTarget
     ? `${chatTarget.characterId}:${chatTarget.chatId}`
     : "selected";
@@ -134,9 +131,8 @@ function generateScriptCacheKey(
     targetKey +
     "|||";
   for (const script of scripts) {
-    if (script.type !== mode) {
-      continue;
-    }
+    if (script.type !== mode) continue;
+
     hash += `${script.flag?.includes("<cbs>") ? risuChatParser(script.in, { chatID: chatID, cbsConditions, chatTarget }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ""}|||${script.ableFlag ? 1 : 0}`;
   }
   return hash;
@@ -195,7 +191,7 @@ export async function processScriptFull(
     };
   }
 
-  let db = settingsStore.state;
+  const db = settingsStore.state;
   let emoChanged = false;
   data = await runLuaEditTrigger(
     char,
@@ -232,9 +228,7 @@ export async function processScriptFull(
   if (pluginV2[mode].size > 0) {
     for (const plugin of pluginV2[mode]) {
       const res = await plugin(data);
-      if (res !== null && res !== undefined) {
-        data = res;
-      }
+      if (res !== null && res !== undefined) data = res;
     }
   }
 
@@ -254,9 +248,7 @@ export async function processScriptFull(
     chatTarget,
   );
   const cached = getScriptCache(hash);
-  if (cached) {
-    return { data: cached, emoChanged: false };
-  }
+  if (cached) return { data: cached, emoChanged: false };
 
   if (scripts.length === 0) {
     cacheScript(hash, data);
@@ -265,28 +257,27 @@ export async function processScriptFull(
   function executeScript(pscript: pScript) {
     const script = pscript.script;
 
-    if (script.in === "") {
-      return;
-    }
+    if (script.in === "") return;
 
     if (script.type === mode) {
-      let outScript2 = script.out.replaceAll("$n", "\n");
+      const outScript2 = script.out.replaceAll("$n", "\n");
       let outScript = outScript2.replace(dreg, "$&");
       let flag = "g";
-      if (script.ableFlag) {
-        flag = script.flag || "g";
-      }
+      if (script.ableFlag) flag = script.flag || "g";
+
       if (
         outScript.startsWith("@@move_top") ||
         outScript.startsWith("@@move_bottom") ||
         pscript.actions.includes("move_top") ||
         pscript.actions.includes("move_bottom")
       ) {
-        flag = flag.replace("g", ""); //temperary fix
-      }
+        flag = flag.replace("g", "");
+      } //temperary fix
+
       if (outScript.endsWith(">") && !pscript.actions.includes("no_end_nl")) {
         outScript += "\n";
       }
+
       //remove unsupported flag
       flag = flag.trim().replace(/[^dgimsuvy]/g, "");
 
@@ -296,9 +287,7 @@ export async function processScriptFull(
         .filter((v, i, a) => a.indexOf(v) === i)
         .join("");
 
-      if (flag.length === 0) {
-        flag = "u";
-      }
+      if (flag.length === 0) flag = "u";
 
       let input = script.in;
       if (pscript.actions.includes("cbs")) {
@@ -316,14 +305,12 @@ export async function processScriptFull(
           reg.lastIndex = 0;
           if (outScript.startsWith("@@emo ")) {
             const emoName = script.out.substring(6).trim();
-            let charemotions = get(CharEmotion);
+            const charemotions = get(CharEmotion);
             let tempEmotion = charemotions[char.chaId];
-            if (!tempEmotion) {
-              tempEmotion = [];
-            }
-            if (tempEmotion.length > 4) {
-              tempEmotion.splice(0, 1);
-            }
+            if (!tempEmotion) tempEmotion = [];
+
+            if (tempEmotion.length > 4) tempEmotion.splice(0, 1);
+
             if (char.type !== "simple") {
               for (const emo of char.emotionImages) {
                 if (emo[0] === emoName) {
@@ -369,14 +356,13 @@ export async function processScriptFull(
             for (const matched of matchAll) {
               if (matched) {
                 const inData = matched[0];
-                let out = outScript
+                const out = outScript
                   .replace("@@move_top ", "")
                   .replace("@@move_bottom ", "")
                   .replace(/(?<!\$)\$[0-9]+/g, (v) => {
                     const index = parseInt(v.substring(1));
-                    if (index < matched.length) {
-                      return matched[index];
-                    }
+                    if (index < matched.length) return matched[index];
+
                     return v;
                   })
                   .replace(/\$\&/g, inData)
@@ -385,6 +371,7 @@ export async function processScriptFull(
                     if (matched.groups && matched.groups[groupName]) {
                       return matched.groups[groupName];
                     }
+
                     return v;
                   });
                 if (
@@ -392,9 +379,7 @@ export async function processScriptFull(
                   pscript.actions.includes("move_top")
                 ) {
                   data = out + "\n" + data;
-                } else {
-                  data = data + "\n" + out;
-                }
+                } else data = data + "\n" + out;
               }
             }
           } else {
@@ -404,53 +389,50 @@ export async function processScriptFull(
               chatTarget,
             });
           }
-        } else {
-          if (
-            (outScript.startsWith("@@repeat_back") ||
-              pscript.actions.includes("repeat_back")) &&
-            chatID !== -1
-          ) {
-            const v = outScript.split(" ", 2)[1];
-            const resolvedTarget = chatTarget
-              ? resolveChatTarget(chatTarget)
-              : null;
-            const selectedIndex =
-              resolvedTarget?.characterIndex ?? get(selectedCharID);
-            const selchar = characterStore.characters[selectedIndex];
-            const chat =
-              selchar.chats[resolvedTarget?.chatIndex ?? selchar.chatPage];
-            let lastChat =
-              chat.fmIndex === -1
-                ? selchar.firstMessage
-                : selchar.alternateGreetings[chat.fmIndex];
-            let pointer = chatID - 1;
-            while (pointer >= 0) {
-              if (chat.message[pointer].role === chat.message[chatID].role) {
-                lastChat = chat.message[pointer].data;
-                break;
-              }
-              pointer--;
+        } else if (
+          (outScript.startsWith("@@repeat_back") ||
+            pscript.actions.includes("repeat_back")) &&
+          chatID !== -1
+        ) {
+          const v = outScript.split(" ", 2)[1];
+          const resolvedTarget = chatTarget
+            ? resolveChatTarget(chatTarget)
+            : null;
+          const selectedIndex =
+            resolvedTarget?.characterIndex ?? get(selectedCharID);
+          const selchar = characterStore.characters[selectedIndex];
+          const chat =
+            selchar.chats[resolvedTarget?.chatIndex ?? selchar.chatPage];
+          let lastChat =
+            chat.fmIndex === -1
+              ? selchar.firstMessage
+              : selchar.alternateGreetings[chat.fmIndex];
+          let pointer = chatID - 1;
+          while (pointer >= 0) {
+            if (chat.message[pointer].role === chat.message[chatID].role) {
+              lastChat = chat.message[pointer].data;
+              break;
             }
+            pointer--;
+          }
 
-            reg.lastIndex = 0;
-            const r = lastChat.match(reg);
-            if (!v) {
-              data = data + r[0];
-            } else if (r[0]) {
-              switch (v) {
-                case "end":
-                  data = data + r[0];
-                  break;
-                case "start":
-                  data = r[0] + data;
-                  break;
-                case "end_nl":
-                  data = data + "\n" + r[0];
-                  break;
-                case "start_nl":
-                  data = r[0] + "\n" + data;
-                  break;
-              }
+          reg.lastIndex = 0;
+          const r = lastChat.match(reg);
+          if (!v) data = data + r[0];
+          else if (r[0]) {
+            switch (v) {
+              case "end":
+                data = data + r[0];
+                break;
+              case "start":
+                data = r[0] + data;
+                break;
+              case "end_nl":
+                data = data + "\n" + r[0];
+                break;
+              case "start_nl":
+                data = r[0] + "\n" + data;
+                break;
             }
           }
         }
@@ -465,7 +447,7 @@ export async function processScriptFull(
     }
   }
 
-  let parsedScripts: pScript[] = [];
+  const parsedScripts: pScript[] = [];
   let orderChanged = false;
   for (const script of scripts) {
     if (script.ableFlag && script.flag?.includes("<")) {
@@ -481,9 +463,7 @@ export async function processScriptFull(
             if (m.startsWith("order ")) {
               order = parseInt(m.substring(6));
               orderChanged = true;
-            } else {
-              actions.push(m);
-            }
+            } else actions.push(m);
           }
 
           return "";
@@ -503,9 +483,8 @@ export async function processScriptFull(
     });
   }
 
-  if (orderChanged) {
-    parsedScripts.sort((a, b) => b.order - a.order); //sort by order
-  }
+  if (orderChanged) parsedScripts.sort((a, b) => b.order - a.order); //sort by order
+
   for (const script of parsedScripts) {
     try {
       executeScript(script);
@@ -536,9 +515,7 @@ export async function processScriptFull(
       resolvedTarget?.chat,
     );
     if (moduleAssets.length > 0) {
-      for (const asset of moduleAssets) {
-        assetNames.push(asset[0]);
-      }
+      for (const asset of moduleAssets) assetNames.push(asset[0]);
     }
 
     const assetNameSet = new Set(assetNames);
@@ -551,9 +528,8 @@ export async function processScriptFull(
         char.chaId ? `dynamic-assets:${char.chaId}` : undefined,
       );
       const serverReady = await processer.prepareServerTextIndex(assetNames);
-      if (!serverReady) {
-        await processer.addText(assetNames);
-      }
+      if (!serverReady) await processer.addText(assetNames);
+
       return processer;
     };
     const matches = data.matchAll(assetRegex);

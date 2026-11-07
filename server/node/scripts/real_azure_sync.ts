@@ -30,6 +30,7 @@ function decodeRisuDb(data) {
       break;
     }
   }
+
   if (isCompressed) {
     const raw = data.slice(magicCompressedHeader.length);
     const decompressed = fflate.decompressSync(raw);
@@ -43,6 +44,7 @@ function decodeRisuDb(data) {
       break;
     }
   }
+
   if (isRaw) {
     const raw = data.slice(magicHeader.length);
     return unpackr.decode(raw);
@@ -100,6 +102,7 @@ function parseBackupArchive(filePath) {
       `database.risudat not found inside archive: ${resolvedPath}`,
     );
   }
+
   return { dbData, entryCount, fileSize: stat.size };
 }
 
@@ -107,11 +110,8 @@ function parseBackupArchive(filePath) {
  * Uploads a RisuAI backup .bin file to Azure SQL Database.
  */
 async function syncBackupToAzure(backupPath, options = {}) {
-  if (options.envPath) {
-    loadAzureEnvFile(options.envPath);
-  } else {
-    loadAzureEnvFile();
-  }
+  if (options.envPath) loadAzureEnvFile(options.envPath);
+  else loadAzureEnvFile();
 
   const config = readAzureConfigFromEnv();
   if (!config.server || !config.database || !config.user || !config.password) {
@@ -259,6 +259,7 @@ async function syncBackupToAzure(backupPath, options = {}) {
         }
       }
     }
+
     console.log(
       `[Azure Sync] Full verification succeeded! Characters: ${fullLoaded.database?.characters?.length}, Chats: ${totalLoadedChats}, Messages: ${totalLoadedMessages}`,
     );
@@ -282,15 +283,11 @@ function parseCliArgs() {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--help" || arg === "-h") {
-      options.help = true;
-    } else if (arg === "--dry-run") {
-      options.dryRun = true;
-    } else if (arg === "--no-shallow") {
-      options.shallowVerify = false;
-    } else if (arg === "--no-full") {
-      options.fullVerify = false;
-    } else if (arg === "--env" && i + 1 < args.length) {
+    if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--no-shallow") options.shallowVerify = false;
+    else if (arg === "--no-full") options.fullVerify = false;
+    else if (arg === "--env" && i + 1 < args.length) {
       options.envPath = args[++i];
     } else if (!arg.startsWith("-") && !options.filePath) {
       options.filePath = arg;

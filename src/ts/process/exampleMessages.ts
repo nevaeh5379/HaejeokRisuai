@@ -8,18 +8,14 @@ export function exampleMessage(
   userName: string,
   chatTarget?: ChatExecutionTarget,
 ): OpenAIChat[] {
-  if (char.exampleMessage === "") {
-    return [];
-  }
+  if (char.exampleMessage === "") return [];
 
   const messages = char.exampleMessage.split("\n");
   let result: OpenAIChat[] = [];
   let currentMessage: OpenAIChat;
 
   function add() {
-    if (currentMessage) {
-      result.push(currentMessage);
-    }
+    if (currentMessage) result.push(currentMessage);
   }
 
   for (const mes of messages) {
@@ -55,11 +51,7 @@ export function exampleMessage(
         content: trimed.split(":", 2)[1].trimStart(),
         name: "example_user",
       };
-    } else {
-      if (currentMessage) {
-        currentMessage.content += "\n" + trimed;
-      }
-    }
+    } else if (currentMessage) currentMessage.content += "\n" + trimed;
   }
   add();
 

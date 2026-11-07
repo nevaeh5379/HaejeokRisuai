@@ -154,6 +154,7 @@ export function buildSqlVendorParams(
       poolMax: values.poolMax,
     };
   }
+
   if (vendor === "oracle") {
     return {
       user: values.user?.trim() || "",
@@ -164,6 +165,7 @@ export function buildSqlVendorParams(
       poolMax: values.poolMax,
     };
   }
+
   return {
     server: values.server?.trim() || "",
     database: values.database?.trim() || "",
@@ -179,12 +181,12 @@ export function isSqlVendorParamsComplete(
   values: SqlVendorFormValues,
 ): boolean {
   const params = buildSqlVendorParams(vendor, values);
-  if (vendor === "postgres") {
-    return Boolean(params.connectionString);
-  }
+  if (vendor === "postgres") return Boolean(params.connectionString);
+
   if (vendor === "oracle") {
     return Boolean(params.user && params.password && params.tnsAlias);
   }
+
   return Boolean(
     params.server && params.database && params.user && params.password,
   );
@@ -220,6 +222,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         throw new Error("PostgreSQL storage is disabled");
       }
+
       const data = await this.databaseAdmin.getDbTableData(table, options);
       if (data === null) {
         this.status = "disabled";
@@ -270,6 +273,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         throw new Error("PostgreSQL storage is disabled");
       }
+
       const result = await this.databaseAdmin.restoreRevision(revisionId);
       this.currentRevision = result.revision;
       return result;
@@ -322,11 +326,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.loadScripts<customscript>(
         cached?.hash,
       );
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.globalscript ?? [];
+      }
       if (result.status !== "ok") return [];
       const entry = {
         hash: result.body.hash,
@@ -351,11 +357,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.loadPrompts<
         Record<string, unknown>
       >(cached?.hash);
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.prompts ?? {};
+      }
       if (result.status !== "ok") return {};
       const entry = {
         hash: result.body.hash,
@@ -380,11 +388,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.loadModules<RisuModule>(
         cached?.hash,
       );
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.modules ?? [];
+      }
       if (result.status !== "ok") return [];
       const entry = {
         hash: result.body.hash,
@@ -409,12 +419,14 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       type LorebookRecord = { name: string; data: loreBook[] };
       const result = await this.documentClient.loadLorebooks<LorebookRecord>(
         cached?.hash,
       );
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.loreBook ?? [];
+      }
       if (result.status !== "ok") return [];
       const entry = {
         hash: result.body.hash,
@@ -439,11 +451,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.listBotPresets<BotPresetSummary>(
         cached?.hash,
       );
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.presets ?? [];
+      }
       if (result.status !== "ok") return [];
       const entry = {
         hash: result.body.hash,
@@ -465,6 +479,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
             undefined;
         } catch {}
       }
+
       const result = await this.documentClient.loadBotPreset<StoredBotPreset>(
         id,
         cached?.hash,
@@ -491,11 +506,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.loadPersonas<RisuPersona>(
         cached?.hash,
       );
-      if (result.status === "not-modified" && cached)
+      if (result.status === "not-modified" && cached) {
         return cached.personas ?? [];
+      }
       if (result.status !== "ok") return [];
       const entry = {
         hash: result.body.hash,
@@ -520,6 +537,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = null;
         }
       }
+
       const result = await this.documentClient.loadPluginStorage(cached?.hash);
       if (result.status === "not-modified" && cached) {
         this.memoryPluginStorageCache = cached;
@@ -553,6 +571,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           cached = undefined;
         }
       }
+
       const result = await this.documentClient.loadPluginStorageKey(
         key,
         cached?.hash,
@@ -657,6 +676,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         return { messages: [], offset: 0, total: 0, hasMore: false };
       }
+
       return await this.readClient.loadChatMessagePage<{
         messages: Message[];
         offset: number;
@@ -685,6 +705,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         return { branches: [], messages: [], links: [] };
       }
+
       return (
         (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(
           chatId,
@@ -734,6 +755,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         throw new Error("SQL storage is not enabled");
       }
+
       return await this.readClient.createChatBranch<SqlChatBranchSummary>(
         input,
       );
@@ -742,6 +764,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (!(await this.ensureEnabled())) {
         throw new Error("SQL storage is not enabled");
       }
+
       await this.readClient.activateChatBranch(chatId, branchId);
     },
   };
@@ -873,6 +896,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         return false;
       }
     }
+
     return this.status === "enabled";
   }
 
@@ -965,6 +989,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
+
     return await this.databaseAdmin.migrateLegacyData();
   }
 
@@ -993,17 +1018,19 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   >({ maxEntries: 64 });
 
   private async requestAuthorNote<T>(path: string): Promise<T> {
-    if (!(await this.ensureEnabled()))
+    if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
+    }
     const response = await this.apiClient.request(
       `/api/database-v2/author-notes${path}`,
       { headers: { "risu-auth": await this.getAuth() }, cache: "no-store" },
     );
-    if (!response.ok)
+    if (!response.ok) {
       throw new Error(
         (await response.json().catch(() => null))?.error ||
           "Author note query failed",
       );
+    }
     return (await response.json()).value as T;
   }
 
@@ -1027,6 +1054,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         body.database.pluginCustomStorage,
       );
     }
+
     this.currentRevision = body.revision;
     return body;
   }
@@ -1035,6 +1063,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
+
     const wireCommit = commit.pluginStorage
       ? {
           ...commit,
@@ -1087,6 +1116,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (closed) {
         throw new Error("Portable database restore session is already closed");
       }
+
       const state = await this.localBackupClient.appendDatabaseStreamRecords(
         remoteSession.id,
         { fragmentIndex, records, fragmentComplete },
@@ -1121,6 +1151,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
               `Portable database record exceeds ${maxRecordBytes} bytes`,
             );
           }
+
           if (
             batch.length > 0 &&
             (batch.length >= maxBatchRecords ||
@@ -1128,15 +1159,14 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           ) {
             await flush(false);
           }
+
           batch.push(encoded);
           batchBytes += recordBytes;
           if (batch.length >= maxBatchRecords) {
             await flush(index === fragment.records.length - 1);
           }
         }
-        if (batch.length > 0) {
-          await flush(true);
-        }
+        if (batch.length > 0) await flush(true);
       },
       finish: async (manifest: PortableDatabaseStreamManifest) => {
         if (closed) {
@@ -1144,6 +1174,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
             "Portable database restore session is already closed",
           );
         }
+
         validator.finish(manifest);
         const result = await this.localBackupClient.finalizeDatabaseStream(
           remoteSession.id,

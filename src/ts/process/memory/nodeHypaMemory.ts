@@ -96,6 +96,7 @@ async function executeAction(
   ) {
     return { ok: false, error: response.result };
   }
+
   return response.result?.trim()
     ? { ok: true, text: response.result }
     : { ok: false, error: "Empty summary returned" };
@@ -122,9 +123,8 @@ export async function tryRunNodeHypaMemory<T>(
     response = await storage.startHypaMemorySession(request);
   } catch (error) {
     const status = Number((error as any)?.status);
-    if (status === 404 || status === 405) {
-      return { handled: false };
-    }
+    if (status === 404 || status === 405) return { handled: false };
+
     throw error;
   }
 

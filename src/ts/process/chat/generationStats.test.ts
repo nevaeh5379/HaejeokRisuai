@@ -24,6 +24,7 @@ afterEach(() => {
   for (const generationId of get(chatGenerationStats).keys()) {
     cancelChatGenerationStats(generationId);
   }
+
   vi.useRealTimers();
 });
 

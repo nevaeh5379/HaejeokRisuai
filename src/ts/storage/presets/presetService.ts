@@ -54,7 +54,7 @@ export async function downloadPreset(
   type: "json" | "risupreset" | "return" = "json",
 ) {
   await presetStore.flush();
-  let pres = safeStructuredClone(
+  const pres = safeStructuredClone(
     await presetStore.load(presetStore.summaries[id].id),
   );
   delete (pres as any).id;
@@ -107,18 +107,15 @@ export async function importPreset(
     data: Uint8Array;
   } | null = null,
 ) {
-  if (!f) {
-    f = await selectSingleFile(["json", "preset", "risupreset", "risup"]);
-  }
-  if (!f) {
-    return;
-  }
+  if (!f) f = await selectSingleFile(["json", "preset", "risupreset", "risup"]);
+
+  if (!f) return;
+
   let pre: any;
   if (f.name.endsWith(".risupreset") || f.name.endsWith(".risup")) {
     let data = f.data;
-    if (f.name.endsWith(".risup")) {
-      data = await decodeRPack(data);
-    }
+    if (f.name.endsWith(".risup")) data = await decodeRPack(data);
+
     const decoded = await decodeMsgpack(fflate.decompressSync(data));
     if (
       (decoded.presetVersion === 0 || decoded.presetVersion === 2) &&
@@ -139,9 +136,11 @@ export async function importPreset(
       ...JSON.parse(Buffer.from(f.data).toString("utf-8")),
     };
   }
+
   if (pre?.promptTemplate !== undefined) {
     pre.promptTemplate = normalizePromptTemplate(pre.promptTemplate);
   }
+
   if (pre.presetVersion && pre.presetVersion >= 3) {
     //NAI preset
     const pr = safeStructuredClone(prebuiltPresets.NAI);
@@ -187,9 +186,8 @@ export async function importPreset(
     pr.top_p = pre.top_p ?? 1;
 
     for (const prompt of pre.prompt_order[0].order) {
-      if (!prompt?.enabled) {
-        continue;
-      }
+      if (!prompt?.enabled) continue;
+
       const p = findPrompt(prompt?.identifier ?? "");
       if (p) {
         switch (p.identifier) {
@@ -256,9 +254,7 @@ export async function importPreset(
             });
           }
         }
-      } else {
-        console.log("Prompt not found", prompt);
-      }
+      } else console.log("Prompt not found", prompt);
     }
     if (pre?.assistant_prefill) {
       pr.promptTemplate.push({

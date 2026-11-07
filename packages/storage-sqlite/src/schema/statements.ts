@@ -37,6 +37,7 @@ export function split(sql: string): string[] {
           (statementWords[1] === "TEMP" || statementWords[1] === "TEMPORARY") &&
           upper === "TRIGGER");
     }
+
     if (!triggerStatement) return;
     if (upper === "BEGIN" || upper === "CASE") triggerBlockDepth++;
     else if (upper === "END" && triggerBlockDepth > 0) triggerBlockDepth--;
@@ -69,6 +70,7 @@ export function split(sql: string): string[] {
         if (quote !== "bracket" && next === close) i++;
         else quote = null;
       }
+
       continue;
     }
     if (char === "-" && next === "-") {

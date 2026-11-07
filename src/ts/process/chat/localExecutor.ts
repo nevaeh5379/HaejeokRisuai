@@ -241,6 +241,7 @@ export class LocalChatExecutor implements ChatExecutor {
       if (trackGeneration) {
         updateChatGenerationModel(generationId, generationInfo.model);
       }
+
       console.log(generationInfo.model, req.model);
     }
 
@@ -284,6 +285,7 @@ export class LocalChatExecutor implements ChatExecutor {
           if (generationInfo.stageTiming) {
             generationInfo.stageTiming.stage3 = stageTimings.stage3Duration;
           }
+
           stageTimings.stage4Start = completedAt;
           setChatProcessStage(currentChat.id, 4);
         },

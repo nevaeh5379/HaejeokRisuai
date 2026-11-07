@@ -38,6 +38,7 @@ async function sendPofile(arg: sendFileArg) {
     if (!currentChar || !currentChat || characterIndex < 0 || chatIndex < 0) {
       throw new Error("The multi-send target chat is no longer available");
     }
+
     return { characterIndex, chatIndex, currentChar, currentChat };
   };
   const lines = arg.file.split("\n");
@@ -50,12 +51,10 @@ async function sendPofile(arg: sendFileArg) {
         continue;
       }
       let text = msgId;
-      if (speaker !== "") {
-        text = `Speaker: ${speaker}\n${text}`;
-      }
-      if (note !== "") {
-        text = `Note: ${note}\n${text}`;
-      }
+      if (speaker !== "") text = `Speaker: ${speaker}\n${text}`;
+
+      if (note !== "") text = `Note: ${note}\n${text}`;
+
       let target = resolveTarget();
       target.currentChat.message.push({
         role: "user",
@@ -81,9 +80,8 @@ async function sendPofile(arg: sendFileArg) {
       note = "";
       speaker = "";
       msgId = "";
-      if (isTauri) {
-        await downloadFile("translated.po", result);
-      }
+      if (isTauri) await downloadFile("translated.po", result);
+
       continue;
     }
     if (line.startsWith("#. Note =")) {
@@ -102,9 +100,8 @@ async function sendPofile(arg: sendFileArg) {
         .replaceAll('\\"', "♠#")
         .replaceAll('"', "")
         .replaceAll("♠#", '\\"');
-      if (msgId === "") {
-        parseMode = 1;
-      }
+      if (msgId === "") parseMode = 1;
+
       result += line + "\n";
       continue;
     }
@@ -117,19 +114,15 @@ async function sendPofile(arg: sendFileArg) {
       if (msgId === "") {
         result += line + "\n";
         parseMode = 0;
-      } else {
-        parseMode = 2;
-      }
+      } else parseMode = 2;
+
       continue;
     }
-    if (parseMode === 2 && line.startsWith('"') && line.endsWith('"')) {
-      continue;
-    }
+    if (parseMode === 2 && line.startsWith('"') && line.endsWith('"')) continue;
+
     result += line + "\n";
 
-    if (i > 100) {
-      break; //prevent too long message in testing
-    }
+    if (i > 100) break; //prevent too long message in testing
   }
   await downloadFile("translated.po", result);
 }
@@ -144,9 +137,7 @@ async function sendPDFFile(arg: sendFileArg) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const items = content.items as { str: string }[];
-    for (const item of items) {
-      texts.push(item.str);
-    }
+    for (const item of items) texts.push(item.str);
   }
   console.log(texts);
   const hypa = new HypaProcesser();
@@ -155,9 +146,7 @@ async function sendPDFFile(arg: sendFileArg) {
   let message = "";
   for (let i = 0; i < result.length; i++) {
     message += "\n" + result[i];
-    if (i > 5) {
-      break;
-    }
+    if (i > 5) break;
   }
   console.log(message);
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString("base64");
@@ -173,9 +162,7 @@ async function sendTxtFile(arg: sendFileArg) {
   let message = "";
   for (let i = 0; i < result.length; i++) {
     message += "\n" + result[i];
-    if (i > 5) {
-      break;
-    }
+    if (i > 5) break;
   }
   console.log(message);
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString("base64");
@@ -183,21 +170,18 @@ async function sendTxtFile(arg: sendFileArg) {
 
 async function sendXMLFile(arg: sendFileArg) {
   const hypa = new HypaProcesser();
-  let nodeTexts: string[] = [];
+  const nodeTexts: string[] = [];
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(arg.file, "text/xml");
   const nodes = xmlDoc.getElementsByTagName("*");
-  for (const node of nodes) {
-    nodeTexts.push(node.textContent);
-  }
+  for (const node of nodes) nodeTexts.push(node.textContent);
+
   hypa.addText(nodeTexts);
   const result = await hypa.similaritySearch(arg.query);
   let message = "";
   for (let i = 0; i < result.length; i++) {
     message += "\n" + result[i];
-    if (i > 5) {
-      break;
-    }
+    if (i > 5) break;
   }
   console.log(message);
   return Buffer.from(`<File>\n${message}\n</File>\n`).toString("base64");
@@ -258,9 +242,7 @@ export async function postChatFile(
         ])
       : [query];
 
-  if (!files) {
-    return null;
-  }
+  if (!files) return null;
 
   const xquery = typeof query === "string" ? query : "";
   const results: postFileResult[] = [];
@@ -323,9 +305,8 @@ export async function postChatFile(
       case "mpeg":
       case "avi": {
         const postData = await postInlayAsset(file);
-        if (!postData) {
-          continue;
-        }
+        if (!postData) continue;
+
         results.push({
           data: postData,
           type: "asset",

@@ -52,8 +52,9 @@ export async function restorePortableChatBranchGraph(
   const existing = await storage.branch.list(chatId);
   const targetRoot =
     existing.find((branch) => branch.reason === "root") ?? existing[0];
-  if (!targetRoot)
+  if (!targetRoot) {
     throw new Error(`Restored chat has no SQL root branch: ${chatId}`);
+  }
 
   const idMap = new Map<string, string>([[root.id, targetRoot.id]]);
   const existingIds = new Set(existing.map((branch) => branch.id));

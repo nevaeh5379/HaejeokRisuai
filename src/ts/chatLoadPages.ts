@@ -13,9 +13,7 @@ export function normalizeChatLoadPages(
     Number.isFinite(fallback) && fallback >= 1 ? Math.floor(fallback) : 1;
   const numberValue = typeof value === "number" ? value : Number(value);
 
-  if (!Number.isFinite(numberValue) || numberValue < 1) {
-    return fallbackValue;
-  }
+  if (!Number.isFinite(numberValue) || numberValue < 1) return fallbackValue;
 
   return Math.floor(numberValue);
 }

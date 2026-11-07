@@ -1,8 +1,5 @@
 import type { DatabaseSettings } from "@risuai/protocol/domain/database.ts";
-import type {
-  ISqlStorage,
-  State,
-} from "@risuai/storage-core/sqlStorage";
+import type { ISqlStorage, State } from "@risuai/storage-core/sqlStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,

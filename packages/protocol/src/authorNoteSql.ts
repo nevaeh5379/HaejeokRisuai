@@ -170,7 +170,7 @@ export async function applyAuthorNotes(
           contentHash,
         });
       }
-      if (op.clear !== false)
+      if (op.clear !== false) {
         await db.execute(
           `UPDATE ${tables.settings} SET allow_script_write = ?, updated_at = ? WHERE singleton = 1`,
           [
@@ -180,6 +180,7 @@ export async function applyAuthorNotes(
             Date.now(),
           ],
         );
+      }
       continue;
     }
     if (op.type === "settings") {
@@ -242,13 +243,16 @@ export async function applyAuthorNotes(
       if (
         op.script &&
         !(stagedScriptWrite ?? (await allowAuthorNoteScriptWrite(db)))
-      )
+      ) {
         throw new AuthorNoteError("script-blocked", op.id);
+      }
       if (op.script && op.force) throw new AuthorNoteError("protected", op.id);
-      if (!op.force && op.expectedHash === null)
+      if (!op.force && op.expectedHash === null) {
         throw new AuthorNoteError("unread", op.id);
-      if (!op.force && op.expectedHash !== current.contentHash)
+      }
+      if (!op.force && op.expectedHash !== current.contentHash) {
         throw new AuthorNoteError("conflict", op.id);
+      }
       const hash = await hashAuthorNote(op.content);
       const content =
         db.dialect === "oracle" ? "COALESCE(?, EMPTY_CLOB())" : "?";
@@ -295,27 +299,30 @@ export async function ensureAuthorNoteReceipts(
       "note_commit_hash",
       "note_commit_result",
     ]) {
-      if (!columns.some((column) => column.name === name))
+      if (!columns.some((column) => column.name === name)) {
         await db.execute(`ALTER TABLE ${table} ADD COLUMN ${name} TEXT`);
+      }
     }
   } else if (db.dialect === "postgres") {
     for (const name of [
       "note_commit_key",
       "note_commit_hash",
       "note_commit_result",
-    ])
+    ]) {
       await db.execute(
         `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${name} TEXT`,
       );
+    }
   } else if (db.dialect === "azure") {
     for (const name of [
       "note_commit_key",
       "note_commit_hash",
       "note_commit_result",
-    ])
+    ]) {
       await db.execute(
         `IF COL_LENGTH('system.revisions', '${name}') IS NULL ALTER TABLE ${table} ADD ${name} NVARCHAR(MAX)`,
       );
+    }
   } else {
     const columns = await db.query(
       "SELECT column_name FROM user_tab_columns WHERE table_name = 'SYSTEM_REVISIONS'",
@@ -329,8 +336,9 @@ export async function ensureAuthorNoteReceipts(
         !columns.some(
           (column) => String(column.column_name).toLowerCase() === name,
         )
-      )
+      ) {
         await db.execute(`ALTER TABLE ${table} ADD (${name} ${type})`);
+      }
     }
   }
 }
@@ -351,10 +359,11 @@ export async function readAuthorNoteReceipt(
     (await hashAuthorNote(
       JSON.stringify(parseAuthorNoteOperations(commit.authorNotes)),
     ))
-  )
+  ) {
     throw new Error(
       "Author note idempotency key reused with different operations",
     );
+  }
   return JSON.parse(String(row.note_commit_result)) as NoteReceipt;
 }
 export async function writeAuthorNoteReceipt(

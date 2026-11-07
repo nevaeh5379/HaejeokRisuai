@@ -86,6 +86,7 @@ export async function endNodeGenerationLifecycle(
   if (activeLifecycles.get(chatId) === lifecycleId) {
     activeLifecycles.delete(chatId);
   }
+
   if (failedLifecycles.delete(lifecycleId)) return;
   await publishState(chatId, lifecycleId, aborted ? "aborted" : "finished");
 }

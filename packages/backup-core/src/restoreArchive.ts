@@ -152,8 +152,9 @@ export async function restoreBackupArchive<
       },
       onPluginColdStorage: options.restorePluginColdStorage
         ? async (key, value) => {
-            if (await options.restorePluginColdStorage!(key, value))
+            if (await options.restorePluginColdStorage!(key, value)) {
               restoredColdStorageKeys.add(key);
+            }
           }
         : undefined,
       onInvalidColdStorage: options.onInvalidColdStorage,

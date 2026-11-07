@@ -26,8 +26,9 @@ describe.each(["postgres", "oracle", "azure"] as const)(
           .replace(/\$\d+|:\d+|@p\d+/g, "?")
           .replace(/EMPTY_CLOB\(\)/g, "''");
         const binds = values.map((value: any) => {
-          if (value && typeof value === "object" && "val" in value)
+          if (value && typeof value === "object" && "val" in value) {
             return value.val;
+          }
           return typeof value === "boolean" ? Number(value) : value;
         });
         const statement = database.prepare(converted);

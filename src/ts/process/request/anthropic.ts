@@ -55,25 +55,20 @@ export async function requestClaude(
   const useStreaming = arg.useStreaming;
   const ollamaCloudAnthropic = aiModel === "ollama-cloud";
   let replacerURL = arg.customURL ?? DEFAULT_ANTHROPIC_MESSAGES_URL;
-  let apiKey =
+  const apiKey =
     arg.key ||
     (aiModel === "reverse_proxy"
       ? presetStore.state.proxyKey
       : db.claudeAPIKey);
   const maxTokens = arg.maxTokens;
   if (aiModel === "reverse_proxy" && db.autofillRequestUrl) {
-    if (replacerURL.endsWith("v1")) {
-      replacerURL += "/messages";
-    } else if (replacerURL.endsWith("v1/")) {
-      replacerURL += "messages";
-    } else if (!(
+    if (replacerURL.endsWith("v1")) replacerURL += "/messages";
+    else if (replacerURL.endsWith("v1/")) replacerURL += "messages";
+    else if (!(
       replacerURL.endsWith("messages") || replacerURL.endsWith("messages/")
     )) {
-      if (replacerURL.endsWith("/")) {
-        replacerURL += "v1/messages";
-      } else {
-        replacerURL += "/v1/messages";
-      }
+      if (replacerURL.endsWith("/")) replacerURL += "v1/messages";
+      else replacerURL += "/v1/messages";
     }
   }
 
@@ -86,14 +81,15 @@ export async function requestClaude(
       result: preparedConversation.error,
     };
   }
-  let claudeChat: Claude3Chat[] = preparedConversation.messages;
-  let systemPrompt = preparedConversation.systemPrompt;
+
+  const claudeChat: Claude3Chat[] = preparedConversation.messages;
+  const systemPrompt = preparedConversation.systemPrompt;
 
   //check for tool calls
   for (let j = 0; j < claudeChat.length; j++) {
     let chat = claudeChat[j];
     for (let i = 0; i < chat.content.length; i++) {
-      let content = chat.content[i];
+      const content = chat.content[i];
       if (content.type === "text") {
         content.text = await replaceAsync(
           content.text,
@@ -118,6 +114,7 @@ export async function requestClaude(
                         text: v.text,
                       };
                     }
+
                     if (v.type === "image") {
                       return {
                         type: "image",
@@ -128,6 +125,7 @@ export async function requestClaude(
                         },
                       };
                     }
+
                     return {
                       type: "text",
                       text: `Unsupported tool response type: ${v.type}`,
@@ -197,9 +195,7 @@ export async function requestClaude(
   if (thinkingType === "off") {
     if (arg.modelInfo.flags.includes(LLMFlags.claudeThinkingOnByDefault)) {
       body.thinking = { type: "disabled" };
-    } else {
-      delete body.thinking;
-    }
+    } else delete body.thinking;
   } else if (
     thinkingType === "adaptive" &&
     arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)
@@ -214,22 +210,15 @@ export async function requestClaude(
     ) {
       effort = "high";
     }
+
     body.output_config = { effort };
-  } else if (body?.thinking?.budget_tokens === 0) {
-    delete body.thinking;
-  } else if (
-    body?.thinking?.budget_tokens &&
-    body?.thinking?.budget_tokens > 0
-  ) {
+  } else if (body?.thinking?.budget_tokens === 0) delete body.thinking;
+  else if (body?.thinking?.budget_tokens && body?.thinking?.budget_tokens > 0) {
     body.thinking.type = "enabled";
     body.thinking.display = "summarized";
-  } else if (body?.thinking?.budget_tokens === null) {
-    delete body.thinking;
-  }
+  } else if (body?.thinking?.budget_tokens === null) delete body.thinking;
 
-  if (systemPrompt === "") {
-    delete body.system;
-  }
+  if (systemPrompt === "") delete body.system;
 
   const bedrock = arg.modelInfo.format === LLMFormat.AWSBedrockClaude;
   const additionalParams = getAdditionalParameters(aiModel);
@@ -264,9 +253,8 @@ export async function requestClaude(
       /claude-(?:opus-|sonnet-|haiku-)?(\d+)-(\d+)/,
     );
 
-    if (datePart && !isNaN(datePart)) {
-      useGlobal = datePart >= 20250929;
-    } else if (versionMatch) {
+    if (datePart && !isNaN(datePart)) useGlobal = datePart >= 20250929;
+    else if (versionMatch) {
       const majorVersion = Number(versionMatch[1]);
       const minorVersion = Number(versionMatch[2]);
       useGlobal = majorVersion > 4 || (majorVersion === 4 && minorVersion >= 5);
@@ -291,7 +279,7 @@ export async function requestClaude(
       delete params.top_p;
     }
 
-    let bedrockHeaders: Record<string, string> = {
+    const bedrockHeaders: Record<string, string> = {
       ["Host"]: host,
       ["Content-Type"]: "application/json",
       ["accept"]: "application/json",
@@ -349,12 +337,14 @@ export async function requestClaude(
         result: JSON.stringify(res.data),
       };
     }
+
     if (res.data.error) {
       return {
         type: "fail",
         result: JSON.stringify(res.data.error),
       };
     }
+
     const contents = res?.data?.content;
     if (!contents || contents.length === 0) {
       return {
@@ -362,6 +352,7 @@ export async function requestClaude(
         result: JSON.stringify(res.data),
       };
     }
+
     let resText = "";
     let thinking = false;
     for (const content of contents) {
@@ -388,9 +379,7 @@ export async function requestClaude(
       }
     }
 
-    if (thinking) {
-      resText += "</Thoughts>\n\n";
-    }
+    if (thinking) resText += "</Thoughts>\n\n";
 
     if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
       return {
@@ -402,13 +391,14 @@ export async function requestClaude(
         ),
       };
     }
+
     return {
       type: "success",
       result: resText,
     };
   }
 
-  let headers: {
+  const headers: {
     [key: string]: string;
   } = {
     "Content-Type": "application/json",
@@ -440,15 +430,11 @@ export async function requestClaude(
     body = applyAdditionalParameters(body, headers, additionalParams);
   }
 
-  let betas: string[] = [];
+  const betas: string[] = [];
 
-  if (body.max_tokens > 8192) {
-    betas.push("output-128k-2025-02-19");
-  }
+  if (body.max_tokens > 8192) betas.push("output-128k-2025-02-19");
 
-  if (db.claude1HourCaching) {
-    betas.push("extended-cache-ttl-2025-04-11");
-  }
+  if (db.claude1HourCaching) betas.push("extended-cache-ttl-2025-04-11");
 
   if (betas.length > 0 && !hasCustomAnthropicBeta) {
     headers["anthropic-beta"] = betas.join(",");
@@ -466,9 +452,8 @@ export async function requestClaude(
   }
 
   if (db.claudeBatching && !ollamaCloudAnthropic) {
-    if (body.stream !== undefined) {
-      delete body.stream;
-    }
+    if (body.stream !== undefined) delete body.stream;
+
     const id = v4();
     const batchRequestUrl = replacerURL + "/batches";
     const batchRequestBody = {
@@ -598,9 +583,7 @@ export async function requestClaude(
 
             const statusData = await statusRes.json();
 
-            if (statusData.processing_status !== "ended") {
-              continue;
-            }
+            if (statusData.processing_status !== "ended") continue;
 
             const batchRes = await fetchNative(resultsUrl, {
               method: "GET",
@@ -785,7 +768,8 @@ async function requestClaudeHTTP(
         result: await textifyReadableStream(res.body),
       };
     }
-    let breakError = "";
+
+    const breakError = "";
     let thinking = false;
 
     const stream = new ReadableStream<StreamResponseChunk>({
@@ -853,15 +837,13 @@ async function requestClaudeHTTP(
         let prevText = "";
         while (true) {
           try {
-            if (arg?.abortSignal?.aborted || breakWhile) {
-              break;
-            }
+            if (arg?.abortSignal?.aborted || breakWhile) break;
+
             const { done, value } = await reader.read();
-            if (done) {
-              break;
-            }
+            if (done) break;
+
             parserData += decoder.decode(value);
-            let parts = parserData.split("\n");
+            const parts = parserData.split("\n");
             for (; i < parts.length - 1; i++) {
               prevText = text;
               if (parts?.[i]?.startsWith("data: ")) {
@@ -903,6 +885,7 @@ async function requestClaudeHTTP(
             await sleep(1);
           }
         }
+
         if (thinking) {
           text += "</Thoughts>\n\n";
           controller.enqueue({
@@ -942,6 +925,7 @@ async function requestClaudeHTTP(
       payload: { api: "anthropic" },
     };
   }
+
   const remoteTransport = nodeTransport
     ? await tryExecuteNodeProviderTransport(
         nodeTransport.format,
@@ -986,6 +970,7 @@ async function requestClaudeHTTP(
       result: JSON.stringify(res.data),
     };
   }
+
   let resText = "";
   let thinking = false;
 
@@ -1005,6 +990,7 @@ async function requestClaudeHTTP(
           content: [],
         });
       }
+
       if (typeof messages[messages.length - 1].content === "string") {
         messages[messages.length - 1].content = [
           {
@@ -1104,9 +1090,7 @@ async function requestClaudeHTTP(
     }
   }
 
-  if (thinking) {
-    resText += "</Thoughts>\n\n";
-  }
+  if (thinking) resText += "</Thoughts>\n\n";
 
   arg.additionalOutput ??= "";
   if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
@@ -1121,6 +1105,7 @@ async function requestClaudeHTTP(
         ),
     };
   }
+
   return {
     type: "success",
     result: arg.additionalOutput + resText,

@@ -163,34 +163,38 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     visited.add(uniqueId);
 
     const input = this.inputs.at(slot);
-    if (!input)
+    if (!input) {
       throw new SlotIndexError(
         `No input found for flattened id [${this.id}] slot [${slot}]`,
       );
+    }
 
     // Nothing connected
     if (input.linkId == null) return;
 
     const link = this.graph.getLink(input.linkId);
-    if (!link)
+    if (!link) {
       throw new InvalidLinkError(
         `No link found in parent graph for id [${this.id}] slot [${slot}] ${input.name}`,
       );
+    }
 
     const { subgraphNode } = this;
 
     // Link goes up and out of this subgraph
     if (subgraphNode && link.originIsIoNode) {
       const subgraphNodeInput = subgraphNode.inputs.at(link.origin_slot);
-      if (!subgraphNodeInput)
+      if (!subgraphNodeInput) {
         throw new SlotIndexError(
           `No input found for slot [${link.origin_slot}] ${input.name}`,
         );
+      }
 
-      if (!subgraphNode.graph)
+      if (!subgraphNode.graph) {
         throw new NullGraphError(
           `SubgraphNode ${subgraphNode.id} has no graph during input resolution`,
         );
+      }
       // Nothing connected
       const linkId =
         inputLinkId(subgraphNode.graph, subgraphNode.id, link.origin_slot) ??
@@ -208,40 +212,44 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
       }
 
       const outerLink = subgraphNode.graph.getLink(linkId);
-      if (!outerLink)
+      if (!outerLink) {
         throw new InvalidLinkError(
           `No outer link found for slot [${link.origin_slot}] ${input.name}`,
         );
+      }
 
       const subgraphNodeExecutionId: ExecutionId =
         this.subgraphNodePath.join(":");
       const subgraphNodeDto = this.nodesByExecutionId.get(
         subgraphNodeExecutionId,
       );
-      if (!subgraphNodeDto)
+      if (!subgraphNodeDto) {
         throw new Error(
           `No subgraph node DTO found for id [${subgraphNodeExecutionId}]`,
         );
+      }
 
       return subgraphNodeDto.resolveInput(outerLink.target_slot, visited);
     }
 
     // Not part of a subgraph; use the original link
     const outputNode = this.graph.getNodeById(link.origin_id);
-    if (!outputNode)
+    if (!outputNode) {
       throw new InvalidLinkError(
         `No input node found for id [${this.id}] slot [${slot}] ${input.name}`,
       );
+    }
 
     const outputNodeExecutionId: ExecutionId = [
       ...this.subgraphNodePath,
       outputNode.id,
     ].join(":");
     const outputNodeDto = this.nodesByExecutionId.get(outputNodeExecutionId);
-    if (!outputNodeDto)
+    if (!outputNodeDto) {
       throw new Error(
         `No output node DTO found for id [${outputNodeExecutionId}]`,
       );
+    }
 
     return outputNodeDto.resolveOutput(
       link.origin_slot,
@@ -297,8 +305,9 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     }
 
     const { node } = this;
-    if (node.isSubgraphNode())
+    if (node.isSubgraphNode()) {
       return this._resolveSubgraphOutput(slot, type, visited);
+    }
 
     if (node.isVirtualNode) {
       // Cross-graph virtual nodes (e.g. Set/Get) resolve their source directly.
@@ -308,28 +317,31 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
           (dto) =>
             dto instanceof ExecutableNodeDTO && dto.node === virtualSource.node,
         );
-        if (!inputNodeDto)
+        if (!inputNodeDto) {
           throw new Error(
             `No DTO found for virtual source node [${virtualSource.node.id}]`,
           );
+        }
 
         return inputNodeDto.resolveOutput(virtualSource.slot, type, visited);
       }
       const virtualLink = this.node.getInputLink(slot);
       if (virtualLink) {
         const { inputNode } = virtualLink.resolve(this.graph);
-        if (!inputNode)
+        if (!inputNode) {
           throw new InvalidLinkError(
             `Virtual node failed to resolve parent [${this.id}] slot [${slot}]`,
           );
+        }
 
         const inputNodeExecutionId: ExecutionId = [
           ...this.subgraphNodePath,
           inputNode.id,
         ].join(":");
         const inputNodeDto = this.nodesByExecutionId.get(inputNodeExecutionId);
-        if (!inputNodeDto)
+        if (!inputNodeDto) {
           throw new Error(`No input node DTO found for id [${inputNode.id}]`);
+        }
 
         return inputNodeDto.resolveInput(
           virtualLink.target_slot,
@@ -362,9 +374,7 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     const outputType = this.node.outputs[slot].type;
 
     // Any type short circuit - match slot ID, fallback to first slot
-    if (type === "*" || type === "") {
-      return inputs.length > slot ? slot : 0;
-    }
+    if (type === "*" || type === "") return inputs.length > slot ? slot : 0;
 
     // Prefer input with the same slot ID
     if (
@@ -401,22 +411,25 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
     const { node } = this;
     const output = node.outputs.at(slot);
 
-    if (!output)
+    if (!output) {
       throw new SlotIndexError(
         `No output found for flattened id [${this.id}] slot [${slot}]`,
       );
-    if (!node.isSubgraphNode())
+    }
+    if (!node.isSubgraphNode()) {
       throw new TypeError(`Node is not a subgraph node: ${node.id}`);
+    }
 
     // Link inside the subgraph
     const innerResolved = node.resolveSubgraphOutputLink(slot);
     if (!innerResolved) return;
 
     const innerNode = innerResolved.outputNode;
-    if (!innerNode)
+    if (!innerNode) {
       throw new Error(
         `No output node found for id [${this.id}] slot [${slot}] ${output.name}`,
       );
+    }
 
     // Recurse into the subgraph
     const innerNodeExecutionId: ExecutionId = [
@@ -425,10 +438,11 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
       innerNode.id,
     ].join(":");
     const innerNodeDto = this.nodesByExecutionId.get(innerNodeExecutionId);
-    if (!innerNodeDto)
+    if (!innerNodeDto) {
       throw new Error(
         `No inner node DTO found for id [${innerNodeExecutionId}]`,
       );
+    }
 
     return innerNodeDto.resolveOutput(
       innerResolved.link.origin_slot,

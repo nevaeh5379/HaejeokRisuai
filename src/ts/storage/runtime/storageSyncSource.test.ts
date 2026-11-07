@@ -151,6 +151,7 @@ function makeStorage() {
             hasMore: true,
           } as any;
         }
+
         if (offset === 2) {
           return {
             branches,
@@ -169,6 +170,7 @@ function makeStorage() {
             hasMore: false,
           } as any;
         }
+
         throw new Error(`unexpected graph offset ${offset}`);
       }),
     },
@@ -256,8 +258,9 @@ describe("storage sync SQL source", () => {
       expectedRevision: 7,
     });
     let current = await iterator.next();
-    while (!current.done && current.value.type !== "plugin")
+    while (!current.done && current.value.type !== "plugin") {
       current = await iterator.next();
+    }
     expect(current.value).toMatchObject({
       type: "plugin",
       id: "plugin-1",

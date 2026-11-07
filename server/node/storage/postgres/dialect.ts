@@ -42,6 +42,7 @@ function quoteTable(table: string): string {
   if (parts.length > 2 || parts.some((part) => !IDENTIFIER.test(part))) {
     throw new Error(`Unsafe SQL identifier: ${table}`);
   }
+
   return parts.map((part) => `"${part}"`).join(".");
 }
 
@@ -49,6 +50,7 @@ function quote(column: string): string {
   if (!IDENTIFIER.test(column)) {
     throw new Error(`Unsafe SQL identifier: ${column}`);
   }
+
   return `"${column}"`;
 }
 
@@ -80,9 +82,8 @@ function buildUpsertClause(
   touch: boolean,
 ): string {
   const keyList = keyColumns.map((column) => quote(column)).join(", ");
-  if (valueColumns.length === 0) {
-    return `ON CONFLICT (${keyList}) DO NOTHING`;
-  }
+  if (valueColumns.length === 0) return `ON CONFLICT (${keyList}) DO NOTHING`;
+
   const quotedTable = quoteTable(table);
   const sets = valueColumns.map(
     (column) => `${quote(column)} = EXCLUDED.${quote(column)}`,

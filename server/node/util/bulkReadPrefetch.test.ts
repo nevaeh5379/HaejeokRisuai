@@ -105,5 +105,6 @@ async function viWaitFor(assertion: () => void): Promise<void> {
       await Promise.resolve();
     }
   }
+
   assertion();
 }

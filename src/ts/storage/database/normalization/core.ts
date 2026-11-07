@@ -74,6 +74,7 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
   if (!hadSidebarNavigationBarSetting && legacyNavigationBarSetting === true) {
     data.autoHideAndroidNavigationBarInSidebar = true;
   }
+
   data.formatingOrder ??= [
     "main",
     "description",
@@ -88,7 +89,5 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
   data.pluginCustomStorage ??= {};
   if (Array.isArray(data.promptTemplate)) {
     data.promptTemplate = normalizePromptTemplate(data.promptTemplate);
-  } else {
-    data.promptTemplate = [];
-  }
+  } else data.promptTemplate = [];
 }

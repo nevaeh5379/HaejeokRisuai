@@ -128,8 +128,9 @@ function normalizeTarget(value: any): IllustrationTarget {
       !value[key].length ||
       value[key].length > 256 ||
       /[\x00-\x1f]/.test(value[key])
-    )
+    ) {
       throw new TypeError(`Invalid ${key}`);
+    }
     target[key] = value[key];
   }
   return target;
@@ -159,7 +160,7 @@ export function decodeIllustrationTagResponse(data: any): string {
   const blocks = Array.isArray(result)
     ? result
     : (data?.content ?? data?.candidates?.[0]?.content?.parts);
-  if (Array.isArray(blocks))
+  if (Array.isArray(blocks)) {
     return blocks
       .filter((b) => b.type !== "thinking" && !b.thought)
       .map(
@@ -172,6 +173,7 @@ export function decodeIllustrationTagResponse(data: any): string {
           "",
       )
       .join("\n");
+  }
   throw new Error("The submodel returned no image tags");
 }
 
@@ -257,10 +259,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             console.warn("Illustration progress notification failed", error);
           }
         }
+
         return record;
       } catch (error) {
-        if (!Number.isSafeInteger(error?.currentRevision) || attempt === 4)
+        if (!Number.isSafeInteger(error?.currentRevision) || attempt === 4) {
           throw error;
+        }
       }
     }
     return null;
@@ -275,15 +279,17 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
    */
   async function settings(target: IllustrationTarget) {
     const storage = deps.getStorage();
-    if ((await storage.loadSettingKey("useChatIllustrations")).value !== true)
+    if ((await storage.loadSettingKey("useChatIllustrations")).value !== true) {
       throw new TypeError("Chat illustrations are disabled");
+    }
     const char = await storage.loadCharacter(target.characterId);
     if (
       !char ||
       char.type === "group" ||
       !char.chats?.some((c) => c.id === target.chatId)
-    )
+    ) {
       throw new TypeError("The illustration character or chat was removed");
+    }
     return {
       char,
       illustration: resolveIllustrationSettings(
@@ -325,11 +331,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         redirect: "error",
         signal: AbortSignal.timeout(10 * 60 * 1000),
       });
-      if (!response.ok)
+      if (!response.ok) {
         throw new IllustrationRequestError(
           describeIllustrationError({ status: response.status }, "tags").code,
           response.status,
         );
+      }
       const data = await response.json();
       // Horde accepts a task first; poll its authenticated result on the server.
       if (request.url.includes("/api/v2/generate/text/async")) {
@@ -342,11 +349,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             signal: AbortSignal.timeout(60000),
             redirect: "error",
           });
-          if (!status.ok)
+          if (!status.ok) {
             throw new IllustrationRequestError(
               describeIllustrationError({ status: status.status }, "tags").code,
               status.status,
             );
+          }
           const result = await status.json();
           if (result.faulted) throw new Error("The submodel job failed");
           if (result.done) return decodeIllustrationTagResponse(result);
@@ -467,13 +475,16 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
   ): Promise<IllustrationJobResponse> {
     let requestBytes: number;
     try {
-      if (pendingJobs >= MAX_PENDING_JOBS)
+      if (pendingJobs >= MAX_PENDING_JOBS) {
         throw new IllustrationQueueFullError();
+      }
       requestBytes = Buffer.byteLength(JSON.stringify(raw));
-      if (requestBytes > MAX_TAG_REQUEST_BYTES + 4096)
+      if (requestBytes > MAX_TAG_REQUEST_BYTES + 4096) {
         throw new TypeError("Illustration request exceeds 16 MiB");
-      if (pendingRequestBytes + requestBytes > MAX_PENDING_REQUEST_BYTES)
+      }
+      if (pendingRequestBytes + requestBytes > MAX_PENDING_REQUEST_BYTES) {
         throw new IllustrationQueueFullError();
+      }
     } catch (error) {
       return Promise.reject(error);
     }
@@ -488,13 +499,15 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
       .catch(() => {})
       .then(async () => {
         const target = normalizeTarget(raw);
-        if (!Number.isSafeInteger(raw.version) || raw.version < 1)
+        if (!Number.isSafeInteger(raw.version) || raw.version < 1) {
           throw new TypeError("Invalid illustration version");
+        }
         if (
           raw.action !== undefined &&
           !["retry", "regenerate", "rewrite"].includes(raw.action)
-        )
+        ) {
           throw new TypeError("Invalid illustration action");
+        }
         if (runner.has(target, raw.version)) return get(target);
         const { illustration } = await settings(target);
         const existing = await readIllustrationMessage(
@@ -512,14 +525,16 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         ) {
           return { runId, illustration: existingItem };
         }
+
         let request: IllustrationTagRequest | undefined;
         if (raw.tagRequest) {
           if (
             !raw.tagRequest.body ||
             typeof raw.tagRequest.body !== "object" ||
             Array.isArray(raw.tagRequest.body)
-          )
+          ) {
             throw new TypeError("Invalid submodel body");
+          }
           const headers: Record<string, string> = {
             "content-type": "application/json",
           };
@@ -531,10 +546,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             if (
               typeof value !== "string" ||
               HEADER_NEWLINE_REGEX.test(key + value)
-            )
+            ) {
               throw new TypeError("Invalid submodel header");
-            if (!FORBIDDEN_SUBMODEL_HEADERS_REGEX.test(key))
+            }
+            if (!FORBIDDEN_SUBMODEL_HEADERS_REGEX.test(key)) {
               headers[key.toLowerCase()] = value;
+            }
           }
           request = {
             url: raw.tagRequest.url,
@@ -544,8 +561,9 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
           if ("stream" in request.body) request.body.stream = false;
           if (
             Buffer.byteLength(JSON.stringify(request)) > MAX_TAG_REQUEST_BYTES
-          )
+          ) {
             throw new TypeError("Submodel request exceeds 16 MiB");
+          }
         }
         accepting.add(illustrationJobKey(target));
         let record: IllustrationRecord | null;
@@ -554,22 +572,26 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             target,
             raw.version,
             ({ item, message, branchId }) => {
-              if (item.executor !== "server")
+              if (item.executor !== "server") {
                 throw new TypeError(
                   "Illustration is assigned to the app executor",
                 );
+              }
               if (raw.action && !isIllustrationBusy(item.status)) {
-                if (!message.data.includes(item.token))
+                if (!message.data.includes(item.token)) {
                   throw new TypeError("Illustration position was removed");
-                if (raw.action === "regenerate")
+                }
+                if (raw.action === "regenerate") {
                   prepareIllustrationRegeneration(
                     item,
                     raw.selectedImageId,
                     illustration.generationCount,
                   );
+                }
                 item.version++;
-                if (raw.action === "retry" && item.batch)
+                if (raw.action === "retry" && item.batch) {
                   item.batch.version = item.version;
+                }
                 item.branchId = branchId;
                 item.sourceHash = illustrationSourceHash(message);
                 if (raw.action === "rewrite") {
@@ -587,8 +609,9 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
                   raw.action,
                 ) &&
                 !request
-              )
+              ) {
                 throw new TypeError("A prepared submodel request is required");
+              }
               Object.assign(item, { runId, status: "queued" });
               delete item.error;
               delete item.errorDetails;
@@ -600,10 +623,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
           throw error;
         }
         if (!record) accepting.delete(illustrationJobKey(target));
-        if (!record)
+        if (!record) {
           throw new TypeError(
             "Illustration was edited, deleted or switched to another branch",
           );
+        }
         const key = `${illustrationJobKey(target)}:${record.item.version}`;
         inputs.set(key, request);
         handedToRunner = true;
@@ -681,6 +705,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         }
       });
     }
+
     app.get(
       "/api/illustrations/jobs",
       ...(limiter ? [limiter] : []),

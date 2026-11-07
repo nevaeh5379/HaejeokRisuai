@@ -66,9 +66,9 @@ function formatProviderMessages(
     const alternated: any = [];
     for (const message of messages) {
       const previous: any = alternated.at(-1);
-      if (previous && previous.role === message.role)
+      if (previous && previous.role === message.role) {
         mergeMessage(previous, message);
-      else alternated.push(message);
+      } else alternated.push(message);
     }
     messages = alternated;
   }

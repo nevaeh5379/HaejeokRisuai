@@ -246,6 +246,7 @@ export function createRealtimeEventHub(
     if (history.length > historyLimit) {
       history.splice(0, history.length - historyLimit);
     }
+
     for (const client of clients) {
       try {
         if (!sendToClient(client, record)) clients.delete(client);
@@ -297,6 +298,7 @@ export function createRealtimeEventHub(
     ) {
       return null;
     }
+
     pruneGenerationStates();
     const record: GenerationStateRecord = {
       chatId,
@@ -309,11 +311,11 @@ export function createRealtimeEventHub(
           : undefined,
       updatedAt: Date.now(),
     };
-    if (state === "started") {
-      activeGenerations.set(chatId, record);
-    } else if (activeGenerations.get(chatId)?.lifecycleId === lifecycleId) {
+    if (state === "started") activeGenerations.set(chatId, record);
+    else if (activeGenerations.get(chatId)?.lifecycleId === lifecycleId) {
       activeGenerations.delete(chatId);
     }
+
     broadcast("generation-state", record);
     return record;
   }
