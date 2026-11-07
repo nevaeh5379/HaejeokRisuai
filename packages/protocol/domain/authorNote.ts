@@ -10,27 +10,26 @@ export type AuthorNoteUpdate = Partial<
   Pick<AuthorNoteFields, "name" | "content">
 >;
 
-type AuthorNoteRead = <K extends keyof AuthorNoteFields>(
-  ...keys: [K, ...K[]]
-) => Promise<Pick<AuthorNoteFields, K>>;
 type AuthorNoteWrite = (patch: AuthorNoteUpdate) => Promise<void>;
 
 /** Stateless note handle; storage owns revision updates and write serialization. */
 export class AuthorNote {
   readonly id: string;
-  readonly #read: AuthorNoteRead;
+  readonly #read: () => Promise<AuthorNoteFields>;
   readonly #write: AuthorNoteWrite;
 
-  constructor(id: string, read: AuthorNoteRead, write: AuthorNoteWrite) {
+  constructor(
+    id: string,
+    read: () => Promise<AuthorNoteFields>,
+    write: AuthorNoteWrite,
+  ) {
     this.id = id;
     this.#read = read;
     this.#write = write;
   }
 
-  get<K extends keyof AuthorNoteFields>(
-    ...keys: [K, ...K[]]
-  ): Promise<Pick<AuthorNoteFields, K>> {
-    return this.#read(...keys);
+  get(): Promise<AuthorNoteFields> {
+    return this.#read();
   }
 
   update(patch: AuthorNoteUpdate): Promise<void> {

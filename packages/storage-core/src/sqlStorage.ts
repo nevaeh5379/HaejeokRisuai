@@ -357,11 +357,8 @@ export interface ISqlStorage {
     ref(id: string): AuthorNote;
     /** Checks existence and returns a handle; rejects with AuthorNoteError("missing"). */
     load(id: string): Promise<AuthorNote>;
-    /** Reads only requested fields. */
-    read<K extends keyof AuthorNoteFields>(
-      id: string,
-      ...keys: [K, ...K[]]
-    ): Promise<Pick<AuthorNoteFields, K>>;
+    /** Reads all note fields, including content. */
+    read(id: string): Promise<AuthorNoteFields>;
     /** Atomic patch; unspecified fields are preserved. Uses the shared revision-guarded write path. */
     update(id: string, patch: AuthorNoteUpdate): Promise<void>;
     create(name: string, content?: string): Promise<AuthorNote>;
