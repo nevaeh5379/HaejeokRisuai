@@ -1,10 +1,9 @@
-import type {
-  loreBook,
-  StreamingDisplayOptimizationMode,
-} from "../database.ts";
+import type { loreBook } from "./lorebook.ts";
 import type { SerializableHypaV2Data } from "../hypaV2Data.ts";
 import type { SerializableHypaV3Data } from "../hypaV3Data.ts";
 import type { OpenAIChat } from "../../../chat-core/types.ts";
+
+export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
 /** Upstream compatibility types, copied from kwaroran/Risuai commit
  * 39f1ac1472d0ef6907ee933c4cf25182ee2aec9f, src/ts/storage/database.svelte.ts.

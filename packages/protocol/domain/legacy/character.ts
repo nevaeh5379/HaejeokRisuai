@@ -1,26 +1,14 @@
-import type { IllustrationOverrides } from "../../src/illustration.ts";
+import type { Chat } from "./chat.ts";
+import type { loreBook } from "./lorebook.ts";
+import type { customscript, triggerscript } from "./script.ts";
 import type { OnnxModelFiles } from "../onnxModelFiles.ts";
-import type {
-  ChatState as Chat,
-  ChatFolder,
-  loreBook,
-  customscript,
-  triggerscript,
-  loreSettings,
-  charBookExtensions,
-  charExtensions,
-  CharacterOnboarding,
-} from "../database.ts";
 
-/**
- * @deprecated
- */
+/** Upstream compatibility declarations, kwaroran/Risuai commit
+ * 39f1ac1472d0ef6907ee933c4cf25182ee2aec9f. Fork fields belong to internal domain types. */
 export interface character {
-  illustration?: IllustrationOverrides;
   type?: "character";
   name: string;
   image?: string;
-  detailsLoaded?: boolean;
   firstMessage: string;
   desc: string;
   notes: string;
@@ -55,8 +43,7 @@ export interface character {
   scenario: string;
   firstMsgIndex: number;
   loreSettings?: loreSettings;
-  loreExt?: charBookExtensions;
-  extentions?: charExtensions;
+  loreExt?: any;
   additionalData?: {
     tag?: string[];
     creator?: string;
@@ -130,13 +117,6 @@ export interface character {
   };
   supaMemory?: boolean;
   additionalAssets?: [string, string, string][];
-  additionalAssetFolders?: Array<{
-    id: string;
-    name: string;
-    parentId?: string;
-  }>;
-  /** Folder id keyed by the unique additional-asset display name. */
-  additionalAssetFolderAssignments?: Record<string, string>;
   ttsReadOnlyQuoted?: boolean;
   replaceGlobalNote: string;
   backgroundHTML?: string;
@@ -164,6 +144,7 @@ export interface character {
   virtualscript?: string;
   scriptstate?: { [key: string]: string | number | boolean };
   depth_prompt?: { depth: number; prompt: string };
+  extentions?: { [key: string]: any };
   largePortrait?: boolean;
   lorePlus?: boolean;
   inlayViewScreen?: boolean;
@@ -202,4 +183,117 @@ export interface character {
   coldstorage?: string;
   coldStoragedChats?: string[];
   customModuleToggle?: string;
+}
+
+export interface loreSettings {
+  tokenBudget: number;
+  scanDepth: number;
+  recursiveScanning: boolean;
+  fullWordMatching?: boolean;
+}
+
+export interface groupChat {
+  type: "group";
+  image?: string;
+  firstMessage: string;
+  chats: Chat[];
+  chatFolders: ChatFolder[];
+  chatPage: number;
+  name: string;
+  viewScreen: "single" | "multiple" | "none" | "emp";
+  characters: string[];
+  characterTalks: number[];
+  characterActive: boolean[];
+  globalLore: loreBook[];
+  autoMode: boolean;
+  useCharacterLore: boolean;
+  emotionImages: [string, string][];
+  customscript: customscript[];
+  chaId: string;
+  alternateGreetings?: string[];
+  creatorNotes?: string;
+  removedQuotes?: boolean;
+  firstMsgIndex?: number;
+  loreSettings?: loreSettings;
+  supaMemory?: boolean;
+  ttsMode?: string;
+  suggestMessages?: string[];
+  orderByOrder?: boolean;
+  backgroundHTML?: string;
+  reloadKeys?: number;
+  backgroundCSS?: string;
+  oneAtTime?: boolean;
+  virtualscript?: string;
+  lorePlus?: boolean;
+  trashTime?: number;
+  nickname?: string;
+  defaultVariables?: string;
+  lowLevelAccess?: boolean;
+  hideChatIcon?: boolean;
+  lastInteraction?: number;
+
+  //lazy hack for typechecking
+  voicevoxConfig?: any;
+  ttsSpeech?: string;
+  naittsConfig?: any;
+  oaiVoice?: string;
+  oaiTTSConfig?: any;
+  hfTTS?: any;
+  vits?: OnnxModelFiles;
+  gptSoVitsConfig?: any;
+  fishSpeechConfig?: any;
+  ttsReadOnlyQuoted?: boolean;
+  exampleMessage?: string;
+  systemPrompt?: string;
+  replaceGlobalNote?: string;
+  additionalText?: string;
+  personality?: string;
+  scenario?: string;
+  translatorNote?: string;
+  additionalData?: any;
+  depth_prompt?: { depth: number; prompt: string };
+  additionalAssets?: [string, string, string][];
+  utilityBot?: boolean;
+  license?: string;
+  realmId: string;
+  prebuiltAssetCommand?: boolean;
+  prebuiltAssetStyle?: string;
+  prebuiltAssetExclude?: string[];
+  modules?: string[];
+  coldstorage?: string;
+  coldStoragedChats?: string[];
+}
+
+export interface OnboardingOption {
+  label: string;
+  value: string;
+}
+
+export interface OnboardingQuestion {
+  id: string;
+  title: string;
+  description?: string;
+  type: "single" | "multiple" | "text";
+  varName: string;
+  required?: boolean;
+  options: OnboardingOption[];
+  placeholder?: string;
+}
+
+export interface CharacterOnboarding {
+  enabled: boolean;
+  mode: "form" | "html";
+  title?: string;
+  description?: string;
+  questions: OnboardingQuestion[];
+  html?: string;
+  /** Also shows a floating button on the chat screen that opens the onboarding. */
+  floatingButton?: boolean;
+}
+
+export interface ChatFolder {
+  id: string;
+  name?: string;
+  color?: string;
+  folded: boolean;
 }
