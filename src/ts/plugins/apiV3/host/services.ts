@@ -1,3 +1,4 @@
+import type { PluginDatabaseLite } from "./databaseTypes";
 import {
   globalFetch,
   fetchNative,
@@ -46,7 +47,7 @@ export function createPluginServices() {
     addRisuChatListener: addChatListener,
     removeRisuChatListener: removeChatListener,
     setDatabase: setPluginDatabase,
-    setDatabaseLite: (value: Record<string, unknown>) =>
+    setDatabaseLite: (value: PluginDatabaseLite) =>
       setPluginDatabase(value, true),
     loadPlugins,
     readImage: (path: string) => {

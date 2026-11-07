@@ -179,8 +179,16 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
       id: "untouched",
       name: "Untouched module",
     };
-    const updated = { id: "existing", name: "Updated existing module" };
-    const created = { id: "plugin-module", name: "Plugin module" };
+    const updated = {
+      id: "existing",
+      name: "Updated existing module",
+      description: "",
+    };
+    const created = {
+      id: "plugin-module",
+      name: "Plugin module",
+      description: "",
+    };
     mockStorage.module.list = vi.fn(async () => [
       existing,
       untouched,

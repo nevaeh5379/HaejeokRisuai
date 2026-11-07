@@ -62,7 +62,7 @@ export class DatabaseSnapshotTransfer {
       const root = entry.asynchronous ? await entry.read() : entry.read();
       const cloned = new WeakMap<object, number>();
       const encode = (
-        value: any,
+        value: unknown,
         original: object | null = null,
         topLevel = false,
       ): SnapshotValue => {
@@ -87,7 +87,12 @@ export class DatabaseSnapshotTransfer {
               if (original !== null) cloned.set(original, id);
               emit(["object", id]);
               for (const property of Object.keys(value)) {
-                emit(["set", id, property, encode(value[property])]);
+                emit([
+                  "set",
+                  id,
+                  property,
+                  encode(Reflect.get(value, property)),
+                ]);
               }
               return [1, id];
             }
@@ -95,6 +100,7 @@ export class DatabaseSnapshotTransfer {
             // references from a toJSON result back to its original instance.
             if (
               !(value instanceof Date) &&
+              "toJSON" in value &&
               typeof value.toJSON === "function"
             ) {
               return encode(value.toJSON(), value, topLevel);
@@ -121,10 +127,9 @@ export class DatabaseSnapshotTransfer {
   }
 }
 
-// TODO: 데이터베이스 매개변수 타입을 제대로 하기
 export function prepareDatabaseSnapshot(
   database: Record<string, unknown>,
-  allowedKeys: string[],
+  allowedKeys: readonly string[],
   loadPlugins: () => Promise<unknown>,
   includeOnly: string[] | "all" = "all",
   loadCharacters?: () => Promise<unknown>,

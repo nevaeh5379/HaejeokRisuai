@@ -1,3 +1,10 @@
+import {
+  allowedDbKeys,
+  isPluginDatabaseKey,
+  type PluginDatabase,
+  type PluginDatabaseFields,
+  type PluginDatabaseKey,
+} from "./databaseTypes";
 import { get } from "svelte/store";
 import { v4 } from "uuid";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
@@ -7,14 +14,12 @@ import { personaStore } from "src/ts/stores/domain/personaStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { selectedCharID } from "src/ts/stores.svelte";
-import { isPresetStoreSettingKey } from "src/ts/storage/sql/sqlDeferredSettings";
-import type { RisuModule } from "@risuai/protocol/domain/legacy/module.ts";
-import type { RisuPersona } from "@risuai/protocol/domain/legacy/persona.ts";
 import type { RisuPlugin } from "@risuai/protocol/domain/legacy/plugin.ts";
 import type { Chat } from "@risuai/protocol/domain/legacy/chat.ts";
 import type {
   PluginMetadata,
   PluginScript,
+  PluginStorageValue,
 } from "@risuai/protocol/domain/pluginTypes.ts";
 import {
   toLegacyCharacterSnapshot,
@@ -27,41 +32,18 @@ import {
   fromLegacyModule,
   fromLegacyPersona,
   type LegacyCharacter,
+  type CharacterSnapshot,
 } from "../../legacyObjects";
-import { prepareDatabaseSnapshot } from "../databaseSnapshot.svelte";
+import {
+  prepareDatabaseSnapshot,
+  type DatabaseSnapshotTransfer,
+} from "../databaseSnapshot.svelte";
 import {
   handlePluginInstallViaPlugin,
   getRuntimePlugin,
 } from "../../plugins.svelte";
 
 type SnapshotTarget = number | string;
-
-export const allowedDbKeys = [
-  "characters",
-  "modules",
-  "enabledModules",
-  "moduleIntergration",
-  "pluginV2",
-  "personas",
-  "plugins",
-  "pluginCustomStorage",
-  "temperature",
-  "askRemoval",
-  "maxContext",
-  "maxResponse",
-  "frequencyPenalty",
-  "PresensePenalty",
-  "theme",
-  "textTheme",
-  "lineHeight",
-  "seperateModelsForAxModels",
-  "seperateModels",
-  "customCSS",
-  "guiHTML",
-  "colorSchemeName",
-  "selectedPersona",
-  "characterOrder",
-];
 
 export async function loadPluginCharacter(
   target: SnapshotTarget,
@@ -117,7 +99,7 @@ export async function loadPluginCharacters(): Promise<LegacyCharacter[]> {
 export async function savePluginCharacters(
   values: LegacyCharacter[],
 ): Promise<void> {
-  const result = [];
+  const result: CharacterSnapshot[] = [];
   for (const value of values) {
     const current = await characterStore.snapshot.load(value.chaId);
     result.push(fromLegacyCharacter(value, current ?? undefined));
@@ -197,7 +179,9 @@ export function setPluginArgument(
   if (runtime) runtime.realArg[key] = value;
 }
 
-function readDatabaseKey(key: string): unknown {
+function readDatabaseKey(
+  key: PluginDatabaseKey,
+): PluginDatabaseFields[PluginDatabaseKey] | undefined {
   switch (key) {
     case "modules":
       return moduleStore.modules.map((module) =>
@@ -211,90 +195,67 @@ function readDatabaseKey(key: string): unknown {
       );
     case "selectedPersona":
       return personaStore.activeIndex;
+    case "moduleIntergration":
+      return $state.snapshot(presetStore.state.moduleIntergration);
+    case "temperature":
+      return $state.snapshot(presetStore.state.temperature);
+    case "maxContext":
+      return $state.snapshot(presetStore.state.maxContext);
+    case "maxResponse":
+      return $state.snapshot(presetStore.state.maxResponse);
+    case "frequencyPenalty":
+      return $state.snapshot(presetStore.state.frequencyPenalty);
+    case "PresensePenalty":
+      return $state.snapshot(presetStore.state.PresensePenalty);
+    case "seperateModelsForAxModels":
+      return $state.snapshot(presetStore.state.seperateModelsForAxModels);
+    case "seperateModels":
+      return $state.snapshot(presetStore.state.seperateModels);
+    case "pluginV2":
+      return $state.snapshot(settingsStore.state.pluginV2);
+    case "pluginCustomStorage":
+      return $state.snapshot(settingsStore.state.pluginCustomStorage);
+    case "askRemoval":
+      return $state.snapshot(settingsStore.state.askRemoval);
+    case "theme":
+      return $state.snapshot(settingsStore.state.theme);
+    case "textTheme":
+      return $state.snapshot(settingsStore.state.textTheme);
+    case "lineHeight":
+      return $state.snapshot(settingsStore.state.lineHeight);
+    case "customCSS":
+      return $state.snapshot(settingsStore.state.customCSS);
+    case "guiHTML":
+      return $state.snapshot(settingsStore.state.guiHTML);
+    case "colorSchemeName":
+      return $state.snapshot(settingsStore.state.colorSchemeName);
+    case "characterOrder":
+      return $state.snapshot(settingsStore.state.characterOrder);
     case "characters":
     case "plugins":
       throw new Error(`Database key requires asynchronous loading: ${key}`);
-    default:
-      return isPresetStoreSettingKey(key)
-        ? $state.snapshot(presetStore.state[key])
-        : $state.snapshot(settingsStore.state[key]);
   }
 }
 
-function requireArray(value: unknown, key: string): asserts value is unknown[] {
+function requireArray(
+  value: unknown,
+  key: PluginDatabaseKey,
+): asserts value is unknown[] {
   if (!Array.isArray(value)) {
     throw new TypeError(`Plugin database ${key} must be an array`);
   }
 }
-async function writeDatabaseKey(key: string, value: unknown): Promise<void> {
-  switch (key) {
-    case "characters":
-      requireArray(value, key);
-      return savePluginCharacters(value as LegacyCharacter[]);
-    case "modules": {
-      requireArray(value, key);
-      moduleStore.upsertModules(
-        (value as RisuModule[]).map((module) =>
-          fromLegacyModule(
-            module,
-            $state.snapshot(
-              moduleStore.modules.find((current) => current.id === module.id),
-            ),
-          ),
-        ),
-      );
-      return;
-    }
-    case "enabledModules":
-      requireArray(value, key);
-      if (!value.every((id) => typeof id === "string")) {
-        throw new TypeError("Module IDs must be strings");
-      }
-      moduleStore.enabledModules = [...value];
-      return;
-    case "plugins":
-      requireArray(value, key);
-      return replacePluginRecords(value as RisuPlugin[]);
-    case "personas":
-      requireArray(value, key);
-      personaStore.replace(
-        (value as RisuPersona[]).map((persona) =>
-          fromLegacyPersona(
-            persona,
-            $state.snapshot(
-              personaStore.personas.find(
-                (current) => current.id === persona.id,
-              ),
-            ),
-          ),
-        ),
-      );
-      return;
-    case "selectedPersona":
-      if (typeof value !== "number") {
-        throw new TypeError("Persona index must be a number");
-      }
-      personaStore.select(value, "plugin API");
-      return;
-    default: {
-      if (isPresetStoreSettingKey(key)) {
-        presetStore.set(key, value as (typeof presetStore.state)[typeof key]);
-      } else {
-        const settingKey = key as Parameters<typeof settingsStore.set>[0];
-        settingsStore.set(
-          settingKey,
-          value as (typeof settingsStore.state)[typeof settingKey],
-        );
-      }
-    }
-  }
-}
-export function getPluginDatabase(includeOnly: string[] | "all" = "all") {
-  const reader = new Proxy<Record<string, unknown>>(
+
+export function getPluginDatabase(
+  includeOnly: string[] | "all" = "all",
+): DatabaseSnapshotTransfer {
+  const reader = new Proxy<PluginDatabase>(
     {},
     {
       get: (_target, key) =>
-        typeof key === "string" ? readDatabaseKey(key) : undefined,
+        typeof key === "string" && isPluginDatabaseKey(key)
+          ? readDatabaseKey(key)
+          : undefined,
     },
   );
   return prepareDatabaseSnapshot(
@@ -305,27 +266,143 @@ export function getPluginDatabase(includeOnly: string[] | "all" = "all") {
     loadPluginCharacters,
   );
 }
+
 export async function setPluginDatabase(
-  value: Record<string, unknown>,
+  value: PluginDatabase,
   lite = false,
 ): Promise<void> {
   if (!value || typeof value !== "object") return;
-  for (const [key, item] of Object.entries(value)) {
-    if (key === "plugins" && lite) continue;
-    const next =
-      key === "plugins"
-        ? await handlePluginInstallViaPlugin(item as RisuPlugin[])
-        : item;
-    if (allowedDbKeys.includes(key)) await writeDatabaseKey(key, next);
-    else settingsStore.setPluginCustomStorageKey(key, next);
+  for (const key of Object.keys(value)) {
+    switch (key) {
+      case "characters": {
+        const characters = value.characters;
+        requireArray(characters, key);
+        await savePluginCharacters(characters);
+        break;
+      }
+      case "modules": {
+        const modules = value.modules;
+        requireArray(modules, key);
+        moduleStore.upsertModules(
+          modules.map((module) =>
+            fromLegacyModule(
+              module,
+              $state.snapshot(
+                moduleStore.modules.find((current) => current.id === module.id),
+              ),
+            ),
+          ),
+        );
+        break;
+      }
+      case "enabledModules": {
+        const modules = value.enabledModules;
+        requireArray(modules, key);
+        if (!modules.every((id) => typeof id === "string")) {
+          throw new TypeError("Module IDs must be strings");
+        }
+        moduleStore.enabledModules = [...modules];
+        break;
+      }
+      case "plugins": {
+        if (lite) break;
+        requireArray(value.plugins, key);
+        await replacePluginRecords(
+          await handlePluginInstallViaPlugin(value.plugins),
+        );
+        break;
+      }
+      case "personas": {
+        const personas = value.personas;
+        requireArray(personas, key);
+        personaStore.replace(
+          personas.map((persona) =>
+            fromLegacyPersona(
+              persona,
+              $state.snapshot(
+                personaStore.personas.find(
+                  (current) => current.id === persona.id,
+                ),
+              ),
+            ),
+          ),
+        );
+        break;
+      }
+      case "selectedPersona":
+        if (typeof value.selectedPersona !== "number") {
+          throw new TypeError("Persona index must be a number");
+        }
+        personaStore.select(value.selectedPersona, "plugin API");
+        break;
+      case "moduleIntergration":
+        presetStore.set("moduleIntergration", value.moduleIntergration);
+        break;
+      case "temperature":
+        presetStore.set("temperature", value.temperature);
+        break;
+      case "maxContext":
+        presetStore.set("maxContext", value.maxContext);
+        break;
+      case "maxResponse":
+        presetStore.set("maxResponse", value.maxResponse);
+        break;
+      case "frequencyPenalty":
+        presetStore.set("frequencyPenalty", value.frequencyPenalty);
+        break;
+      case "PresensePenalty":
+        presetStore.set("PresensePenalty", value.PresensePenalty);
+        break;
+      case "seperateModelsForAxModels":
+        presetStore.set(
+          "seperateModelsForAxModels",
+          value.seperateModelsForAxModels,
+        );
+        break;
+      case "seperateModels":
+        presetStore.set("seperateModels", value.seperateModels);
+        break;
+      case "pluginV2":
+        settingsStore.set("pluginV2", value.pluginV2);
+        break;
+      case "pluginCustomStorage":
+        settingsStore.set("pluginCustomStorage", value.pluginCustomStorage);
+        break;
+      case "askRemoval":
+        settingsStore.set("askRemoval", value.askRemoval);
+        break;
+      case "theme":
+        settingsStore.set("theme", value.theme);
+        break;
+      case "textTheme":
+        settingsStore.set("textTheme", value.textTheme);
+        break;
+      case "lineHeight":
+        settingsStore.set("lineHeight", value.lineHeight);
+        break;
+      case "customCSS":
+        settingsStore.set("customCSS", value.customCSS);
+        break;
+      case "guiHTML":
+        settingsStore.set("guiHTML", value.guiHTML);
+        break;
+      case "colorSchemeName":
+        settingsStore.set("colorSchemeName", value.colorSchemeName);
+        break;
+      case "characterOrder":
+        settingsStore.set("characterOrder", value.characterOrder);
+        break;
+      default:
+        settingsStore.setPluginCustomStorageKey(key, value[key]);
+    }
   }
 }
 export const pluginStorage = {
-  getItem: async (key: string): Promise<unknown> => {
+  getItem: async (key: string): Promise<PluginStorageValue> => {
     const value = await settingsStore.loadPluginCustomStorageKey(key);
     return value === undefined ? null : $state.snapshot(value);
   },
-  setItem: (key: string, value: unknown) =>
+  setItem: (key: string, value: PluginStorageValue) =>
     settingsStore.setPluginCustomStorageKey(key, value),
   removeItem: (key: string) => settingsStore.removePluginCustomStorageKey(key),
   clear: () => settingsStore.clearPluginCustomStorage(),
@@ -335,14 +412,14 @@ export const pluginStorage = {
   length: () => settingsStore.getPluginCustomStorageKeys().length,
 };
 
-export function getPluginDatabaseView(): Record<string, unknown> {
-  const read = (key: string): unknown =>
-    allowedDbKeys.includes(key)
+export function getPluginDatabaseView(): PluginDatabase {
+  const read = (key: string): PluginStorageValue =>
+    isPluginDatabaseKey(key)
       ? readDatabaseKey(key)
       : $state.snapshot(settingsStore.state.pluginCustomStorage?.[key]);
   const has = (key: string): boolean =>
-    allowedDbKeys.includes(key) || settingsStore.hasPluginCustomStorageKey(key);
-  return new Proxy<Record<string, unknown>>(
+    isPluginDatabaseKey(key) || settingsStore.hasPluginCustomStorageKey(key);
+  return new Proxy<PluginDatabase>(
     {},
     {
       get: (_target, key) => (typeof key === "string" ? read(key) : undefined),
@@ -370,7 +447,7 @@ export function getPluginDatabaseView(): Record<string, unknown> {
             }
           : undefined,
       deleteProperty: (_target, key) => {
-        if (typeof key !== "string" || allowedDbKeys.includes(key)) {
+        if (typeof key !== "string" || isPluginDatabaseKey(key)) {
           return false;
         }
         settingsStore.removePluginCustomStorageKey(key);
