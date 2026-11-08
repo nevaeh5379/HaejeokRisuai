@@ -46,7 +46,7 @@
     "android:build:debug": "pnpm run android:sync && cd android && ./gradlew assembleDebug",
     "sync": "node electron/sync",
     "electron": "node electron/dist/electron",
-    "hono:build": "pnpm check && vite build --sourcemap && node server/hono/src/utils/postbuild.js",
+    "hono:build": "pnpm check && vite build --sourcemap && tsx server/hono/src/utils/postbuild.ts",
     "check:backup-core": "pnpm --dir packages/backup-core check",
     "check:runtime-dependencies": "node tooling/check-node-runtime-dependencies.ts"
   },
