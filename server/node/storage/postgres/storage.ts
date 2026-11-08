@@ -33,7 +33,7 @@ import type {
   Message,
   customscript,
 } from "../../../../packages/protocol/domain/database.ts";
-import type {
+import {
   Chat,
   ChatFields,
   ChatUpdate,
@@ -110,6 +110,7 @@ import type { CharacterTables } from "../../../../packages/protocol/tables/chara
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
 import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
+import { randomUUID } from "node:crypto";
 
 /** Cold-storage value shape produced by the shared splitter. */
 
@@ -396,7 +397,11 @@ export class PostgresStorage implements ISqlStorage {
      * const handle = storage.chat.ref("chat-id");
      */
     ref: (id: string): Chat => {
-      throw new Error("Method not implemented.");
+      return new Chat(
+        id,
+        (...keys) => this.chat.read(id, ...keys),
+        (patch) => this.chat.update(id, patch),
+      );
     },
 
     /**
@@ -406,7 +411,7 @@ export class PostgresStorage implements ISqlStorage {
      * const chat = await storage.chat.load("chat-id");
      */
     load: async (id: string): Promise<Chat> => {
-      throw new Error("Method not implemented.");
+      return this.chat.ref(id);
     },
 
     /**
@@ -448,12 +453,28 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * const list = await storage.chat.list("cha-id", { offset: 0, limit: 20 }, "name");
      */
-    list: async <K extends keyof ChatFields = never>(
+    list: async (
       characterId: string,
-      options: { offset: number; limit: number },
-      ...keys: K[]
-    ): Promise<Array<Pick<ChatFields, K> & { id: string; position: number }>> => {
-      throw new Error("Method not implemented.");
+      options?: { offset?: number; limit?: number },
+    ): Promise<Array<Pick<ChatFields, "id" | "position">>> => {
+      let sql = this.db
+        .selectFrom("chat.chats")
+        .select("chat.chats.id")
+        .select("chat.chats.position")
+        .where("chat.chats.character_id", "=", characterId)
+        .orderBy("chat.chats.position", "asc");
+
+      if (options) {
+        if (options.offset) {
+          sql = sql.offset(options.offset);
+        }
+
+        if (options.limit) {
+          sql = sql.limit(options.limit);
+        }
+      }
+
+      return await sql.execute();
     },
 
     /**
@@ -462,12 +483,40 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * const newChat = await storage.chat.create({ characterId: "cha-id", name: "Chat 1" });
      */
-    create: async (input: {
-      characterId: string;
-      name: string;
-      position?: number;
-    }): Promise<Chat> => {
-      throw new Error("Method not implemented.");
+    create: async (
+      characterId: string,
+      name: string,
+      position?: number,
+    ): Promise<Chat> => {
+      const maxPosition: number = await this.chat.position.max(characterId);
+      if (position !== undefined && maxPosition === -1) {
+        throw new Error("position has value. but maxPosition's -1.");
+      }
+
+      if (position !== undefined) {
+        await this.db
+          .updateTable("chat.chats")
+          .set((eb) => ({
+            position: eb("chat.chats.position", "+", 1),
+          }))
+          .where("chat.chats.character_id", "=", characterId)
+          .where("chat.chats.position", ">=", position)
+          .executeTakeFirstOrThrow();
+      }
+
+      const id = randomUUID();
+
+      await this.db
+        .insertInto("chat.chats")
+        .values({
+          id: id,
+          character_id: characterId,
+          position: position ?? (maxPosition + 1),
+          name: name,
+        })
+        .executeTakeFirstOrThrow();
+
+      return this.chat.ref(id);
     },
 
     /**
@@ -501,6 +550,24 @@ export class PostgresStorage implements ISqlStorage {
       activeChatId?: string,
     ): Promise<RecentChat[]> => {
       throw new Error("Method not implemented.");
+    },
+
+    position: {
+      /**
+       * @param id character id.
+       * @return value max position. or -1 if character has no any chats.
+       */
+      max: async (id: string): Promise<number> => {
+        return (
+          (
+            await this.db
+              .selectFrom("chat.chats")
+              .select((eb) => eb.fn.max("position").as("maxPosition"))
+              .where("chat.chats.character_id", "=", id)
+              .executeTakeFirstOrThrow()
+          ).maxPosition ?? -1
+        );
+      },
     },
   };
 
@@ -652,7 +719,7 @@ export class PostgresStorage implements ISqlStorage {
 
   /** Plugin registry and metadata */
   readonly plugin: IPluginStorage = {
-     script: {
+    script: {
       /**
        * Load plugin script by ID
        * TODO: Query plugin script record
@@ -1018,7 +1085,11 @@ export class PostgresStorage implements ISqlStorage {
     },
     update: async (id: string, patch: CharacterUpdate): Promise<void> => {
       validateCharacterUpdate(id, patch);
-      if (Object.keys(patch).length === 0) return;
+      if (Object.keys(patch).length === 0){
+        console.warn("PostgresStorage.character.update: Object.keys(patch).length is 0! We will not do character update.");
+        return;
+      } 
+        
       const encoded = characterPatch(id, patch);
       await this.db.transaction().execute(async (trx) => {
         if (!(await this.character.exists(id, trx))) {
@@ -1418,7 +1489,9 @@ export class PostgresStorage implements ISqlStorage {
     list: async <K extends keyof PresetFields = never>(
       options: { offset: number; limit: number },
       ...keys: K[]
-    ): Promise<Array<Pick<PresetFields, K> & { id: string; position: number }>> => {
+    ): Promise<
+      Array<Pick<PresetFields, K> & { id: string; position: number }>
+    > => {
       throw new Error("Method not implemented.");
     },
 
@@ -1496,10 +1569,7 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * await storage.lorebook.update(0, patch);
      */
-    update: async (
-      position: number,
-      patch: LorebookUpdate,
-    ): Promise<void> => {
+    update: async (position: number, patch: LorebookUpdate): Promise<void> => {
       throw new Error("Method not implemented.");
     },
 
@@ -1615,7 +1685,9 @@ export class PostgresStorage implements ISqlStorage {
     list: async <K extends keyof ModuleFields = never>(
       options: { offset: number; limit: number },
       ...keys: K[]
-    ): Promise<Array<Pick<ModuleFields, K> & { id: string; position: number }>> => {
+    ): Promise<
+      Array<Pick<ModuleFields, K> & { id: string; position: number }>
+    > => {
       throw new Error("Method not implemented.");
     },
 
@@ -1671,7 +1743,10 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * const list = await storage.script.list({ offset: 0, limit: 20 });
      */
-    list: async (options: { offset: number; limit: number }): Promise<
+    list: async (options: {
+      offset: number;
+      limit: number;
+    }): Promise<
       Array<
         Pick<customscript, "comment" | "type" | "ableFlag"> & {
           position: number;
@@ -1753,7 +1828,10 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * const keys = await storage.pluginCustomStorage.keys({ offset: 0, limit: 50 });
      */
-    keys: async (options: { offset: number; limit: number }): Promise<string[]> => {
+    keys: async (options: {
+      offset: number;
+      limit: number;
+    }): Promise<string[]> => {
       throw new Error("Method not implemented.");
     },
 
@@ -1869,7 +1947,10 @@ export class PostgresStorage implements ISqlStorage {
      * Example usage:
      * const keys = await storage.coldStorage.keys({ offset: 0, limit: 50 });
      */
-    keys: async (options: { offset: number; limit: number }): Promise<string[]> => {
+    keys: async (options: {
+      offset: number;
+      limit: number;
+    }): Promise<string[]> => {
       throw new Error("Method not implemented.");
     },
 

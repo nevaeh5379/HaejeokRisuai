@@ -247,24 +247,27 @@ export interface ISqlStorage {
     count(characterId: string): Promise<number>;
     /** Bounded range ordered by position then ID. Always returns ID and position.
      * No field values besides the explicitly requested keys are hydrated. */
-    list<K extends keyof ChatFields = never>(
+    list(
       characterId: string,
-      options: { offset: number; limit: number },
-      ...keys: K[]
-    ): Promise<Array<Pick<ChatFields, K> & { id: string; position: number }>>;
+      options?: { offset?: number; limit?: number },
+    ): Promise<Array<Pick<ChatFields, "id" | "position">>>;
     /** Appends if position is omitted. Parent and initial chat state are persisted atomically. */
-    create(input: {
-      characterId: string;
-      name: string;
-      position?: number;
-    }): Promise<Chat>;
+    create(characterId: string, name: string, position?: number): Promise<Chat>;
     /** Deletes the chat and its owned records atomically. Rejects for a missing chat. */
     delete(id: string): Promise<void>;
     /** Moves within the same character, updating affected sibling positions atomically. */
     move(id: string, position: number): Promise<void>;
     /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
     listRecent(limit?: number, activeChatId?: string): Promise<RecentChat[]>;
-  };
+
+    position: {
+      /**
+       * 
+       * @param id character id
+       */
+      max(id: string): Promise<number>
+    };
+  }
 
   message: {
     /** Saves one message through the revision-guarded commit path. */
