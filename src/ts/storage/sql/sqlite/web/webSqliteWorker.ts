@@ -68,6 +68,7 @@ interface Sqlite3Module {
     sqlite3_js_db_export: (database: SqliteDb) => Uint8Array;
   };
   installOpfsSAHPoolVfs?: (options?: {
+    preserveOnInitFailure?: boolean;
     clearOnInit?: boolean;
     initialCapacity?: number;
     directory?: string;
@@ -157,6 +158,7 @@ async function openPersistentDatabase(
     pool = await sqlite3.installOpfsSAHPoolVfs({
       directory: SAH_POOL_DIRECTORY,
       initialCapacity: SAH_POOL_CAPACITY,
+      preserveOnInitFailure: true,
     });
     activeSahPool = pool;
     await pool.reserveMinimumCapacity(SAH_POOL_CAPACITY);
