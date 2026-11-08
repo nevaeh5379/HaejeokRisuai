@@ -2,12 +2,19 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export type AndroidNativeEntry = {
   type:
-    "share-text" | "process-text" | "open-chat" | "open-character" | "new-chat";
+    | "share-text"
+    | "process-text"
+    | "open-chat"
+    | "open-character"
+    | "new-chat"
+    | "open-file";
   text?: string;
   subject?: string;
   mimeType?: string;
   characterId?: string;
   chatId?: string;
+  fileUri?: string;
+  fileName?: string;
 };
 
 export interface AndroidShortcutItem {
@@ -27,6 +34,7 @@ export interface AndroidRecentChatWidgetItem {
 
 interface NativeIntegrationPlugin {
   consumePendingEntries(): Promise<{ entries: AndroidNativeEntry[] }>;
+  readSharedFile(options: { fileUri: string }): Promise<{ data: string }>;
   updateShortcuts(options: {
     items: AndroidShortcutItem[];
   }): Promise<{ updated: number }>;
@@ -229,6 +237,28 @@ export async function requestAndroidQuickSettingsTile(): Promise<{
 }> {
   if (!nativeIntegration) return { supported: false, result: -1 };
   return nativeIntegration.requestQuickSettingsTile();
+}
+
+export async function readAndroidSharedFile(
+  fileUri: string,
+): Promise<Uint8Array | null> {
+  if (!nativeIntegration) return null;
+  try {
+    const { data } = await nativeIntegration.readSharedFile({ fileUri });
+    if (!data) return null;
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch (error) {
+    console.warn(
+      "[NativeIntegration] Failed to read shared Android file:",
+      error,
+    );
+    return null;
+  }
 }
 
 export function installAndroidNativeEntryHandler(
