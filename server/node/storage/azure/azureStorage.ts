@@ -25,13 +25,13 @@ import {
 import { decodeJsonValue, encodeJsonValue } from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
-  rebuildChat,
   rebuildMessage,
   splitCharacter,
   splitChat,
   splitMessage,
   splitLore,
 } from "../postgres/relationalCodec.ts";
+import { rebuild } from "../postgres/utils/chat.ts";
 import { rebuildSettings, splitSetting } from "../postgres/settingsCodec.ts";
 import { projectSettings } from "../postgres/settingRelations.ts";
 import {
@@ -1796,7 +1796,7 @@ class AzureStorage extends SqlStorageBase {
       limit: options.messageLimit,
       mode: "full",
     });
-    const chat = rebuildChat(
+    const chat = rebuild(
       chatRes.recordset[0],
       {
         attributes: attrsRes.recordset,
@@ -4261,7 +4261,7 @@ class AzureStorage extends SqlStorageBase {
         );
       });
 
-      const reconstructedChat = rebuildChat(
+      const reconstructedChat = rebuild(
         chatRow,
         chatAttrsGroup.get(chatPos) || [],
         chatSuggestionsGroup.get(chatPos) || [],

@@ -45,7 +45,7 @@ const CHARACTER_SCALARS: any = {
   trashTime: "trash_time",
 };
 
-const CHAT_SCALARS: any = {
+export const CHAT_SCALARS = {
   name: "name",
   note: "note",
   sdData: "sd_data",
@@ -57,7 +57,7 @@ const CHAT_SCALARS: any = {
   fmIndex: "first_message_index",
   folderId: "folder_id",
   lastDate: "last_message_time",
-};
+} as const satisfies Partial<Record<keyof ChatFields, keyof ChatsTable>>;
 const CHARACTER_BIGINT_COLUMNS: any = new Set([
   "creation_time",
   "modification_time",
@@ -711,15 +711,6 @@ const SHALLOW_CHARACTER_SCALARS: any = {
   trashTime: "trash_time",
 };
 
-const SHALLOW_CHAT_SCALARS: any = {
-  name: "name",
-  note: "note",
-  folderId: "folder_id",
-  fmIndex: "first_message_index",
-  bindedPersona: "bound_persona_id",
-  lastDate: "last_message_time",
-};
-
 function rebuildCharacter(
   row?: any,
   related: any = {},
@@ -828,68 +819,6 @@ function rebuildCharacter(
   return character;
 }
 
-function rebuildChat(
-  row?: any,
-  related: any = {},
-  options: any = {},
-  ...legacyRelations: any[]
-): any {
-  const chat: any = {};
-  const scalarMap: any = options.shallow ? SHALLOW_CHAT_SCALARS : CHAT_SCALARS;
-  for (const [property, column] of Object.entries(scalarMap) as [
-    string,
-    any,
-  ][]) {
-    if (row[column] !== null && row[column] !== undefined) {
-      chat[property] =
-        column === "last_message_time" ? Number(row[column]) : row[column];
-    }
-  }
-
-  chat.name ??= "";
-  chat.note ??= "";
-  if ((related.bookmarks || []).length) {
-    chat.bookmarks = related.bookmarks.map((item?: any) => item.message_id);
-    chat.bookmarkNames = {};
-    for (const item of related.bookmarks) {
-      if (item.name !== null) chat.bookmarkNames[item.message_id] = item.name;
-    }
-  }
-
-  if (!options.shallow) {
-    chat.localLore = (related.lore || []).map(rebuildLore);
-    if ((related.suggestions || []).length) {
-      chat.suggestMessages = related.suggestions.map(
-        (item?: any) => item.content,
-      );
-    }
-    if ((related.modules || []).length) {
-      chat.modules = related.modules.map((item?: any) => item.module_id);
-    }
-    if ((related.scriptState || []).length) {
-      chat.scriptstate = {};
-      for (const item of related.scriptState) {
-        chat.scriptstate[item.key] =
-          item.value_type === "text"
-            ? item.text_value
-            : item.value_type === "number"
-              ? Number(item.number_value)
-              : item.boolean_value;
-      }
-    }
-    for (const item of related.memory || []) {
-      chat[item.memory_type === "hypa-v2" ? "hypaV2Data" : "hypaV3Data"] =
-        decodeJson(item.payload);
-    }
-
-    applyAttributes(chat, related.attributes);
-  }
-
-  chat.id = row.id;
-  chat.message = related.messages || [];
-  return chat;
-}
-
 function rebuildMessage(
   row?: any,
   related: any = {},
@@ -972,7 +901,6 @@ export {
   decodeSetting,
   encodeSetting,
   rebuildCharacter,
-  rebuildChat,
   rebuildLore,
   rebuildMessage,
   splitCharacter,

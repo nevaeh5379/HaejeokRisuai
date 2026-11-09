@@ -248,7 +248,6 @@ import {
 import { decodeJsonValue, encodeJsonValue } from "../postgres/jsonCodec.ts";
 import {
   rebuildCharacter,
-  rebuildChat,
   rebuildMessage,
   rebuildLore,
   splitCharacter,
@@ -256,6 +255,7 @@ import {
   splitMessage,
   splitLore,
 } from "../postgres/relationalCodec.ts";
+import { rebuild } from "../postgres/utils/chat.ts";
 import { rebuildSettings, splitSetting } from "../postgres/settingsCodec.ts";
 import { projectSettings } from "../postgres/settingRelations.ts";
 import {
@@ -2852,7 +2852,7 @@ class OracleStorage extends SqlStorageBase {
         limit: options.messageLimit,
         mode: "full",
       });
-      const chat = rebuildChat(chatRow, {
+      const chat = rebuild(chatRow, {
         attributes,
         suggestions,
         modules,

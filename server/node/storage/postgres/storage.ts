@@ -11,7 +11,6 @@ import {
   CHARACTER_RELATIONS,
   CHAT_FIELD_STORAGE,
   decodeCharacterReadRow,
-  rebuildChat,
   type CharacterReadRow,
   type ChatRelationKey,
 } from "./relationalCodec.ts";
@@ -95,6 +94,7 @@ import {
   Transaction,
   type ExpressionBuilder,
   type PostgresPool,
+  type Selectable,
 } from "kysely";
 import { Pool } from "pg";
 import { characterPatch } from "./patch/character/index.ts";
@@ -111,7 +111,12 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
 
 import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
-import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
+import type {
+  AttributesTable,
+  ChatsTable,
+  ChatTables,
+  LoreEntriesTable,
+} from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
 import type { PostgresDatabase } from "./type.ts";
@@ -426,23 +431,22 @@ export class PostgresStorage implements ISqlStorage {
     ): Promise<Pick<ChatFields, K>> => {
       const plan = chat.planChatRead(keys);
 
-      const [row, attributes, related, activeBranch] = await Promise.all([
-        this.db
+
+      const row = await this.db
           .selectFrom("chat.chats")
           .select(plan.columns)
           .where("chat.chats.id", "=", id)
-          .executeTakeFirst(),
-        this.readChatAttributes(id, plan.attributeKeys),
-        this.readChatRelations(id, plan.relationKeys),
-        plan.needsActiveBranch
-          ? this.readChatActiveBranch(id)
-          : Promise.resolve(undefined),
-      ]);
+          .executeTakeFirst() satisfies Selectable<ChatsTable> | undefined
+
+      const attributes = await this.readChatAttributes(id, plan.attributeKeys);
+      const related = await this.readChatRelations(id, plan.relationKeys);
+      const activeBranch = plan.needsActiveBranch ? await this.readChatActiveBranch(id) : undefined
+
       if (row === undefined) {
         throw new Error(`Chat not found: ${id}`);
       }
 
-      const rebuilt = rebuildChat(row as Record<string, unknown>, {
+      const rebuilt = chat.rebuild(row, {
         ...related,
         attributes,
       }) as Record<string, unknown>;
@@ -873,43 +877,45 @@ export class PostgresStorage implements ISqlStorage {
    * `CHAT_FIELD_STORAGE`. `Record<ChatRelationKey, …>` makes an added relation
    * a compile error until its reader exists.
    */
-  private readonly chatRelationReaders: Record<
-    ChatRelationKey,
-    (id: string) => Promise<unknown[]>
-  > = {
-    lore: (id) => this.readChatLore(id),
-    suggestions: (id) => this.readChatSuggestions(id),
-    modules: (id) => this.readChatModules(id),
-    scriptState: (id) => this.readChatScriptState(id),
-    bookmarks: (id) => this.readChatBookmarks(id),
-    memory: (id) => this.readChatMemory(id),
-  };
+  private readonly chatRelationReaders = {
+    lore: (id: string) => this.readChatLore(id),
+    suggestions: (id: string) => this.readChatSuggestions(id),
+    modules: (id: string) => this.readChatModules(id),
+    scriptState: (id: string) => this.readChatScriptState(id),
+    bookmarks: (id: string) => this.readChatBookmarks(id),
+    memory: (id: string) => this.readChatMemory(id),
+  } satisfies Record<ChatRelationKey, (id: string) => Promise<unknown[]>>;
 
   /** Reads only the relations the requested fields need, in one round trip. */
-  private async readChatRelations(
+  private async readChatRelations<K extends ChatRelationKey>(
     id: string,
-    keys: readonly ChatRelationKey[],
-  ): Promise<Record<string, unknown[]>> {
+    keys: readonly K[],
+  ) {
     const entries = await Promise.all(
       keys.map(
-        async (key) =>
-          [key, await this.chatRelationReaders[key](id)] as const,
+        async (key) => [key, await this.chatRelationReaders[key](id)] as const,
       ),
     );
-    return Object.fromEntries(entries);
+
+    return Object.fromEntries(entries) as Partial<{
+      [P in K]: Awaited<ReturnType<(typeof this.chatRelationReaders)[P]>>;
+    }>;
   }
 
-  private readChatAttributes(id: string, keys: readonly string[]) {
+  private readChatAttributes(
+    id: string,
+    keys: readonly string[],
+  ): Promise<Selectable<Pick<AttributesTable, "key" | "value">>[]> {
     if (keys.length === 0) return Promise.resolve([]);
     return this.db
       .selectFrom("chat.attributes")
       .select(["key", "value"])
       .where("chat_id", "=", id)
-      .where("key", "in", keys as string[])
+      .where("key", "in", keys)
       .execute();
   }
 
-  private readChatLore(id: string) {
+  private readChatLore(id: string): Promise<Selectable<LoreEntriesTable>[]> {
     return this.db
       .selectFrom("chat.lore_entries")
       .selectAll()

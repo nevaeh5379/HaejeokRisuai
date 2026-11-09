@@ -18,9 +18,9 @@ import {
   splitChat,
   splitMessage,
   rebuildCharacter,
-  rebuildChat,
   rebuildMessage,
 } from "../postgres/relationalCodec.ts";
+import { rebuild } from "../postgres/utils/chat.ts";
 import { splitSetting, rebuildSettings } from "../postgres/settingsCodec.ts";
 
 describe("AzureStorage Driver & StorageDriver Integration", async () => {
@@ -147,7 +147,7 @@ describe("Azure SQL Codec & Relational Mapping Consistency", async () => {
       promptItems: [],
     });
 
-    const reconstructedChat = rebuildChat(splitC.core, {
+    const reconstructedChat = rebuild(splitC.core, {
       suggestions: splitC.suggestions,
       bookmarks: splitC.bookmarks,
       messages: [reconstructedMsg],

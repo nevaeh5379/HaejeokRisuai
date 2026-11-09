@@ -55,9 +55,9 @@ import type {
 import { asRows, decodePresetData } from "./relationalRows.ts";
 import {
   rebuildCharacter,
-  rebuildChat,
   rebuildMessage,
 } from "./postgres/relationalCodec.ts";
+import { rebuild } from "./postgres/utils/chat.ts";
 import { rebuildSettings } from "./postgres/settingsCodec.ts";
 import { SNAPSHOT_TABLES } from "./sqlTables.ts";
 
@@ -227,7 +227,7 @@ export async function exportDatabaseSnapshotWith(
     chatRelations,
     messageRelations,
     rebuildCharacter,
-    rebuildChat,
+    rebuildChat: rebuild,
     rebuildMessage,
   });
 
