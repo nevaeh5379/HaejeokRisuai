@@ -878,7 +878,7 @@ function rebuildDatabaseGraph({
       related[name] = grouped.get(row.id) || [];
     }
 
-    const rebuilt = rebuildChat(row, related, { shallow });
+    const rebuilt = rebuildChat(row, related);
     rebuilt.messagesLoaded = !shallow;
     rebuilt.detailsLoaded = !shallow;
     const items = chatsByCharacter.get(String(row.character_id)) || [];

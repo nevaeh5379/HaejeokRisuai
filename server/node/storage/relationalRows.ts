@@ -1,13 +1,6 @@
-// Relational row types shared by the SQL storage drivers.
-//
-// The relational schema (`schema.sql`, `oracle-schema.sql`,
-// `azure-schema.sql`) declares the same logical columns in every dialect, and
-// all vendors decode through the same codecs, so the in-memory row shapes live
-// here instead of being restated per driver.
-//
-// 관계형 스키마는 벤더별로 같은 논리 컬럼을 선언하고 모든 벤더가 같은 codec을
-// 사용하므로, 메모리 상의 행 타입은 드라이버마다 반복하지 않고 여기서 공유합니다.
 
+
+import type { loreBook } from "../../../packages/protocol/domain/database.ts";
 import type { PluginMetadata } from "../../../packages/protocol/domain/pluginTypes.ts";
 import { SETTING_RELATION_DEFINITIONS as RAW_SETTING_RELATION_DEFINITIONS } from "./postgres/settingRelations.ts";
 
@@ -292,7 +285,7 @@ export type LoreEntryColumns = {
   insert_order: number;
   comment: string;
   content: string;
-  mode: string;
+  mode: "multiple" | "constant" | "normal" | "child" | "folder";
   always_active: boolean;
   selective: boolean;
   case_sensitive: boolean | null;
@@ -300,7 +293,8 @@ export type LoreEntryColumns = {
   use_regex: boolean | null;
   book_version: number | null;
   folder: string | null;
-  cache_payload: unknown;
+  // TODO 컬럼 분리할 것
+  cache_payload: loreBook["loreCache"] | null;
 };
 
 /** Row of `character.lore_entries`. */

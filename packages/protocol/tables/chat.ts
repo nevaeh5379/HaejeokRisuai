@@ -1,5 +1,6 @@
 import type { Buffer } from "node:buffer";
 import type { ColumnType, Generated } from "kysely";
+import type { StreamingDisplayOptimizationMode } from "../domain/database.ts";
 import type { JsonValue } from "./character.ts";
 
 type BigintInput = string | number | bigint;
@@ -37,7 +38,7 @@ export interface ChatsTable {
   supa_memory_data: string | null;
   last_memory: string | null;
   is_streaming: boolean | null;
-  streaming_optimization_mode: string | null;
+  streaming_optimization_mode: StreamingDisplayOptimizationMode | null;
   bound_persona_id: string | null;
   first_message_index: number | null;
   folder_id: string | null;

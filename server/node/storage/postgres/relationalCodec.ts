@@ -5,11 +5,13 @@ import {
   type CharacterUpdate,
 } from "../../../../packages/protocol/domain/character.ts";
 import type { ChatFields } from "../../../../packages/protocol/domain/chat.ts";
+import type { loreBook } from "../../../../packages/protocol/domain/database.ts";
 import type {
   CharactersTable,
   CharacterTables,
 } from "../../../../packages/protocol/tables/character.ts";
 import type { ChatsTable } from "../../../../packages/protocol/tables/chat.ts";
+import type { LoreEntryColumns } from "../relationalRows.ts";
 import { decodeJsonValue, encodeJsonValue } from "./jsonCodec.ts";
 
 const CHARACTER_SCALARS: any = {
@@ -205,8 +207,8 @@ function splitLore(owner?: any, entries: any = []): any {
   }));
 }
 
-function rebuildLore(row?: any): any {
-  const lore: any = {
+function rebuildLore(row: LoreEntryColumns): loreBook {
+  const lore: loreBook = {
     key: row.primary_key,
     secondkey: row.secondary_key,
     insertorder: row.insert_order,
@@ -226,9 +228,7 @@ function rebuildLore(row?: any): any {
   if (row.book_version !== null) lore.bookVersion = row.book_version;
   if (row.lore_id !== null) lore.id = row.lore_id;
   if (row.folder !== null) lore.folder = row.folder;
-  if (row.cache_payload !== null) {
-    lore.loreCache = decodeJson(row.cache_payload);
-  }
+  if (row.cache_payload !== null) lore.loreCache = row.cache_payload;
   return lore;
 }
 
@@ -946,12 +946,7 @@ export const CHARACTER_FIELD_COLUMNS = {
 
 /** Chat relations stored in their own table instead of a `chat.chats` column. */
 export type ChatRelationKey =
-  | "lore"
-  | "suggestions"
-  | "modules"
-  | "scriptState"
-  | "bookmarks"
-  | "memory";
+  "lore" | "suggestions" | "modules" | "scriptState" | "bookmarks" | "memory";
 
 /** Where one persisted chat field is stored. */
 export type ChatFieldLocation =

@@ -1808,7 +1808,6 @@ class AzureStorage extends SqlStorageBase {
         lore: loreRes.recordset,
         messages: page.messages,
       },
-      { shallow: false },
     );
     chat.activeBranchId = activeBranchId;
     delete chat.branchState;
