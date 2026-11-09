@@ -4,10 +4,12 @@ import {
   type CharacterFields,
   type CharacterUpdate,
 } from "../../../../packages/protocol/domain/character.ts";
+import type { ChatFields } from "../../../../packages/protocol/domain/chat.ts";
 import type {
   CharactersTable,
   CharacterTables,
 } from "../../../../packages/protocol/tables/character.ts";
+import type { ChatsTable } from "../../../../packages/protocol/tables/chat.ts";
 import { decodeJsonValue, encodeJsonValue } from "./jsonCodec.ts";
 
 const CHARACTER_SCALARS: any = {
@@ -1013,6 +1015,68 @@ export const CHARACTER_FIELD_COLUMNS = {
 } as const satisfies Partial<
   Record<keyof CharacterFields, keyof CharactersTable>
 >;
+
+/** Chat relations stored in their own table instead of a `chat.chats` column. */
+export type ChatRelationKey =
+  | "lore"
+  | "suggestions"
+  | "modules"
+  | "scriptState"
+  | "bookmarks"
+  | "memory";
+
+/** Where one persisted chat field is stored. */
+export type ChatFieldLocation =
+  | { readonly kind: "column"; readonly column: keyof ChatsTable }
+  | { readonly kind: "relation"; readonly relation: ChatRelationKey }
+  | { readonly kind: "branch" }
+  | { readonly kind: "attribute" };
+
+/** Storage location of a chat field plus the value a read returns when absent. */
+export type ChatFieldStorage = ChatFieldLocation & {
+  readonly fallback?: () => unknown;
+};
+
+/**
+ * Storage location of every persisted chat field, declared once.
+ * `satisfies Record<keyof ChatFields, …>` keeps the table exhaustive: adding a
+ * field to `ChatFields` without classifying it here fails the type check, so a
+ * reader never has to infer where a field lives at call time.
+ */
+export const CHAT_FIELD_STORAGE = {
+  id: { kind: "column", column: "id" },
+  characterId: { kind: "column", column: "character_id" },
+  position: { kind: "column", column: "position" },
+  lastDate: { kind: "column", column: "last_message_time" },
+  note: { kind: "column", column: "note", fallback: () => "" },
+  name: { kind: "column", column: "name", fallback: () => "" },
+  localLore: { kind: "relation", relation: "lore", fallback: () => [] },
+  sdData: { kind: "column", column: "sd_data" },
+  supaMemoryData: { kind: "column", column: "supa_memory_data" },
+  hypaV2Data: { kind: "relation", relation: "memory" },
+  lastMemory: { kind: "column", column: "last_memory" },
+  suggestMessages: { kind: "relation", relation: "suggestions" },
+  isStreaming: { kind: "column", column: "is_streaming" },
+  activeStreamingDisplayOptimizationMode: {
+    kind: "column",
+    column: "streaming_optimization_mode",
+  },
+  scriptstate: { kind: "relation", relation: "scriptState" },
+  modules: { kind: "relation", relation: "modules" },
+  bindedPersona: { kind: "column", column: "bound_persona_id" },
+  fmIndex: { kind: "column", column: "first_message_index" },
+  hypaV3Data: { kind: "relation", relation: "memory" },
+  folderId: { kind: "column", column: "folder_id" },
+  bookmarks: { kind: "relation", relation: "bookmarks" },
+  bookmarkNames: { kind: "relation", relation: "bookmarks" },
+  activeBranchId: { kind: "branch" },
+  globalAuthorNoteId: { kind: "attribute" },
+  useLocallySetGlobalVariables: { kind: "attribute" },
+  GLGlobalVariables: { kind: "attribute" },
+  onboardingDone: { kind: "attribute" },
+  btwSessions: { kind: "attribute" },
+  activeBtwSessionId: { kind: "attribute" },
+} as const satisfies Record<keyof ChatFields, ChatFieldStorage>;
 
 export interface CharacterRelation {
   table: keyof CharacterTables;

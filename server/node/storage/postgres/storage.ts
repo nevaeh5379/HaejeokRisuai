@@ -9,8 +9,11 @@ import {
 import {
   CHARACTER_FIELD_COLUMNS,
   CHARACTER_RELATIONS,
+  CHAT_FIELD_STORAGE,
   decodeCharacterReadRow,
+  rebuildChat,
   type CharacterReadRow,
+  type ChatRelationKey,
 } from "./relationalCodec.ts";
 import type {
   ISqlStorage,
@@ -35,8 +38,8 @@ import type {
 } from "../../../../packages/protocol/domain/database.ts";
 import {
   Chat,
-  ChatFields,
-  ChatUpdate,
+  type ChatFields,
+  type ChatUpdate,
 } from "../../../../packages/protocol/domain/chat.ts";
 import type {
   AuthorNote,
@@ -108,10 +111,13 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
 
 import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
-import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
+import type {
+  ChatTables,
+  ChatsTable,
+} from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
-import { PostgresDatabase } from "./type.ts";
+import type { PostgresDatabase } from "./type.ts";
 import * as chat from "./utils/chat.ts";
 
 /** Cold-storage value shape produced by the shared splitter. */
@@ -421,7 +427,70 @@ export class PostgresStorage implements ISqlStorage {
       id: string,
       ...keys: [K, ...K[]]
     ): Promise<Pick<ChatFields, K>> => {
-      throw new Error("Method not implemented.");
+      const columns = new Set<keyof ChatsTable>(["id"]);
+      const attributeKeys: string[] = [];
+      const relationKeys = new Set<ChatRelationKey>();
+      let needsActiveBranch = false;
+      for (const key of keys) {
+        const storage = CHAT_FIELD_STORAGE[key];
+        switch (storage.kind) {
+          case "column":
+            columns.add(storage.column);
+            break;
+          case "relation":
+            relationKeys.add(storage.relation);
+            break;
+          case "branch":
+            needsActiveBranch = true;
+            break;
+          case "attribute":
+            attributeKeys.push(key);
+            break;
+          default: {
+            const unhandled: never = storage;
+            throw new Error(`Unhandled chat storage kind: ${unhandled}`);
+          }
+        }
+      }
+
+      const [row, attributes, related, activeBranch] = await Promise.all([
+        this.db
+          .selectFrom("chat.chats")
+          .select([...columns])
+          .where("chat.chats.id", "=", id)
+          .executeTakeFirst(),
+        this.readChatAttributes(id, attributeKeys),
+        this.readChatRelations(id, relationKeys),
+        needsActiveBranch
+          ? this.readChatActiveBranch(id)
+          : Promise.resolve(undefined),
+      ]);
+      if (row === undefined) {
+        throw new Error(`Chat not found: ${id}`);
+      }
+
+      const rebuilt = rebuildChat(row as Record<string, unknown>, {
+        ...related,
+        attributes,
+      }) as Record<string, unknown>;
+      if (activeBranch !== undefined) {
+        rebuilt.activeBranchId = activeBranch.branch_id;
+      }
+
+      const result: Record<string, unknown> = {};
+      for (const key of keys) {
+        const value = rebuilt[key as string];
+        if (value !== undefined && value !== null) {
+          result[key] = structuredClone(value);
+          continue;
+        }
+        const storage = CHAT_FIELD_STORAGE[key];
+        result[key] =
+          "fallback" in storage && storage.fallback
+            ? storage.fallback()
+            : undefined;
+      }
+      return result as Pick<ChatFields, K>;
     },
 
     /**
@@ -825,6 +894,108 @@ export class PostgresStorage implements ISqlStorage {
       throw new Error("Method not implemented.");
     },
   };
+
+  /**
+   * Loader of every chat relation, keyed by the relation name used in
+   * `CHAT_FIELD_STORAGE`. `Record<ChatRelationKey, …>` makes an added relation
+   * a compile error until its reader exists.
+   */
+  private readonly chatRelationReaders: Record<
+    ChatRelationKey,
+    (id: string) => Promise<unknown[]>
+  > = {
+    lore: (id) => this.readChatLore(id),
+    suggestions: (id) => this.readChatSuggestions(id),
+    modules: (id) => this.readChatModules(id),
+    scriptState: (id) => this.readChatScriptState(id),
+    bookmarks: (id) => this.readChatBookmarks(id),
+    memory: (id) => this.readChatMemory(id),
+  };
+
+  /** Reads only the relations the requested fields need, in one round trip. */
+  private async readChatRelations(
+    id: string,
+    keys: ReadonlySet<ChatRelationKey>,
+  ): Promise<Record<string, unknown[]>> {
+    const entries = await Promise.all(
+      [...keys].map(
+        async (key) =>
+          [key, await this.chatRelationReaders[key](id)] as const,
+      ),
+    );
+    return Object.fromEntries(entries);
+  }
+
+  private readChatAttributes(id: string, keys: readonly string[]) {
+    if (keys.length === 0) return Promise.resolve([]);
+    return this.db
+      .selectFrom("chat.attributes")
+      .select(["key", "value"])
+      .where("chat_id", "=", id)
+      .where("key", "in", keys as string[])
+      .execute();
+  }
+
+  private readChatLore(id: string) {
+    return this.db
+      .selectFrom("chat.lore_entries")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .orderBy("position", "asc")
+      .execute();
+  }
+
+  private readChatSuggestions(id: string) {
+    return this.db
+      .selectFrom("chat.suggestions")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .orderBy("position", "asc")
+      .execute();
+  }
+
+  private readChatModules(id: string) {
+    return this.db
+      .selectFrom("chat.modules")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .orderBy("position", "asc")
+      .execute();
+  }
+
+  private readChatScriptState(id: string) {
+    return this.db
+      .selectFrom("chat.script_state")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .execute();
+  }
+
+  private readChatBookmarks(id: string) {
+    return this.db
+      .selectFrom("chat.bookmarks")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .orderBy("position", "asc")
+      .execute();
+  }
+
+  private readChatMemory(id: string) {
+    return this.db
+      .selectFrom("chat.memory")
+      .selectAll()
+      .where("chat_id", "=", id)
+      .where("memory_type", "in", ["hypa-v2", "hypa-v3"])
+      .execute();
+  }
+
+  private readChatActiveBranch(id: string) {
+    return this.db
+      .selectFrom("chat.active_branches")
+      .select("branch_id")
+      .where("chat_id", "=", id)
+      .executeTakeFirst();
+  }
 
   private readBase(keys: readonly (keyof CharacterFields)[]) {
     return this.db
