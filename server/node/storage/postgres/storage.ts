@@ -111,10 +111,7 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
 
 import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
-import type {
-  ChatTables,
-  ChatsTable,
-} from "../../../../packages/protocol/tables/chat.ts";
+import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
 import type { PostgresDatabase } from "./type.ts";
@@ -427,41 +424,17 @@ export class PostgresStorage implements ISqlStorage {
       id: string,
       ...keys: [K, ...K[]]
     ): Promise<Pick<ChatFields, K>> => {
-      const columns = new Set<keyof ChatsTable>(["id"]);
-      const attributeKeys: string[] = [];
-      const relationKeys = new Set<ChatRelationKey>();
-      let needsActiveBranch = false;
-      for (const key of keys) {
-        const storage = CHAT_FIELD_STORAGE[key];
-        switch (storage.kind) {
-          case "column":
-            columns.add(storage.column);
-            break;
-          case "relation":
-            relationKeys.add(storage.relation);
-            break;
-          case "branch":
-            needsActiveBranch = true;
-            break;
-          case "attribute":
-            attributeKeys.push(key);
-            break;
-          default: {
-            const unhandled: never = storage;
-            throw new Error(`Unhandled chat storage kind: ${unhandled}`);
-          }
-        }
-      }
+      const plan = chat.planChatRead(keys);
 
       const [row, attributes, related, activeBranch] = await Promise.all([
         this.db
           .selectFrom("chat.chats")
-          .select([...columns])
+          .select(plan.columns)
           .where("chat.chats.id", "=", id)
           .executeTakeFirst(),
-        this.readChatAttributes(id, attributeKeys),
-        this.readChatRelations(id, relationKeys),
-        needsActiveBranch
+        this.readChatAttributes(id, plan.attributeKeys),
+        this.readChatRelations(id, plan.relationKeys),
+        plan.needsActiveBranch
           ? this.readChatActiveBranch(id)
           : Promise.resolve(undefined),
       ]);
@@ -915,10 +888,10 @@ export class PostgresStorage implements ISqlStorage {
   /** Reads only the relations the requested fields need, in one round trip. */
   private async readChatRelations(
     id: string,
-    keys: ReadonlySet<ChatRelationKey>,
+    keys: readonly ChatRelationKey[],
   ): Promise<Record<string, unknown[]>> {
     const entries = await Promise.all(
-      [...keys].map(
+      keys.map(
         async (key) =>
           [key, await this.chatRelationReaders[key](id)] as const,
       ),
