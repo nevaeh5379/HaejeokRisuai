@@ -111,15 +111,12 @@ import type { SystemTables } from "../../../../packages/protocol/tables/system.t
 import type { ChatTables } from "../../../../packages/protocol/tables/chat.ts";
 import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
+import { PostgresDatabase } from "./type.ts";
+import * as chat from "./utils/chat.ts";
 
 /** Cold-storage value shape produced by the shared splitter. */
 
 export type PostgresStorageContract = PostgresStorage;
-
-type PostgresDatabase = CharacterTables &
-  SystemTables &
-  ChatTables &
-  ColdTables;
 
 /** Minimal injectable pool for character statement execution. */
 type PoolLike = {
@@ -479,42 +476,45 @@ export class PostgresStorage implements ISqlStorage {
 
     /**
      * Appends if position is omitted; parent and initial chat state are persisted atomically
-     * TODO: Implement chat creation transaction
      * Example usage:
-     * const newChat = await storage.chat.create({ characterId: "cha-id", name: "Chat 1" });
+     * const newChat = await storage.chat.create("cha-id", "Chat 1");
      */
     create: async (
       characterId: string,
       name: string,
       position?: number,
     ): Promise<Chat> => {
-      const maxPosition: number = await this.chat.position.max(characterId);
-      if (position !== undefined && maxPosition === -1) {
-        throw new Error("position has value. but maxPosition's -1.");
-      }
-
-      if (position !== undefined) {
-        await this.db
-          .updateTable("chat.chats")
-          .set((eb) => ({
-            position: eb("chat.chats.position", "+", 1),
-          }))
-          .where("chat.chats.character_id", "=", characterId)
-          .where("chat.chats.position", ">=", position)
-          .executeTakeFirstOrThrow();
-      }
-
       const id = randomUUID();
+      await this.db.transaction().execute(async (trx) => {
+        await sql`select system.character_begin_revision('chat:create')`.execute(
+          trx,
+        );
+        const maxPosition = await chat.position.max(characterId, trx);
+        if (position !== undefined && maxPosition === -1) {
+          throw new Error("position has value. but maxPosition's -1.");
+        }
 
-      await this.db
-        .insertInto("chat.chats")
-        .values({
-          id: id,
-          character_id: characterId,
-          position: position ?? (maxPosition + 1),
-          name: name,
-        })
-        .executeTakeFirstOrThrow();
+        if (position !== undefined) {
+          await trx
+            .updateTable("chat.chats")
+            .set((eb) => ({
+              position: eb("chat.chats.position", "+", 1),
+            }))
+            .where("chat.chats.character_id", "=", characterId)
+            .where("chat.chats.position", ">=", position)
+            .executeTakeFirstOrThrow();
+        }
+
+        await trx
+          .insertInto("chat.chats")
+          .values({
+            id: id,
+            character_id: characterId,
+            position: position ?? maxPosition + 1,
+            name: name,
+          })
+          .executeTakeFirstOrThrow();
+      });
 
       return this.chat.ref(id);
     },
@@ -558,15 +558,9 @@ export class PostgresStorage implements ISqlStorage {
        * @return value max position. or -1 if character has no any chats.
        */
       max: async (id: string): Promise<number> => {
-        return (
-          (
-            await this.db
-              .selectFrom("chat.chats")
-              .select((eb) => eb.fn.max("position").as("maxPosition"))
-              .where("chat.chats.character_id", "=", id)
-              .executeTakeFirstOrThrow()
-          ).maxPosition ?? -1
-        );
+        return this.db
+          .transaction()
+          .execute<number>((trx) => chat.position.max(id, trx));
       },
     },
   };
@@ -1085,11 +1079,13 @@ export class PostgresStorage implements ISqlStorage {
     },
     update: async (id: string, patch: CharacterUpdate): Promise<void> => {
       validateCharacterUpdate(id, patch);
-      if (Object.keys(patch).length === 0){
-        console.warn("PostgresStorage.character.update: Object.keys(patch).length is 0! We will not do character update.");
+      if (Object.keys(patch).length === 0) {
+        console.warn(
+          "PostgresStorage.character.update: Object.keys(patch).length is 0! We will not do character update.",
+        );
         return;
-      } 
-        
+      }
+
       const encoded = characterPatch(id, patch);
       await this.db.transaction().execute(async (trx) => {
         if (!(await this.character.exists(id, trx))) {
