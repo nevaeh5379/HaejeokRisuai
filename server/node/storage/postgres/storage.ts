@@ -120,6 +120,7 @@ import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
 import type { PostgresDatabase } from "./type.ts";
 import * as chat from "./utils/chat.ts";
+import { beginRevision } from "./utils/revision.ts";
 
 /** Cold-storage value shape produced by the shared splitter. */
 
@@ -141,14 +142,6 @@ type PoolLike = {
   end(): Promise<void>;
   options?: object;
 };
-
-function assertId(id: unknown, label = "id"): string {
-  if (typeof id !== "string" || id.trim().length === 0) {
-    throw new Error(`Invalid ${label}: must be a non-empty string`);
-  }
-  return id;
-}
-
 export class PostgresStorage implements ISqlStorage {
   db: Kysely<PostgresDatabase>;
 
@@ -532,9 +525,7 @@ export class PostgresStorage implements ISqlStorage {
     ): Promise<Chat> => {
       const id = randomUUID();
       await this.db.transaction().execute(async (trx) => {
-        await sql`select system.character_begin_revision('chat:create')`.execute(
-          trx,
-        );
+        await beginRevision(trx, "chat:create");
         const maxPosition = await chat.position.max(characterId, trx);
         if (position !== undefined && maxPosition === -1) {
           throw new Error("position has value. but maxPosition's -1.");
@@ -567,12 +558,22 @@ export class PostgresStorage implements ISqlStorage {
 
     /**
      * Deletes the chat and its owned records atomically; rejects for a missing chat
-     * TODO: Implement atomic chat deletion
      * Example usage:
      * await storage.chat.delete("chat-id");
      */
     delete: async (id: string): Promise<void> => {
-      throw new Error("Method not implemented.");
+      await this.db.transaction().execute(async (trx) => {
+        await beginRevision(trx, "chat:delete");
+
+        const result = await trx
+          .deleteFrom("chat.chats")
+          .where("id", "=", id)
+          .executeTakeFirst();
+
+        if (result.numDeletedRows === 0n) {
+          throw new Error(`Chat not found: ${id}`);
+        }
+      });
     },
 
     /**
@@ -1242,9 +1243,7 @@ export class PostgresStorage implements ISqlStorage {
           throw new Error(`Character not found: ${id}`);
         }
 
-        await sql`select system.character_begin_revision('character:update')`.execute(
-          trx,
-        );
+        await beginRevision(trx, "character:update");
 
         await trx
           .updateTable("character.characters")
