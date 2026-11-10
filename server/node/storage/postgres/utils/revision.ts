@@ -6,6 +6,7 @@ export type RevisionAction =
   | "character:update"
   | "chat:create"
   | "chat:delete"
+  | "chat:update"
   | "chat:move";
 
 /**

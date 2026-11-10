@@ -98,6 +98,9 @@ import {
 } from "kysely";
 import { Pool } from "pg";
 import { characterPatch } from "./patch/character/index.ts";
+import { chatPatch } from "./patch/chat/index.ts";
+import { CHAT_RELATIONS } from "./patch/chat/relation.ts";
+import { Bookmarks } from "./patch/chat/bookmarks.ts";
 
 /**
  * Module object passed to `saveModule`. The module body is app-defined JSON, so
@@ -433,7 +436,7 @@ export class PostgresStorage implements ISqlStorage {
         throw new Error(`Chat not found: ${id}`);
       }
 
-      const attributes = await this.readChatAttributes(id, plan.attributeKeys);
+      const attributes = await this.readChatAttributes(id, keys);
       const related = await this.readChatRelations(id, plan.relationKeys);
       const activeBranch = plan.needsActiveBranch
         ? await this.readChatActiveBranch(id)
@@ -465,22 +468,153 @@ export class PostgresStorage implements ISqlStorage {
 
     /**
      * Atomic patch: omitted fields survive; supplied collections replace only that field
-     * TODO: Implement atomic chat update transaction
      * Example usage:
      * await storage.chat.update("chat-id", { name: "New Name" });
      */
     update: async (id: string, patch: ChatUpdate): Promise<void> => {
-      throw new Error("Method not implemented.");
+      if (!Object.values(patch).some((value) => value !== undefined)) return;
+
+      const encoded = chatPatch(id, patch);
+      await this.db.transaction().execute(async (trx) => {
+        await lockStorageRevision(trx);
+        const current = await trx
+          .selectFrom("chat.chats")
+          .select("id")
+          .where("id", "=", id)
+          .executeTakeFirst();
+        if (!current) throw new Error(`Chat not found: ${id}`);
+
+        await beginRevision(trx, "chat:update");
+        await trx
+          .updateTable("chat.chats")
+          .set({ ...encoded.columns, updated_at: sql`now()` })
+          .where("id", "=", id)
+          .execute();
+
+        for (const key of Object.keys(
+          encoded.relations,
+        ) as (keyof typeof encoded.relations)[]) {
+          const relation = CHAT_RELATIONS[key];
+          const rows = encoded.relations[key];
+          if ("memoryType" in relation && rows?.length) {
+            const memoryRows =
+              encoded.relations[key as "hypaV2Data" | "hypaV3Data"];
+            await trx
+              .insertInto("chat.memory")
+              .values(memoryRows)
+              .onConflict((oc) =>
+                oc
+                  .columns(["chat_id", "memory_type"])
+                  .doUpdateSet((eb) => ({
+                    payload: eb.ref("excluded.payload"),
+                  })),
+              )
+              .execute();
+            continue;
+          }
+          let deletion = trx
+            .deleteFrom(relation.table)
+            .where("chat_id", "=", id);
+          if ("memoryType" in relation) {
+            deletion = deletion.where(
+              sql.ref("memory_type"),
+              "=",
+              relation.memoryType,
+            );
+          }
+          await deletion.execute();
+          if (!rows?.length) continue;
+          for (
+            let start = 0;
+            start < rows.length;
+            start += BULK_INSERT_BATCH_ROWS
+          ) {
+            await trx
+              .insertInto(relation.table)
+              .values(rows.slice(start, start + BULK_INSERT_BATCH_ROWS))
+              .execute();
+          }
+        }
+        if (
+          patch.bookmarks !== undefined ||
+          patch.bookmarkNames !== undefined
+        ) {
+          const currentBookmarks = await trx
+            .selectFrom("chat.bookmarks")
+            .select(["message_id", "name"])
+            .where("chat_id", "=", id)
+            .orderBy("position")
+            .execute();
+          const currentAttributes = await trx
+            .selectFrom("chat.attributes")
+            .select(["key", "value"])
+            .where("chat_id", "=", id)
+            .where("key", "in", ["bookmarks", "bookmarkNames"])
+            .execute();
+          const bookmarks = Bookmarks.fromPatch(
+            id,
+            patch,
+            currentBookmarks,
+            currentAttributes,
+          );
+          await trx
+            .deleteFrom("chat.bookmarks")
+            .where("chat_id", "=", id)
+            .execute();
+          for (
+            let start = 0;
+            start < bookmarks.rows.length;
+            start += BULK_INSERT_BATCH_ROWS
+          ) {
+            await trx
+              .insertInto("chat.bookmarks")
+              .values(
+                bookmarks.rows.slice(start, start + BULK_INSERT_BATCH_ROWS),
+              )
+              .execute();
+          }
+          encoded.attributes.push(...bookmarks.attributes);
+          encoded.clearedAttributeKeys.push(...bookmarks.clearedAttributeKeys);
+        }
+        if (encoded.clearedAttributeKeys.length) {
+          await trx
+            .deleteFrom("chat.attributes")
+            .where("chat_id", "=", id)
+            .where("key", "in", encoded.clearedAttributeKeys)
+            .execute();
+        }
+        for (
+          let start = 0;
+          start < encoded.attributes.length;
+          start += BULK_INSERT_BATCH_ROWS
+        ) {
+          await trx
+            .insertInto("chat.attributes")
+            .values(
+              encoded.attributes.slice(start, start + BULK_INSERT_BATCH_ROWS),
+            )
+            .onConflict((oc) =>
+              oc
+                .columns(["chat_id", "key"])
+                .doUpdateSet((eb) => ({ value: eb.ref("excluded.value") })),
+            )
+            .execute();
+        }
+      });
     },
 
     /**
      * Count chats for a character
-     * TODO: Implement chat count query by characterId
      * Example usage:
      * const total = await storage.chat.count("cha-id");
      */
     count: async (characterId: string): Promise<number> => {
-      throw new Error("Method not implemented.");
+      const result = await this.db
+        .selectFrom("chat.chats")
+        .select((eb) => eb.fn.countAll<string>().as("count"))
+        .where("character_id", "=", characterId)
+        .executeTakeFirstOrThrow();
+      return Number(result.count);
     },
 
     /**

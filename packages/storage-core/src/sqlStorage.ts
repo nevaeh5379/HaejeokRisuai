@@ -232,42 +232,31 @@ export interface ISqlStorage {
   };
 
   chat: {
-    /** Creates a handle without querying or checking existence. */
     ref(id: string): Chat;
-    /** Checks existence and returns a handle; rejects for a missing chat. */
     load(id: string): Promise<Chat>;
-    /** Reads only requested fields; does not hydrate messages or unrelated large fields. */
     read<K extends keyof ChatFields>(
       id: string,
       ...keys: [K, ...K[]]
     ): Promise<Pick<ChatFields, K>>;
-    /** Atomic patch: omitted fields survive; supplied collections replace only that field.
-     * Explicit undefined clears an optional field. Uses the shared revision-guarded write path. */
     update(id: string, patch: ChatUpdate): Promise<void>;
     count(characterId: string): Promise<number>;
-    /** Bounded range ordered by position then ID. Always returns ID and position.
-     * No field values besides the explicitly requested keys are hydrated. */
     list(
       characterId: string,
       options?: { offset?: number; limit?: number },
     ): Promise<Array<Pick<ChatFields, "id" | "position">>>;
-    /** Appends if position is omitted. Parent and initial chat state are persisted atomically. */
     create(characterId: string, name: string, position?: number): Promise<Chat>;
-    /** Deletes the chat and its owned records atomically. Rejects for a missing chat. */
     delete(id: string): Promise<void>;
-    /** Moves within the same character, updating affected sibling positions atomically. */
     move(id: string, position: number): Promise<void>;
-    /** Lightweight feed; activeChatId pins the opened chat ahead of the limit. */
     listRecent(limit?: number, activeChatId?: string): Promise<RecentChat[]>;
 
     position: {
       /**
-       * 
+       *
        * @param id character id
        */
-      max(id: string): Promise<number>
+      max(id: string): Promise<number>;
     };
-  }
+  };
 
   message: {
     /** Saves one message through the revision-guarded commit path. */

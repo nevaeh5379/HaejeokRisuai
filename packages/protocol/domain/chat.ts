@@ -41,12 +41,7 @@ export interface ChatFields {
   activeBtwSessionId?: string;
 }
 
-export type ChatUpdate = Partial<
-  Omit<
-    ChatFields,
-    "id" | "characterId" | "position" | "lastDate" | "activeBranchId"
-  >
->;
+export type ChatUpdate = Partial<ChatFields>;
 
 const FIELD_NAMES = {
   id: true,
@@ -79,47 +74,6 @@ const FIELD_NAMES = {
   btwSessions: true,
   activeBtwSessionId: true,
 } satisfies Record<keyof ChatFields, true>;
-const READ_ONLY_FIELDS = new Set<string>([
-  "id",
-  "characterId",
-  "position",
-  "lastDate",
-  "activeBranchId",
-]);
-const REQUIRED_FIELDS = new Set<string>(["name", "note", "localLore"]);
-
-export function validateChatKeys(
-  keys: readonly string[],
-): (keyof ChatFields)[] {
-  if (keys.length === 0) {
-    throw new TypeError("At least one chat field is required");
-  }
-  for (const key of keys) {
-    if (!Object.hasOwn(FIELD_NAMES, key)) {
-      throw new TypeError(`Unknown chat field: ${key}`);
-    }
-  }
-  return [...new Set(keys)] as (keyof ChatFields)[];
-}
-
-/** Omitted keys are preserved; supplied arrays/objects replace that whole field.
- * Explicit undefined clears an optional field. Identity, ordering and derived values cannot be patched. */
-export function validateChatUpdate(patch: ChatUpdate): void {
-  for (const key of Object.keys(patch)) {
-    if (!Object.hasOwn(FIELD_NAMES, key)) {
-      throw new TypeError(`Unknown chat field: ${key}`);
-    }
-    if (READ_ONLY_FIELDS.has(key)) {
-      throw new TypeError(`Chat field is read-only: ${key}`);
-    }
-    if (
-      REQUIRED_FIELDS.has(key) &&
-      patch[key as keyof ChatUpdate] === undefined
-    ) {
-      throw new TypeError(`Chat field cannot be undefined: ${key}`);
-    }
-  }
-}
 
 type ChatRead = <K extends keyof ChatFields>(
   ...keys: [K, ...K[]]
@@ -143,7 +97,6 @@ export class Chat {
     return this.#read(...unique);
   }
   update(patch: ChatUpdate): Promise<void> {
-    validateChatUpdate(patch);
     if (Object.keys(patch).length === 0) return Promise.resolve();
     return this.#write(patch);
   }
