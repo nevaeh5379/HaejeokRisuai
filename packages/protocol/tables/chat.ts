@@ -1,6 +1,9 @@
 import type { Buffer } from "node:buffer";
 import type { ColumnType, Generated } from "kysely";
-import type { StreamingDisplayOptimizationMode } from "../domain/database.ts";
+import type {
+  loreBook,
+  StreamingDisplayOptimizationMode,
+} from "../domain/database.ts";
 import type { JsonValue } from "./character.ts";
 
 type BigintInput = string | number | bigint;
@@ -17,11 +20,6 @@ type TimestampColumn = ColumnType<
 >;
 // JSONB writes use serialized JSON so JSON `null` stays distinct from SQL NULL.
 type JsonColumn = ColumnType<JsonValue, string, string>;
-type NullableJsonColumn = ColumnType<
-  JsonValue | null,
-  string | null | undefined,
-  string | null
->;
 type NullableBinaryColumn = ColumnType<
   Buffer | null,
   Buffer | null | undefined,
@@ -95,7 +93,7 @@ export interface LoreEntriesTable {
   insert_order: Generated<number>;
   comment: Generated<string>;
   content: Generated<string>;
-  mode: Generated<string>;
+  mode: Generated<loreBook["mode"]>;
   always_active: Generated<boolean>;
   selective: Generated<boolean>;
   case_sensitive: boolean | null;
@@ -103,7 +101,11 @@ export interface LoreEntriesTable {
   use_regex: boolean | null;
   book_version: number | null;
   folder: string | null;
-  cache_payload: NullableJsonColumn;
+  cache_payload: ColumnType<
+    loreBook["loreCache"] | null,
+    string | null | undefined,
+    string | null
+  >;
 }
 
 export interface MessagesTable {

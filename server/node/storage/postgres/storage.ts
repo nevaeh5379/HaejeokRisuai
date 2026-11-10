@@ -113,7 +113,6 @@ import type { CharacterTables } from "../../../../packages/protocol/tables/chara
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
 import type {
   AttributesTable,
-  ChatsTable,
   ChatTables,
   LoreEntriesTable,
 } from "../../../../packages/protocol/tables/chat.ts";
@@ -431,32 +430,33 @@ export class PostgresStorage implements ISqlStorage {
     ): Promise<Pick<ChatFields, K>> => {
       const plan = chat.planChatRead(keys);
 
-
       const row = await this.db
-          .selectFrom("chat.chats")
-          .select(plan.columns)
-          .where("chat.chats.id", "=", id)
-          .executeTakeFirst() satisfies Selectable<ChatsTable> | undefined
-
-      const attributes = await this.readChatAttributes(id, plan.attributeKeys);
-      const related = await this.readChatRelations(id, plan.relationKeys);
-      const activeBranch = plan.needsActiveBranch ? await this.readChatActiveBranch(id) : undefined
+        .selectFrom("chat.chats")
+        .select(plan.columns)
+        .where("chat.chats.id", "=", id)
+        .executeTakeFirst();
 
       if (row === undefined) {
         throw new Error(`Chat not found: ${id}`);
       }
 
+      const attributes = await this.readChatAttributes(id, plan.attributeKeys);
+      const related = await this.readChatRelations(id, plan.relationKeys);
+      const activeBranch = plan.needsActiveBranch
+        ? await this.readChatActiveBranch(id)
+        : undefined;
+
       const rebuilt = chat.rebuild(row, {
         ...related,
         attributes,
-      }) as Record<string, unknown>;
+      });
       if (activeBranch !== undefined) {
         rebuilt.activeBranchId = activeBranch.branch_id;
       }
 
       const result: Record<string, unknown> = {};
       for (const key of keys) {
-        const value = rebuilt[key as string];
+        const value = rebuilt[key];
         if (value !== undefined && value !== null) {
           result[key] = structuredClone(value);
           continue;
