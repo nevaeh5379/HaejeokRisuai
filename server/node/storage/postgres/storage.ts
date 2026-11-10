@@ -120,7 +120,7 @@ import type { ColdTables } from "../../../../packages/protocol/tables/cold.ts";
 import { randomUUID } from "node:crypto";
 import type { PostgresDatabase } from "./type.ts";
 import * as chat from "./utils/chat.ts";
-import { beginRevision } from "./utils/revision.ts";
+import { beginRevision, lockStorageRevision } from "./utils/revision.ts";
 
 /** Cold-storage value shape produced by the shared splitter. */
 
@@ -578,12 +578,51 @@ export class PostgresStorage implements ISqlStorage {
 
     /**
      * Moves within the same character, updating affected sibling positions atomically
-     * TODO: Implement positional reordering query
      * Example usage:
      * await storage.chat.move("chat-id", 2);
      */
     move: async (id: string, position: number): Promise<void> => {
-      throw new Error("Method not implemented.");
+      if (!Number.isInteger(position) || position < 0) {
+        throw new Error("Invalid position: must be a non-negative integer");
+      }
+
+      await this.db.transaction().execute(async (trx) => {
+        await lockStorageRevision(trx);
+
+        const current = await trx
+          .selectFrom("chat.chats")
+          .select(["character_id", "position"])
+          .where("id", "=", id)
+          .executeTakeFirst();
+        if (!current) throw new Error(`Chat not found: ${id}`);
+
+        const maxPosition = await chat.position.max(current.character_id, trx);
+        if (position > maxPosition) {
+          throw new Error(`Invalid position: must not exceed ${maxPosition}`);
+        }
+        if (position === current.position) {
+          console.warn(
+            `PostgresStorage.chat.move: chat ${id} is already at position ${position}. Skipping move.`,
+          );
+          return;
+        }
+
+        await beginRevision(trx, "chat:move");
+        await trx
+          .updateTable("chat.chats")
+          .set((eb) => ({
+            position: eb
+              .case()
+              .when("id", "=", id)
+              .then(position)
+              .else(eb("position", "+", position < current.position ? 1 : -1))
+              .end(),
+          }))
+          .where("character_id", "=", current.character_id)
+          .where("position", ">=", Math.min(current.position, position))
+          .where("position", "<=", Math.max(current.position, position))
+          .execute();
+      });
     },
 
     /**
