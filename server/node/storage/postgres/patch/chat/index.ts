@@ -8,7 +8,9 @@ import { Relation } from "./relation.ts";
 export function getColumn(patch: ChatUpdate): Updateable<ChatsTable> {
   const columns: Updateable<ChatsTable> = {};
   const keys = (Object.keys(patch) as (keyof ChatUpdate)[]).filter((v) =>
-    typeof patch[v] === "string" ? !patch[v].includes("\0") : patch[v] !== undefined,
+    typeof patch[v] === "string"
+      ? !patch[v].includes("\0")
+      : patch[v] !== undefined,
   );
   for (const key of keys) {
     const storage = CHAT_FIELD_STORAGE[key];

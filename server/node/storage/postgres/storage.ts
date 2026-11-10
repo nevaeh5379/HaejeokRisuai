@@ -100,7 +100,6 @@ import { Pool } from "pg";
 import { characterPatch } from "./patch/character/index.ts";
 import { chatPatch } from "./patch/chat/index.ts";
 import { CHAT_RELATIONS } from "./patch/chat/relation.ts";
-import { Bookmarks } from "./patch/chat/bookmarks.ts";
 
 /**
  * Module object passed to `saveModule`. The module body is app-defined JSON, so
@@ -474,7 +473,6 @@ export class PostgresStorage implements ISqlStorage {
     update: async (id: string, patch: ChatUpdate): Promise<void> => {
       if (!Object.values(patch).some((value) => value !== undefined)) return;
 
-      const encoded = chatPatch(id, patch);
       await this.db.transaction().execute(async (trx) => {
         await lockStorageRevision(trx);
         const current = await trx
@@ -484,6 +482,33 @@ export class PostgresStorage implements ISqlStorage {
           .executeTakeFirst();
         if (!current) throw new Error(`Chat not found: ${id}`);
 
+        let update = patch;
+        const changesBookmarks =
+          patch.bookmarks !== undefined || patch.bookmarkNames !== undefined;
+        if (
+          changesBookmarks &&
+          (patch.bookmarks === undefined || patch.bookmarkNames === undefined)
+        ) {
+          const bookmarks = await trx
+            .selectFrom("chat.bookmarks")
+            .select(["message_id", "name", "position", "chat_id"])
+            .where("chat_id", "=", id)
+            .orderBy("position")
+            .execute();
+          const attributes = await trx
+            .selectFrom("chat.attributes")
+            .select(["key", "value"])
+            .where("chat_id", "=", id)
+            .where("key", "in", ["bookmarks", "bookmarkNames"])
+            .execute();
+          const saved = chat.rebuild({ id }, { bookmarks, attributes });
+          update = {
+            ...patch,
+            bookmarks: patch.bookmarks ?? saved.bookmarks ?? [],
+            bookmarkNames: patch.bookmarkNames ?? saved.bookmarkNames ?? {},
+          };
+        }
+        const encoded = chatPatch(id, update);
         await beginRevision(trx, "chat:update");
         await trx
           .updateTable("chat.chats")
@@ -503,11 +528,9 @@ export class PostgresStorage implements ISqlStorage {
               .insertInto("chat.memory")
               .values(memoryRows)
               .onConflict((oc) =>
-                oc
-                  .columns(["chat_id", "memory_type"])
-                  .doUpdateSet((eb) => ({
-                    payload: eb.ref("excluded.payload"),
-                  })),
+                oc.columns(["chat_id", "memory_type"]).doUpdateSet((eb) => ({
+                  payload: eb.ref("excluded.payload"),
+                })),
               )
               .execute();
             continue;
@@ -534,47 +557,6 @@ export class PostgresStorage implements ISqlStorage {
               .values(rows.slice(start, start + BULK_INSERT_BATCH_ROWS))
               .execute();
           }
-        }
-        if (
-          patch.bookmarks !== undefined ||
-          patch.bookmarkNames !== undefined
-        ) {
-          const currentBookmarks = await trx
-            .selectFrom("chat.bookmarks")
-            .select(["message_id", "name"])
-            .where("chat_id", "=", id)
-            .orderBy("position")
-            .execute();
-          const currentAttributes = await trx
-            .selectFrom("chat.attributes")
-            .select(["key", "value"])
-            .where("chat_id", "=", id)
-            .where("key", "in", ["bookmarks", "bookmarkNames"])
-            .execute();
-          const bookmarks = Bookmarks.fromPatch(
-            id,
-            patch,
-            currentBookmarks,
-            currentAttributes,
-          );
-          await trx
-            .deleteFrom("chat.bookmarks")
-            .where("chat_id", "=", id)
-            .execute();
-          for (
-            let start = 0;
-            start < bookmarks.rows.length;
-            start += BULK_INSERT_BATCH_ROWS
-          ) {
-            await trx
-              .insertInto("chat.bookmarks")
-              .values(
-                bookmarks.rows.slice(start, start + BULK_INSERT_BATCH_ROWS),
-              )
-              .execute();
-          }
-          encoded.attributes.push(...bookmarks.attributes);
-          encoded.clearedAttributeKeys.push(...bookmarks.clearedAttributeKeys);
         }
         if (encoded.clearedAttributeKeys.length) {
           await trx

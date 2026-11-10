@@ -1,14 +1,16 @@
 import type { Insertable } from "kysely";
 import type { ChatUpdate } from "../../../../../../packages/protocol/domain/chat.ts";
 import type { ChatTables } from "../../../../../../packages/protocol/tables/chat.ts";
-import { containsNul, splitLore } from "../../relationalCodec.ts";
+import { splitLore } from "../../relationalCodec.ts";
 import { encodeJsonValue } from "../../jsonCodec.ts";
 
+//TODO 중복 선언?
 export const CHAT_RELATIONS = {
   localLore: { table: "chat.lore_entries" },
   suggestMessages: { table: "chat.suggestions" },
   modules: { table: "chat.modules" },
   scriptstate: { table: "chat.script_state" },
+  bookmarks: { table: "chat.bookmarks" },
   hypaV2Data: { table: "chat.memory", memoryType: "hypa-v2" },
   hypaV3Data: { table: "chat.memory", memoryType: "hypa-v3" },
 } as const;
@@ -21,6 +23,7 @@ type RelationMappers = {
   [K in Key]: (
     id: string,
     value: NonNullable<ChatUpdate[K]>,
+    patch: ChatUpdate,
   ) => NonNullable<Rows[K]>;
 };
 
@@ -42,6 +45,13 @@ const relationMappers: RelationMappers = {
     values.map((content, position) => ({ chat_id: id, position, content })),
   modules: (id, values) =>
     values.map((module_id, position) => ({ chat_id: id, position, module_id })),
+  bookmarks: (id, values, patch) =>
+    values.map((message_id, position) => ({
+      chat_id: id,
+      position,
+      message_id,
+      name: patch.bookmarkNames?.[message_id] ?? null,
+    })),
   scriptstate: (id, values) =>
     Object.entries(values).map(([key, value]) => {
       const row: Insertable<ChatTables["chat.script_state"]> = {
@@ -52,14 +62,23 @@ const relationMappers: RelationMappers = {
         number_value: null,
         boolean_value: null,
       };
-      if (typeof value === "string") {
-        row.text_value = value;
-      } else if (typeof value === "number") {
-        row.value_type = "number";
-        row.number_value = value;
-      } else {
-        row.value_type = "boolean";
-        row.boolean_value = value;
+
+      switch (typeof value) {
+        case "string":
+          row.value_type = "text";
+          row.text_value = value;
+          break;
+        case "number":
+          row.value_type = "number";
+          row.number_value = value;
+          break;
+        case "boolean":
+          row.value_type = "boolean";
+          row.boolean_value = value;
+          break;
+
+        default:
+          throw new Error(`type is ${typeof value}`);
       }
       return row;
     }),
@@ -85,11 +104,7 @@ function getRows<K extends Key>(
   patch: ChatUpdate,
 ): Rows[K] {
   const value = patch[key];
-  if (value === undefined) return [];
-  if (key !== "hypaV2Data" && key !== "hypaV3Data" && containsNul(value)) {
-    return [];
-  }
-  return relationMappers[key](id, value as NonNullable<ChatUpdate[K]>);
+  return relationMappers[key](id, value as NonNullable<ChatUpdate[K]>, patch);
 }
 
 export const Relation = {
