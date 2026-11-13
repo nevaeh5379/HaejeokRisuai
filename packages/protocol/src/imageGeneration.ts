@@ -430,10 +430,12 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
   if (identifier(response.error?.type))
     lines.push(`ComfyUI: ${response.error.type}`);
   if (response.node_errors && typeof response.node_errors === "object") {
-    for (const [id, value] of Object.entries(response.node_errors).slice(
-      0,
-      8,
-    )) {
+    let count = 0;
+    const nodeErrors = response.node_errors as Record<string, unknown>;
+    for (const id in nodeErrors) {
+      if (!Object.hasOwn(nodeErrors, id)) continue;
+      if (count++ >= 8) break;
+      const value = nodeErrors[id];
       if (
         !/^\d+(?::\d+)*$/.test(id) ||
         id.length > 80 ||
@@ -443,7 +445,9 @@ function comfyValidationDiagnostic(data: unknown): string | undefined {
         continue;
       const errors = (value as { errors?: unknown }).errors;
       if (!Array.isArray(errors)) continue;
-      for (const error of errors.slice(0, 3)) {
+      const errorCount = Math.min(errors.length, 3);
+      for (let i = 0; i < errorCount; i++) {
+        const error = errors[i];
         if (!error || !identifier(error.type)) continue;
         const input = error.extra_info?.input_name;
         lines.push(
@@ -1088,8 +1092,11 @@ export function createComfyUrlBuilder(
   const baseUrl = new URL(comfyUiUrl.replace(/\/+$/, "") + "/");
   return (pathname, params = {}) => {
     const url = new URL(pathname.replace(/^\/+/, ""), baseUrl);
-    for (const [key, value] of Object.entries(params))
-      url.searchParams.set(key, value);
+    for (const key in params) {
+      if (Object.hasOwn(params, key)) {
+        url.searchParams.set(key, params[key]);
+      }
+    }
     return url.toString();
   };
 }
@@ -1168,9 +1175,17 @@ async function downloadComfyImage(
   createUrl: (pathname: string, params?: Record<string, string>) => string,
   historyItem: any,
 ): Promise<string> {
-  const imageInfo = Object.values(historyItem.outputs).flatMap(
-    (output: any) => output.images,
-  )[0];
+  let imageInfo: any = undefined;
+  if (historyItem?.outputs && typeof historyItem.outputs === "object") {
+    for (const nodeId in historyItem.outputs) {
+      if (!Object.hasOwn(historyItem.outputs, nodeId)) continue;
+      const images = (historyItem.outputs[nodeId] as any)?.images;
+      if (Array.isArray(images) && images.length > 0) {
+        imageInfo = images[0];
+        break;
+      }
+    }
+  }
   const response = await fetchNative(
     createUrl("/view", {
       filename: imageInfo.filename,
@@ -1315,9 +1330,11 @@ async function generateWithFal(
     method: "GET",
     rawResponse: true,
   });
-  const mimeType = (downloaded.headers?.["content-type"] || "image/png")
-    .split(";")[0]
-    .trim();
+  const contentType = downloaded.headers?.["content-type"] || "image/png";
+  const semiIndex = contentType.indexOf(";");
+  const mimeType = (
+    semiIndex === -1 ? contentType : contentType.slice(0, semiIndex)
+  ).trim();
   return `data:${mimeType};base64,${Buffer.from(downloaded.data).toString("base64")}`;
 }
 
@@ -1524,7 +1541,10 @@ async function downloadWavespeedImage(
   // JPEG by default; also PNG or WebP. Strip parameters such as "; charset=utf-8".
   // 한국어: 기본은 JPEG이며 PNG·WebP도 가능. "; charset=utf-8" 같은 매개변수는 제거.
   const contentType = response.headers?.["content-type"] || "image/jpeg";
-  const mimeType = contentType.split(";")[0];
+  const semiIndex = contentType.indexOf(";");
+  const mimeType = (
+    semiIndex === -1 ? contentType : contentType.slice(0, semiIndex)
+  ).trim();
   return `data:${mimeType};base64,${Buffer.from(response.data).toString("base64")}`;
 }
 

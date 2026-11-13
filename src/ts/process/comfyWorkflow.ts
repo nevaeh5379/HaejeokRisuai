@@ -14,14 +14,19 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function hasNonTitleKey(meta: Record<string, unknown>): boolean {
+  for (const key in meta) {
+    if (Object.hasOwn(meta, key) && key !== "title") return true;
+  }
+  return false;
+}
+
 function keepNodeTitle(api: ApiWorkflow): ApiWorkflow {
   let result = api;
-  for (const [id, node] of Object.entries(api)) {
-    if (
-      !record(node._meta) ||
-      !Object.keys(node._meta).some((key) => key !== "title")
-    )
-      continue;
+  for (const id in api) {
+    if (!Object.hasOwn(api, id)) continue;
+    const node = api[id];
+    if (!record(node._meta) || !hasNonTitleKey(node._meta)) continue;
     const meta = Object.hasOwn(node._meta, "title")
       ? { title: node._meta.title }
       : {};
@@ -36,15 +41,22 @@ export function readApiWorkflow(value: unknown): ApiWorkflow | undefined {
   if (!record(value)) throw new Error("Workflow JSON must be an object.");
   if (Array.isArray(value.nodes)) return undefined;
   const prompt = record(value.prompt) ? value.prompt : value;
-  if (
-    !Object.keys(prompt).length ||
-    !Object.values(prompt).every(
-      (node) =>
-        record(node) &&
-        typeof node.class_type === "string" &&
-        record(node.inputs),
-    )
-  ) {
+  let hasNodes = false;
+  for (const id in prompt) {
+    if (!Object.hasOwn(prompt, id)) continue;
+    hasNodes = true;
+    const node = prompt[id];
+    if (
+      !record(node) ||
+      typeof node.class_type !== "string" ||
+      !record(node.inputs)
+    ) {
+      throw new Error(
+        "Invalid workflow JSON. Import a workflow or Export (API) JSON from ComfyUI.",
+      );
+    }
+  }
+  if (!hasNodes) {
     throw new Error(
       "Invalid workflow JSON. Import a workflow or Export (API) JSON from ComfyUI.",
     );

@@ -165,23 +165,20 @@ export function buildSqlReplaceCommit(
   database: Database,
   baseRevision: number,
 ): SqlCommit {
-  const partialCharacter = (database.characters ?? []).find(
-    (value) => value.detailsLoaded === false,
-  );
-  if (partialCharacter) {
-    throw new Error(
-      `Cannot replace SQL database from partially loaded character: ${partialCharacter.chaId || "unknown"}`,
-    );
-  }
-  for (const currentCharacter of database.characters ?? []) {
-    const partialChat = (currentCharacter.chats ?? []).find(
-      (value) =>
-        value.messagesLoaded === false || value.messagesFullyLoaded === false,
-    );
-    if (partialChat) {
+  const characters = database.characters ?? [];
+  for (const currentCharacter of characters) {
+    if (currentCharacter.detailsLoaded === false) {
       throw new Error(
-        `Cannot replace SQL database from partially loaded chat: ${partialChat.id || "unknown"}`,
+        `Cannot replace SQL database from partially loaded character: ${currentCharacter.chaId || "unknown"}`,
       );
+    }
+    const chats = currentCharacter.chats ?? [];
+    for (const chat of chats) {
+      if (chat.messagesLoaded === false || chat.messagesFullyLoaded === false) {
+        throw new Error(
+          `Cannot replace SQL database from partially loaded chat: ${chat.id || "unknown"}`,
+        );
+      }
     }
   }
   const commit = createEmptySqlCommit(baseRevision, "replace-all");
@@ -197,10 +194,17 @@ export function buildSqlReplaceCommit(
   commit.characterIds = [];
 
   database.pluginCustomStorage ??= {};
+  const pluginStorageUpserts: { key: string; value: unknown }[] = [];
+  for (const key in database.pluginCustomStorage) {
+    if (Object.hasOwn(database.pluginCustomStorage, key)) {
+      pluginStorageUpserts.push({
+        key,
+        value: database.pluginCustomStorage[key],
+      });
+    }
+  }
   commit.pluginStorage = {
-    upserts: Object.entries(database.pluginCustomStorage).map(
-      ([key, value]) => ({ key, value }),
-    ),
+    upserts: pluginStorageUpserts,
     deletes: [],
     clear: true,
   };
@@ -306,10 +310,14 @@ export function buildSqlReplaceCommit(
       data: sqlCharacterData(currentCharacter),
     });
     const chats = currentCharacter.chats ?? [];
-    for (const chat of chats) chat.id ||= uuidv4();
+    const chatIds: string[] = [];
+    for (const chat of chats) {
+      chat.id ||= uuidv4();
+      chatIds.push(chat.id);
+    }
     commit.chatManifests.push({
       characterId: currentCharacter.chaId,
-      ids: chats.map((chat) => chat.id!),
+      ids: chatIds,
     });
     for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
       const chat = chats[chatPosition];

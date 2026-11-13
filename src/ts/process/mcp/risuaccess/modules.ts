@@ -16,6 +16,15 @@ const moduleNotFound = (id: string): RPCToolCallContent[] => [
   },
 ];
 
+const ALLOWED_MODULE_INFO_FIELDS = new Set<string>([
+  "name",
+  "description",
+  "enabled",
+  "lowLevelAccess",
+  "backgroundEmbedding",
+  "customModuleToggle",
+]);
+
 export class ModuleHandler extends MCPToolHandler {
   private promptAccess(tool: string, action: string) {
     return alertConfirm(
@@ -464,18 +473,15 @@ export class ModuleHandler extends MCPToolHandler {
       ];
     }
 
-    const allowedFields = [
-      "name",
-      "description",
-      "enabled",
-      "lowLevelAccess",
-      "backgroundEmbedding",
-      "customModuleToggle",
-    ];
+    const dataRecord = data as Record<string, unknown>;
+    for (const key in dataRecord) {
+      if (
+        !Object.hasOwn(dataRecord, key) ||
+        !ALLOWED_MODULE_INFO_FIELDS.has(key)
+      )
+        continue;
 
-    for (const [key, value] of Object.entries(data)) {
-      if (!allowedFields.includes(key)) continue;
-
+      const value = dataRecord[key];
       if (key === "enabled") {
         const enabledModules = new Set(moduleStore.enabledModules || []);
         if (value) {

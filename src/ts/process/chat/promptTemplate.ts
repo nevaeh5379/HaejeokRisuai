@@ -333,8 +333,12 @@ export async function estimatePromptTemplateTokens(options: {
   let hasCachePoint = false;
 
   if (!options.promptTemplate) {
-    for (const prompts of Object.values(options.context.unformated)) {
-      tokens += await options.tokenizer.tokenizeChats(prompts);
+    for (const key in options.context.unformated) {
+      if (Object.hasOwn(options.context.unformated, key)) {
+        tokens += await options.tokenizer.tokenizeChats(
+          options.context.unformated[key as keyof PromptSections],
+        );
+      }
     }
     return { tokens, supaMemoryCardUsed, hasCachePoint };
   }
@@ -459,14 +463,14 @@ function renderLegacyPromptOrder(
   options: FormatPromptOptions,
   formated: OpenAIChat[],
 ) {
-  const formatOrder =
-    safeStructuredClone(
-      generationOverride(
-        options.context.generation,
-        "formatingOrder",
-        presetStore.state.formatingOrder,
-      ),
-    ) ?? [];
+  const overridden = generationOverride(
+    options.context.generation,
+    "formatingOrder",
+    presetStore.state.formatingOrder,
+  );
+  const formatOrder: string[] = Array.isArray(overridden)
+    ? overridden.slice()
+    : [];
   formatOrder.push("postEverything");
   for (const key of formatOrder) {
     mergePrompts(formated, options.context.unformated[key]);
