@@ -41,7 +41,7 @@
     import { resolveClaudeThinkingType } from "src/ts/model/types";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
-    import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
+    import { allBasicParameterItems, basicParameterItems } from "src/ts/setting/botSettingsParamsData";
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
@@ -1277,7 +1277,24 @@
 
 {#if submenu === 1 || submenu === -1}
     <!-- Data-driven basic parameters -->
-    <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
+    <SettingRenderer items={allBasicParameterItems.slice(0, basicParameterItems.length)} {modelInfo} {subModelInfo} />
+    <div class="border-t border-darkborderc mt-2 mb-3"></div>
+    <span class="text-textcolor">{language.additionalParams}</span>
+    <span class="text-textcolor2 text-xs mb-1">{language.modelAdditionalParamsDesc}</span>
+    {#key presetStore.state.aiModel}
+        <textarea
+            class="w-full h-24 mb-4 p-2 rounded-md border border-darkborderc bg-transparent text-textcolor text-sm font-mono resize-y focus:border-borderc outline-hidden"
+            spellcheck="false"
+            value={settingsStore.state.modelAdditionalParams?.[presetStore.state.aiModel] ?? ''}
+            onchange={(e) => {
+                const params = { ...(settingsStore.state.modelAdditionalParams ?? {}) }
+                if (e.currentTarget.value.trim()) params[presetStore.state.aiModel] = e.currentTarget.value
+                else delete params[presetStore.state.aiModel]
+                settingsStore.state.modelAdditionalParams = params
+            }}
+        ></textarea>
+    {/key}
+    <SettingRenderer items={allBasicParameterItems.slice(basicParameterItems.length)} {modelInfo} {subModelInfo} />
     {#if presetStore.state.aiModel === 'textgen_webui' || presetStore.state.aiModel === 'mancer' || presetStore.state.aiModel.startsWith('local_') || presetStore.state.aiModel.startsWith('hf:::')}
         <span class="text-textcolor">Repetition Penalty</span>
         <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={presetStore.state.ooba.repetition_penalty}/>

@@ -793,22 +793,21 @@
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2">
                 {@render translationButton()}
-                {#if window.innerWidth >= 640}
+                {#if !characterStore.characters[targetCharacterIndex]}
                     {@render majorIconButtonsBody(false)}
-                    {#if characterStore.characters[targetCharacterIndex]}
-                        <PopupButton>
-                            {@render minorIconButtonsBody(true)}
-                        </PopupButton>
-                    {/if}
+                {:else if window.innerWidth >= 640}
+                    {@render majorIconButtonsBody(false, 'bar')}
+                    {@render branchButton(false)}
+                    <PopupButton>
+                        {@render majorIconButtonsBody(true, 'menu')}
+                        {@render minorIconButtonsBody(true)}
+                    </PopupButton>
                 {:else}
-                    {#if characterStore.characters[targetCharacterIndex]}
-                        <PopupButton>
-                            {@render majorIconButtonsBody(true)}
-                            {@render minorIconButtonsBody(true)}
-                        </PopupButton>
-                    {:else}
-                        {@render majorIconButtonsBody(false)}
-                    {/if}
+                    {@render branchButton(false)}
+                    <PopupButton>
+                        {@render majorIconButtonsBody(true)}
+                        {@render minorIconButtonsBody(true)}
+                    </PopupButton>
                 {/if}
                 {@render rerolls()}
 
@@ -819,8 +818,8 @@
 {/snippet}
 
 
-{#snippet majorIconButtonsBody(showNames:boolean)}
-    {#if settingsStore.state.useChatCopy && !blankMessage}
+{#snippet majorIconButtonsBody(showNames:boolean, part:'all'|'bar'|'menu' = 'all')}
+    {#if part !== 'bar' && settingsStore.state.useChatCopy && !blankMessage}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
         const copyText = renderRawStreaming
             ? risuChatParser(rawStreamingText, {chara: name, chatID: scriptIdx, rmVar: true, visualize: true, cbsConditions: getCbsCondition(), chatTarget: effectiveChatTarget})
@@ -1053,7 +1052,7 @@
         {/if}
     </button>    
 {/if}
-{#if (idx > -1 || (firstMessage && !blankMessage)) && !renderRawStreaming}
+{#if part !== 'bar' && (idx > -1 || (firstMessage && !blankMessage)) && !renderRawStreaming}
     <button class="flex items-center hover:text-blue-500 transition-colors button-icon-export-from" onclick={() => {
         openLogExporterFrom(idx)
     }} title="이 메시지부터 로그 내보내기">
@@ -1071,7 +1070,7 @@
         {/if}
     </button>
 {/if}
-{#if idx > -1}
+{#if part !== 'menu' && idx > -1}
     {#if characterStore.characters[targetCharacterIndex].type !== 'group' && characterStore.characters[targetCharacterIndex].ttsMode !== 'none' && (characterStore.characters[targetCharacterIndex].ttsMode)}
         <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={async ()=>{
             const { sayTTS } = await import('src/ts/process/tts')
@@ -1176,8 +1175,12 @@
             {/if}
         </button>
     {/if}
+    {@render messageStateButtons(showNames)}
+{/snippet}
 
-    <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
+{#snippet branchButton(showNames:boolean)}
+    {#if idx > -1}
+    <button title={language.branch} class="flex items-center hover:text-blue-500 transition-colors button-icon-branch" onclick={async () => {
         await sleep(1)
         const targetIndex = idx
         if (targetIndex < 0) return
@@ -1209,7 +1212,10 @@
             <span class="ml-1">{language.branch}</span>
         {/if}
     </button>
+    {/if}
+{/snippet}
 
+{#snippet messageStateButtons(showNames:boolean)}
     <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
         await sleep(1)
         const char = characterStore.characters[targetCharacterIndex]

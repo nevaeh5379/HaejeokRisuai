@@ -53,12 +53,32 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
   return obj;
 }
 
-export function getAdditionalParameters(aiModel?: string): [string, string][] {
-  const db = settingsStore.state;
+function parseAdditionalParamLines(params?: string): [string, string][] {
+  const additionalParams: [string, string][] = [];
+  for (const line of (params ?? "").split("\n")) {
+    const eqIdx = line.indexOf("=");
+    if (eqIdx !== -1) {
+      additionalParams.push([line.slice(0, eqIdx), line.slice(eqIdx + 1)]);
+    }
+  }
+  return additionalParams;
+}
 
+// Per-model parameters come last so they win over the shared ones.
+export function getAdditionalParameters(aiModel?: string): [string, string][] {
   if (!aiModel) {
     return [];
   }
+  return [
+    ...getSharedAdditionalParameters(aiModel),
+    ...parseAdditionalParamLines(
+      settingsStore.state.modelAdditionalParams?.[aiModel],
+    ),
+  ];
+}
+
+function getSharedAdditionalParameters(aiModel: string): [string, string][] {
+  const db = settingsStore.state;
 
   if (aiModel === "reverse_proxy") {
     return [...(db.additionalParams ?? [])];
@@ -71,22 +91,7 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   const found = db.customModels.find((model) => model.id === aiModel);
-  const params = found?.params;
-  if (!params) {
-    return [];
-  }
-
-  const additionalParams: [string, string][] = [];
-  const lines = params.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const eqIdx = line.indexOf("=");
-    if (eqIdx !== -1) {
-      additionalParams.push([line.slice(0, eqIdx), line.slice(eqIdx + 1)]);
-    }
-  }
-
-  return additionalParams;
+  return parseAdditionalParamLines(found?.params);
 }
 
 export function applyAdditionalParameters<T extends Record<string, any>>(

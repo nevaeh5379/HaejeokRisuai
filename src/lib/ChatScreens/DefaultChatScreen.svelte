@@ -1099,7 +1099,7 @@
 
     {#if settingsStore.state.scrollNavButtonType !== 'off' && (currentChatSession?.message?.length ?? 0) > 0}
         <div
-            class="absolute right-3 bottom-16 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc/30 shadow-lg overflow-hidden transition-opacity duration-300"
+            class="absolute right-3 bottom-32 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc/30 shadow-lg overflow-hidden transition-opacity duration-300"
             class:opacity-0={!showScrollNav}
             class:pointer-events-none={!showScrollNav}
         >

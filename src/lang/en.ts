@@ -2295,6 +2295,8 @@ export const languageEnglish = {
   popularityLevelDesc:
     "Popularity increases with downloads, etc. To estimate, 3.7 popularity is about 1 downloads.",
   additionalParams: "Additional Parameters",
+  modelAdditionalParamsDesc:
+    "One per line. Supports `key=value` / `key=json::{...}` / `header::Name=value` / `key={{none}}`. Saved for the selected model.",
   heightMode: "Height Mode",
   useAdvancedEditor: "Use Advanced Editor",
   noWaitForTranslate: "No Wait for Translate",
