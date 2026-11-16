@@ -20,6 +20,7 @@
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
+    import { chatMaxWidth } from "src/ts/gui/chatWidth";
     import PartialEditController from './PartialEditController.svelte';
     import { preLoadChat } from "../../ts/process/coldstorage.svelte"
     import { openLogExporterFrom, openLogExporterSingle } from "src/ts/logexporter/index"
@@ -604,26 +605,7 @@
     )
 
     function getMaxWidth(): string {
-        switch (settingsStore.state.chatLimitSize) {
-            //Unlimited
-            case -1:
-                return '100%'
-            
-            //Small
-            case 0:
-               return '600px'
-
-            //Normal
-            case 1:
-                return '800px'
-            
-            //Huge
-            case 2:
-               return '72rem'
-            
-            default:
-                return '100%'
-        }
+        return chatMaxWidth(settingsStore.state.chatLimitSize)
     }
 </script>
 

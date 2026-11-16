@@ -23,6 +23,7 @@
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
     import { findRerollAlternatives, resolveRerollTarget } from 'src/ts/chatReroll';
+    import { chatMaxWidth } from 'src/ts/gui/chatWidth';
     import { requireChatTargetFromIndexes } from 'src/ts/chatTarget';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -1232,6 +1233,7 @@
                 bind:this={chatScrollContainer}
                 class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
                 class:nodeonly-standard={settingsStore.state.theme === ''}
+                style:--no-chat-max-width={chatMaxWidth(settingsStore.state.chatLimitSize)}
                 onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             if(settingsStore.state.scrollNavButtonType !== 'off'){

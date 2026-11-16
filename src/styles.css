@@ -4072,7 +4072,8 @@ body:has(.default-chat-screen.nodeonly-standard) {
   );
 }
 
-.nodeonly-standard .sticky.pt-2.pb-2 {
+.nodeonly-standard .sticky.pt-2.pb-2,
+.nodeonly-standard .sticky.pt-2.pb-2 > .pointer-events-none.bg-bgcolor {
   background-color: color-mix(
     in srgb,
     var(--risu-theme-bgcolor) 25%,
@@ -4080,8 +4081,24 @@ body:has(.default-chat-screen.nodeonly-standard) {
   ) !important;
 }
 
+/* The input row follows the chat width, inset 0.5rem like PocketRisu's composer. */
+.nodeonly-standard .rs-chat-input-row {
+  max-width: var(--no-chat-max-width);
+  margin-inline: auto;
+  padding-inline: 0.5rem;
+}
+.nodeonly-standard .rs-chat-input-row > .ml-4:first-child,
+.nodeonly-standard .rs-chat-input-row > .rs-chat-composer:first-child > .ml-4:first-child {
+  margin-left: 0;
+}
+.nodeonly-standard .rs-chat-input-row .mr-2 {
+  margin-right: 0;
+}
+
 .nodeonly-standard .rs-creator-quote {
   background-color: var(--risu-theme-bgcolor);
+  max-width: var(--no-chat-max-width);
+  margin-inline: auto;
 }
 
 .nodeonly-standard .risu-chat .flex.flex-col.items-end {
