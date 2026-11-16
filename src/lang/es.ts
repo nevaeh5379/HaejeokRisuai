@@ -1106,7 +1106,7 @@ export const languageSpanish = {
   globalRegexScript: "Regex Global",
   accessibility: "Accesibilidad",
   sendWithEnter:
-    "Enviar con la Tecla Enter(Al desactivar la verificación, Shift + Enter cambia a Transmisión de Mensajes.)",
+    "Enviar con la Tecla Enter(Al desactivar la verificación, Ctrl + Enter cambia a Transmisión de Mensajes.)",
   fixedChatTextarea: "Fijación en la parte inferior de la ventana de chat",
   clickToEdit: "Haz Clic en el Texto para Editar",
   setNodePassword: "Establece tu contraseña para la seguridad",

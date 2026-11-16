@@ -1093,7 +1093,7 @@ export const languageChineseTraditional = {
   accessibility: "無障礙",
   sendWithEnter: "使用 Enter 鍵送出",
   fixedChatTextarea:
-    "固定在對話視窗底部（取消勾選後，Shift + Enter 將改為送出訊息。）",
+    "固定在對話視窗底部（取消勾選後，Ctrl + Enter 將改為送出訊息。）",
   clickToEdit: "按一下文字以編輯",
   enableBlockPartialEdit: "啟用區塊局部編輯（滑鼠移至個別區塊即可編輯）",
   enableDragPartialEdit: "啟用拖曳局部編輯（選取文字即可編輯）",
