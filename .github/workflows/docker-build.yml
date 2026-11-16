@@ -1,9 +1,6 @@
 name: Create and publish server Docker image
 
 on:
-  workflow_run:
-    workflows: [Publish]
-    types: [completed]
   workflow_dispatch: {}
 
 env:
