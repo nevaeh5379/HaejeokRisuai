@@ -2,7 +2,7 @@
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
-    import { CharEmotion, MobileGUI, selectedCharID } from "../../ts/stores.svelte";
+    import { CharEmotion, MobileGUI, selectedCharID, openModuleListStore } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
@@ -20,6 +20,14 @@
     let { detached = false }: Props = $props();
     let openChatList = $state(false)
     let openModuleList = $state(false)
+
+    // The sidebar's Module button opens the same per-chat module menu.
+    $effect(() => {
+        if ($openModuleListStore) {
+            openModuleListStore.set(false)
+            openModuleList = true
+        }
+    })
 
     const wallPaper = `background: url(${defaultWallpaper})`
     const externalStyles = 

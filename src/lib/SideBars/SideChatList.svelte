@@ -45,6 +45,12 @@
   } from "src/ts/alert";
   import { language } from "src/lang";
   import Toggles from "./Toggles.svelte";
+  import ModelBind from "./ModelBind.svelte";
+  import PromptBind from "./PromptBind.svelte";
+  import PersonaBind from "./PersonaBind.svelte";
+  import { newChatBindingDefaults } from "src/ts/chatBindings";
+  import { openModuleListStore } from "src/ts/stores.svelte";
+  import { PackageIcon } from "@lucide/svelte";
   import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
   import { getProtectedChatIds } from "src/ts/memory/chatWorkingSet";
   import { chatTabsStore, pruneChatTargets } from "src/ts/chatTabs.svelte";
@@ -512,6 +518,7 @@
         localLore: [],
         fmIndex: -1,
         id: v4(),
+        ...newChatBindingDefaults(),
       };
       if (cha.type === "group") {
         const { findCharacterbyId } = await import("src/ts/util");
@@ -749,7 +756,24 @@
 
     <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-0.5">
       {#if characterStore.characters[$selectedCharID]?.chaId !== "§playground"}
+        <ModelBind />
+        <PromptBind />
+        <PersonaBind />
         <Toggles bind:chara noContainer />
+        <Button
+          styled="outlined"
+          size="sm"
+          className="w-full shrink-0 justify-center gap-2 mt-1"
+          onclick={() => {
+            const chat = characterStore.getCurrentChat();
+            if (!chat) return;
+            chat.modules ??= [];
+            openModuleListStore.set(true);
+          }}
+        >
+          <PackageIcon size={16} class="shrink-0" />
+          <span class="truncate">{language.modules}</span>
+        </Button>
       {/if}
       {#if chara.type === "group"}
         <div class="flex mt-2 items-center">

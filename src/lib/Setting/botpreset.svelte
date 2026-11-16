@@ -9,7 +9,9 @@
     import type { PromptPresetFolder } from "src/ts/storage/database/schema";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { prebuiltPresets } from "src/ts/process/templates/templates";
-    import { ShowRealmFrameStore } from "src/ts/stores.svelte";
+    import { ShowRealmFrameStore, presetSelectCallback } from "src/ts/stores.svelte";
+    import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+    import { get } from "svelte/store";
     import PromptDiffModal from "../Others/PromptDiffModal.svelte";
     import { RISU_PRESET_DRAG_TYPE } from "src/ts/dragTypes";
     import { safeStructuredClone } from "src/ts/polyfill";
@@ -24,6 +26,36 @@
     }
 
     let { close = () => {} }: Props = $props();
+
+    // Drop a pending callback when the list unmounts so it cannot fire later.
+    $effect(() => {
+        return () => {
+            presetSelectCallback.set(null)
+        }
+    })
+
+    // Binding mode (opened from the sidebar): a top "default" row unbinds and
+    // the highlighted item is the chat's bound preset.
+    const bindingMode = $derived($presetSelectCallback !== null)
+    const highlightId = $derived(
+        bindingMode
+            ? (characterStore.getCurrentChat()?.bindedBotPreset ?? '')
+            : presetStore.activeId
+    )
+    const activePresetName = $derived(
+        presetStore.summaries.find((preset) => preset.id === presetStore.activeId)?.name ?? language.none
+    )
+
+    function select(index: number) {
+        const callback = get(presetSelectCallback)
+        if (callback) {
+            presetSelectCallback.set(null)
+            callback(index)
+        } else {
+            void changeToPreset(index)
+        }
+        close()
+    }
 
     let showDiffModal = $state(false)
     let selectedDiffPreset = $state<number | null>(null)
@@ -180,6 +212,14 @@
                 </button>
             </div>
         </div>
+        {#if bindingMode}
+            <button onclick={() => select(-1)}
+                class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 mb-1 cursor-pointer"
+                class:bg-selected={!highlightId}>
+                <span class="font-medium">{language.bindingInherit}</span>
+                <span class="opacity-75 ml-1">({activePresetName})</span>
+            </button>
+        {/if}
         {#each groups as group, groupIndex (group.folder?.id ?? '')}
         {@const folderKey = group.folder?.id ?? ''}
         {#if folders.length > 0}
@@ -243,13 +283,12 @@
             
             <button onclick={() => {
                 if(!editMode){
-                    void changeToPreset(i)
-                    close()
+                    select(i)
                 }
             }} 
             class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" 
             class:pl-7={folders.length > 0}
-            class:bg-selected={preset.id === presetStore.activeId}
+            class:bg-selected={preset.id === highlightId}
             class:draggable-preset={!editMode}
             draggable={!editMode ? "true" : "false"}
             ondragstart={(e) => {

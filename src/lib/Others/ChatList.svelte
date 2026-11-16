@@ -1,6 +1,7 @@
 <script>
     import { alertConfirm, alertError } from "../../ts/alert";
     import { language } from "../../lang";
+    import { newChatBindingDefaults } from "src/ts/chatBindings";
     
     import { characterStore, messageStore } from 'src/ts/stores/domain';
     import { ReloadGUIPointer, selectedCharID } from "../../ts/stores.svelte";
@@ -79,6 +80,7 @@
                     name: `New Chat ${len + 1}`,
                     localLore: [],
                     fmIndex: -1,
+                    ...newChatBindingDefaults(),
                 }
                 if(cha.type === 'group'){
                     cha.characters.forEach((c) => {

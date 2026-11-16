@@ -1,7 +1,7 @@
 <script lang="ts">
     import { flushDurableStores } from "./ts/stores/domain/flushDurableStores";
     import AuthorNoteDraftRecovery from "./lib/Others/AuthorNoteDraftRecovery.svelte";
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, onboardingModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, togglePresetsOpenStore, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, onboardingModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
@@ -183,6 +183,7 @@
     const realmFrameLoader = () => import('./lib/UI/Realm/RealmFrame.svelte')
     const botPresetLoader = () => import('./lib/Setting/botpreset.svelte')
     const personaLoader = () => import('./lib/Setting/listedPersona.svelte')
+    const togglePresetLoader = () => import('./lib/Others/TogglePresetList.svelte')
     const bookmarkLoader = () => import('./lib/Others/BookmarkList.svelte')
     const messageSearchLoader = () => import('./lib/Others/MessageSearch.svelte')
     const hypaModalLoader = () => import('./lib/Others/HypaV3Modal.svelte')
@@ -480,6 +481,9 @@
     {/if}
     {#if $openPersonaList}
         <LazyComponent loader={personaLoader} props={{ close: () => { $openPersonaList = false } }} />
+    {/if}
+    {#if $togglePresetsOpenStore}
+        <LazyComponent loader={togglePresetLoader} props={{ close: () => { $togglePresetsOpenStore = false } }} />
     {/if}
     {#if $bookmarkListOpen}
         <LazyComponent loader={bookmarkLoader} />

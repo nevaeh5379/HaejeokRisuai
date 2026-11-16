@@ -1,5 +1,6 @@
 <script lang="ts">
     import { v4 } from "uuid";
+    import { newChatBindingDefaults } from "src/ts/chatBindings";
     import type { Chat, ChatFolder } from "../../ts/storage/database/schema";
     import { ReloadGUIPointer, selectedCharID, MobileSideBar, alertStore, openPersonaList, openPresetList } from 'src/ts/stores.svelte';
     import { characterStore, settingsStore, messageStore, presetStore, personaStore } from 'src/ts/stores/domain';
@@ -91,6 +92,7 @@
             name: `New Chat ${len + 1}`,
             localLore: [],
             id: v4(),
+            ...newChatBindingDefaults(),
             folderId: selectedFolderFilter !== 'all' && selectedFolderFilter !== 'none' ? selectedFolderFilter : undefined
         };
 

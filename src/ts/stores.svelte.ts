@@ -119,6 +119,15 @@ export const botMakerMode = writable(false);
 export const moduleBackgroundEmbedding = writable("");
 export const openPresetList = writable(false);
 export const openPersonaList = writable(false);
+/** Set while a picker is opened to bind to the current chat; -1 means unbind. */
+export const personaSelectCallback = writable<((index: number) => void) | null>(
+  null,
+);
+export const presetSelectCallback = writable<((index: number) => void) | null>(
+  null,
+);
+export const openModuleListStore = writable(false);
+export const togglePresetsOpenStore = writable(false);
 export const bookmarkListOpen = writable(false);
 export const MobileGUI = writable(false);
 export const MobileGUIStack = writable(1);

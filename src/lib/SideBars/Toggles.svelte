@@ -17,6 +17,11 @@ import { getModuleToggles } from "src/ts/process/modules";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import CustomSideBar from "./CustomSidebar.svelte";
     import { getGlobalChatVar, isLocallyHandledGlobalChatVar, removeLocallyHandledGlobalChatVar, setGlobalChatVar } from "src/ts/parser/chatVar.svelte";
+    import { PinIcon, FolderHeartIcon } from "@lucide/svelte";
+    import { alertConfirm, alertSelect } from "src/ts/alert";
+    import { pinTogglesToChat, snapshotToggleValues, unpinTogglesFromChat } from "src/ts/chatBindings";
+    import { togglePresetsOpenStore } from "src/ts/stores.svelte";
+    import Button from "../UI/GUI/Button.svelte";
 
     interface Props {
         chara?: character|groupChat
@@ -91,6 +96,42 @@ import { getModuleToggles } from "src/ts/process/modules";
     const getGlobalChatVarNH = (key: string) => {
         const value = getGlobalChatVar(key)
         return value === 'null' ? '' : value
+    }
+
+    let currentChat = $derived.by(() => {
+        const character = characterStore.characters?.[$selectedCharID]
+        return character?.chats?.[character.chatPage]
+    })
+    let isPinned = $derived(currentChat?.useLocallySetGlobalVariables === true)
+
+    // A pinned chat keeps its own toggle values; edits are stored on the chat.
+    async function togglePin() {
+        const chat = characterStore.getCurrentChat()
+        if (!chat) return
+        if (chat.useLocallySetGlobalVariables) {
+            if (await alertConfirm(language.togglePinRemove)) unpinTogglesFromChat(chat)
+        } else {
+            pinTogglesToChat(chat)
+        }
+    }
+
+    // New chats start pinned to this snapshot; existing chats are not touched.
+    async function saveAsDefault() {
+        if (settingsStore.state.defaultToggleValues) {
+            const sel = parseInt(await alertSelect([
+                language.toggleDefaultOverwrite,
+                language.toggleDefaultClear,
+                language.cancel,
+            ]))
+            if (sel === 1) {
+                settingsStore.state.defaultToggleValues = undefined
+                return
+            }
+            if (sel !== 0) return
+        } else if (!(await alertConfirm(language.toggleSetDefaultConfirm))) {
+            return
+        }
+        settingsStore.state.defaultToggleValues = snapshotToggleValues()
     }
 </script>
 
@@ -173,6 +214,21 @@ import { getModuleToggles } from "src/ts/process/modules";
     {/each}
 {/snippet}
 
+{#if currentChat}
+    <div class="text-[11px] text-textcolor2 mt-2 px-1">{language.toggleBindingLabel}</div>
+    <div class="flex gap-1 items-stretch w-full">
+        <Button styled="outlined" size="sm" selected={isPinned}
+            className={`flex-1 min-w-0 justify-start gap-2 ${isPinned ? 'text-textcolor' : 'text-textcolor2'}`}
+            onclick={togglePin}>
+            <PinIcon size={16} class="shrink-0" />
+            <span class="truncate">{isPinned ? language.togglePinnedLabel : language.togglePinLabel}</span>
+        </Button>
+        <Button styled="outlined" size="sm" className="shrink-0" onclick={() => togglePresetsOpenStore.set(true)}>
+            <FolderHeartIcon size={16} />
+        </Button>
+    </div>
+{/if}
+
 {#if !noContainer && groupedToggles.length > 4}
     <div class="h-48 border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2 overflow-y-auto">
         <CustomSideBar />
@@ -205,13 +261,8 @@ import { getModuleToggles } from "src/ts/process/modules";
         </div>
     {/if}
     {#if chara}
-        <div class="flex mt-2 items-center w-full">
-            <CheckInput check={characterStore.getCurrentChat()?.useLocallySetGlobalVariables ?? false} name={language.localToggles} onChange={() => {
-                const chat = characterStore.getCurrentChat()
-                if(chat){
-                    chat.useLocallySetGlobalVariables = !chat.useLocallySetGlobalVariables
-                }
-            }} />
-        </div>
+        <button class="w-full text-xs text-textcolor2 hover:text-textcolor cursor-pointer py-1 mt-1" onclick={saveAsDefault}>
+            {settingsStore.state.defaultToggleValues ? language.toggleDefaultSavedButton : language.toggleSaveAsDefaultButton}
+        </button>
     {/if}
 {/if}

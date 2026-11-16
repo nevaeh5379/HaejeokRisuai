@@ -19,6 +19,7 @@ import { resolveChatTarget } from "../../chatTarget";
 import { getModules } from "../modules";
 import { resolveModuleRequestRules } from "../moduleRequestRules";
 import { captureModuleRequest } from "../moduleRequestCapture";
+import { resolveChatBoundModel } from "./chatModelBinding";
 
 export async function requestChatData(
   arg: requestDataArgument,
@@ -121,7 +122,10 @@ export async function requestChatData(
             )
           : undefined;
         const selectedModel =
-          fallbackModel || decision?.model || arg.staticModel;
+          fallbackModel ||
+          decision?.model ||
+          arg.staticModel ||
+          resolveChatBoundModel(requestChat, model);
         if (decision) {
           captureModuleRequest({
             sourceModuleId: arg.sourceModuleId,

@@ -466,6 +466,11 @@ export interface DatabaseSettings extends PresetSettings {
   /** Folder id keyed by preset id. Kept outside the presets so the lazily
    * loaded preset bodies are not needed to draw the grouped list. */
   promptPresetFolderAssignments?: Record<string, string>;
+  /** Copied into new chats as their model binding. */
+  defaultModelBinding?: ChatModelBinding;
+  /** Copied into new chats as their pinned toggle values. */
+  defaultToggleValues?: Record<string, string>;
+  togglePresets?: TogglePreset[];
   generationStatsPosition?: GenerationStatsPosition;
   chatLoadInitialPages?: number;
   chatLoadAdditionalPages?: number;
@@ -576,6 +581,24 @@ export type PortableDatabase = Database & {
   botPresets: botPreset[];
   botPresetsId: number;
 };
+
+export type ChatAuxModelTask = "memory" | "translate" | "emotion" | "otherAx";
+
+export interface ChatModelBinding {
+  main: string;
+  sub: string;
+  /** When false every auxiliary task uses `sub`. */
+  separateAux: boolean;
+  aux: Record<ChatAuxModelTask, string>;
+}
+
+export interface TogglePreset {
+  name: string;
+  /** `toggle_<key>` to value. */
+  values: Record<string, string>;
+  /** Name of the prompt preset that was active when this was saved. */
+  promptPresetName?: string;
+}
 
 export interface PromptPresetFolder {
   id: string;
@@ -1135,6 +1158,10 @@ export interface Chat {
   modules?: string[];
   id?: string;
   bindedPersona?: string;
+  /** Prompt preset id bound to this chat; empty means the global preset. */
+  bindedBotPreset?: string;
+  /** Per-chat model choice; an empty slot inherits the active preset's model. */
+  modelBinding?: ChatModelBinding;
   fmIndex?: number;
   hypaV3Data?: SerializableHypaV3Data;
   folderId?: string;
