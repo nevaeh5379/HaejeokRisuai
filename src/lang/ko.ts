@@ -2161,6 +2161,9 @@ export const languageKorean = {
   removeFolderConfirm:
     "정말로 이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 루트로 이동합니다.",
   moveToFolder: "폴더로 이동",
+  folderUncategorized: "미분류",
+  presetFolderRemoveConfirm:
+    "이 폴더를 삭제할까요? 안에 있는 프리셋은 미분류로 이동합니다.",
   removeFromFolder: "폴더에서 꺼내기",
   noFolder: "폴더 없음",
   ungrouped: "폴더 미지정",

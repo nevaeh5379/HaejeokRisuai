@@ -461,6 +461,11 @@ export interface DatabaseSettings extends PresetSettings {
   alwaysScrollToNewMessage?: boolean;
   newMessageButtonStyle?: string;
   scrollNavButtonType?: "four" | "two" | "off";
+  /** User-defined groups for prompt presets, in display order. */
+  promptPresetFolders?: PromptPresetFolder[];
+  /** Folder id keyed by preset id. Kept outside the presets so the lazily
+   * loaded preset bodies are not needed to draw the grouped list. */
+  promptPresetFolderAssignments?: Record<string, string>;
   generationStatsPosition?: GenerationStatsPosition;
   chatLoadInitialPages?: number;
   chatLoadAdditionalPages?: number;
@@ -571,6 +576,11 @@ export type PortableDatabase = Database & {
   botPresets: botPreset[];
   botPresetsId: number;
 };
+
+export interface PromptPresetFolder {
+  id: string;
+  name: string;
+}
 
 export interface CustomSideBarItem {
   id: string;

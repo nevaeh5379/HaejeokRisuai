@@ -160,5 +160,7 @@ export function normalizeRuntimeDatabaseSettings(
   data.enableRisuaiProTools ??= hasPlugins;
   data.loadouts ??= [];
   data.customSidebarItems ??= [];
+  data.promptPresetFolders ??= [];
+  data.promptPresetFolderAssignments ??= {};
   data.coldstorage ??= !hasPlugins;
 }

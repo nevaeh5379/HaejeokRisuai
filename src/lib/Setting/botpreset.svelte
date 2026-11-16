@@ -1,9 +1,12 @@
 <script lang="ts">
-    import { alertCardExport, alertConfirm, alertError } from "../../ts/alert";
+    import { alertCardExport, alertConfirm, alertError, alertInput, alertSelect } from "../../ts/alert";
     import { language } from "../../lang";
     import { changeToPreset, copyPreset, downloadPreset, importPreset } from "../../ts/storage/presets/presetService";
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
-    import { CopyIcon, Share2Icon, PencilIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon, GitCompare } from "@lucide/svelte";
+    import { CopyIcon, Share2Icon, PencilIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon, GitCompare, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, FolderIcon, FolderInputIcon, FolderPlusIcon } from "@lucide/svelte";
+    import { v4 } from "uuid";
+    import { groupByFolder } from "src/ts/folders";
+    import type { PromptPresetFolder } from "src/ts/storage/database/schema";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { prebuiltPresets } from "src/ts/process/templates/templates";
     import { ShowRealmFrameStore } from "src/ts/stores.svelte";
@@ -26,6 +29,75 @@
     let selectedDiffPreset = $state<number | null>(null)
     let firstPresetId = $state<number | null>(null);
     let secondPresetId = $state<number | null>(null);
+
+    const folders = $derived(settingsStore.state.promptPresetFolders ?? [])
+    const assignments = $derived(settingsStore.state.promptPresetFolderAssignments ?? {})
+    const groups = $derived(groupByFolder(
+        presetStore.summaries.map((preset) => assignments[preset.id]),
+        folders,
+    ))
+
+    // Folders start collapsed and the uncategorized group ('') starts open,
+    // so for '' the set records "collapsed" instead of "expanded".
+    let toggled = $state<Set<string>>(new Set())
+
+    function isOpen(key: string) {
+        return key === '' ? !toggled.has(key) : toggled.has(key)
+    }
+
+    function toggleFolder(key: string) {
+        const next = new Set(toggled)
+        if (next.has(key)) next.delete(key); else next.add(key)
+        toggled = next
+    }
+
+    function setPresetFolder(presetId: string, folderId: string | undefined) {
+        const next = { ...assignments }
+        if (folderId) next[presetId] = folderId
+        else delete next[presetId]
+        settingsStore.state.promptPresetFolderAssignments = next
+    }
+
+    async function createFolder() {
+        const name = (await alertInput(language.folderName)).trim()
+        if (!name) return
+        const folder: PromptPresetFolder = { id: v4(), name }
+        settingsStore.state.promptPresetFolders = [...folders, folder]
+        toggleFolder(folder.id)
+    }
+
+    async function renameFolder(folder: PromptPresetFolder) {
+        const name = (await alertInput(language.changeFolderName, undefined, folder.name)).trim()
+        if (!name) return
+        settingsStore.state.promptPresetFolders = folders.map((item) =>
+            item.id === folder.id ? { ...item, name } : item)
+    }
+
+    async function removeFolder(folder: PromptPresetFolder) {
+        if (!(await alertConfirm(language.presetFolderRemoveConfirm))) return
+        settingsStore.state.promptPresetFolders = folders.filter((item) => item.id !== folder.id)
+        settingsStore.state.promptPresetFolderAssignments = Object.fromEntries(
+            Object.entries(assignments).filter(([, folderId]) => folderId !== folder.id))
+    }
+
+    function moveFolder(index: number, delta: number) {
+        const target = index + delta
+        if (target < 0 || target >= folders.length) return
+        const next = [...folders]
+        const [moved] = next.splice(index, 1)
+        next.splice(target, 0, moved)
+        settingsStore.state.promptPresetFolders = next
+    }
+
+    async function chooseFolder(presetId: string) {
+        const sel = parseInt(await alertSelect([
+            language.folderUncategorized,
+            ...folders.map((folder) => folder.name),
+            language.cancel,
+        ]))
+        if (Number.isNaN(sel) || sel > folders.length) return
+        setPresetFolder(presetId, sel === 0 ? undefined : folders[sel - 1].id)
+    }
 
     async function movePreset(fromIndex: number, toIndex: number) {
         if (fromIndex === toIndex) return;
@@ -51,14 +123,18 @@
         e.dataTransfer.setData(RISU_PRESET_DRAG_TYPE, index.toString());
     }
 
-    function handlePresetDrop(targetIndex: number, e: DragEvent) {
+    // `folderId` is the folder of the drop target; `false` keeps the dragged
+    // preset in the folder it already has.
+    function handlePresetDrop(targetIndex: number, e: DragEvent, folderId: string | undefined | false = false) {
         if (!isPresetDrag(e)) {
             return;
         }
         e.preventDefault();
         e.stopPropagation();
         const sourceIndex = parseInt(e.dataTransfer?.getData(RISU_PRESET_DRAG_TYPE) || '0');
-        movePreset(sourceIndex, targetIndex);
+        const source = presetStore.summaries[sourceIndex]
+        if (source && folderId !== false) setPresetFolder(source.id, folderId)
+        if (targetIndex >= 0) movePreset(sourceIndex, targetIndex);
     }
 
 
@@ -104,7 +180,42 @@
                 </button>
             </div>
         </div>
-        {#each presetStore.summaries as preset, i}
+        {#each groups as group, groupIndex (group.folder?.id ?? '')}
+        {@const folderKey = group.folder?.id ?? ''}
+        {#if folders.length > 0}
+            <div class="flex items-center gap-2 w-full rounded-md px-2 py-2 mt-1 text-textcolor cursor-pointer hover:bg-selected/30 select-none"
+                role="button" tabindex="0"
+                onclick={() => toggleFolder(folderKey)}
+                onkeydown={(e) => { if (e.key === 'Enter') toggleFolder(folderKey) }}
+                ondragover={(e) => {
+                    if (!isPresetDrag(e)) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                }}
+                ondrop={(e) => handlePresetDrop(-1, e, group.folder?.id)}>
+                {#if isOpen(folderKey)}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
+                <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
+                <span class="grow min-w-0 text-left truncate" class:text-textcolor2={!group.folder}>{group.folder?.name ?? language.folderUncategorized}</span>
+                <span class="text-xs text-textcolor2">{group.indexes.length}</span>
+                {#if group.folder}
+                    {@const folder = group.folder}
+                    <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={(e) => { e.stopPropagation(); moveFolder(groupIndex - 1, -1) }}>
+                        <ChevronUpIcon size={18}/>
+                    </button>
+                    <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={(e) => { e.stopPropagation(); moveFolder(groupIndex - 1, 1) }}>
+                        <ChevronDownIcon size={18}/>
+                    </button>
+                    <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={(e) => { e.stopPropagation(); void renameFolder(folder) }}>
+                        <PencilIcon size={16}/>
+                    </button>
+                    <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={(e) => { e.stopPropagation(); void removeFolder(folder) }}>
+                        <TrashIcon size={16}/>
+                    </button>
+                {/if}
+            </div>
+        {/if}
+        {#each isOpen(folderKey) ? group.indexes : [] as i (presetStore.summaries[i].id)}
+            {@const preset = presetStore.summaries[i]}
             <div class="w-full transition-all duration-200"
                 class:h-0.5={!isDragging || dragOverIndex !== i}
                 class:h-1={isDragging && dragOverIndex === i}
@@ -125,7 +236,7 @@
                     dragOverIndex = -1
                 }}
                 ondrop={(e) => {
-                    handlePresetDrop(i, e)
+                    handlePresetDrop(i, e, group.folder?.id)
                     dragOverIndex = -1
                 }}>
             </div>
@@ -137,6 +248,7 @@
                 }
             }} 
             class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" 
+            class:pl-7={folders.length > 0}
             class:bg-selected={preset.id === presetStore.activeId}
             class:draggable-preset={!editMode}
             draggable={!editMode ? "true" : "false"}
@@ -180,11 +292,11 @@
                 }
             }}
             ondrop={(e) => {
-                handlePresetDrop(dragOverIndex, e)
+                handlePresetDrop(dragOverIndex, e, group.folder?.id)
                 dragOverIndex = -1
             }}>
                 {#if editMode}
-                    <TextInput bind:value={preset.name} placeholder="string" padding={false} onchange={async () => {
+                    <TextInput bind:value={presetStore.summaries[i].name} placeholder="string" padding={false} onchange={async () => {
                         const full = await presetStore.load(preset.id); full.name = preset.name; await presetStore.savePreset(full)
                     }}/>
                 {:else}
@@ -208,6 +320,18 @@
                             }
                         }}>
                             <GitCompare size={18}/>
+                        </div>
+                    {/if}
+                    {#if folders.length > 0}
+                        <div class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2" role="button" tabindex="0" title={language.moveToFolder} onclick={(e) => {
+                            e.stopPropagation()
+                            void chooseFolder(preset.id)
+                        }} onkeydown={(e) => {
+                            if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){
+                                e.currentTarget.click()
+                            }
+                        }}>
+                            <FolderInputIcon size={18}/>
                         </div>
                     {/if}
                     <div class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2" role="button" tabindex="0" onclick={(e) => {
@@ -247,6 +371,7 @@
                         const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
                         if(d){
                             await presetStore.delete(preset.id)
+                            setPresetFolder(preset.id, undefined)
                         }
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){
@@ -257,6 +382,7 @@
                     </div>
                 </div>
             </button>
+        {/each}
         {/each}
 
         <div class="w-full transition-all duration-200"
@@ -297,10 +423,13 @@
             }}>
                 <HardDriveUploadIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => {
                 editMode = !editMode
             }}>
                 <PencilIcon size={18}/>
+            </button>
+            <button class="text-textcolor2 hover:text-green-500 cursor-pointer" title={language.createFolder} onclick={() => void createFolder()}>
+                <FolderPlusIcon size={18}/>
             </button>
         </div>
         <span class="text-textcolor2 text-sm">{language.quickPreset}</span>
