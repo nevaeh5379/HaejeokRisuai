@@ -31,12 +31,12 @@
         if (!chara) return [];
 
         const chat = chara.chats[chara.chatPage];
-        const bookmarkIds = chat.bookmarks ?? [];
+        const entries = chat.bookmarks ?? [];
         const map = messageMap; 
 
-        const messages = bookmarkIds
-            .map(id => {
-                const message = map.get(id); 
+        const messages = entries
+            .map(entry => {
+                const message = map.get(entry.messageId); 
                 if (!message) return null;
 
                 let speaker = null;
@@ -44,7 +44,7 @@
                     speaker = findCharacterbyId(message.saying);
                 }
                 
-                return { ...message, speaker };
+                return { ...message, bookmarkName: entry.name, speaker };
             })
             .filter(Boolean);
 
@@ -93,18 +93,23 @@
 
     async function editName(chatId: string) {
         const chat = chara.chats[chara.chatPage];
-        const newName = await alertInput(language.bookmarkAskNameOrCancel, [], chat.bookmarkNames?.[chatId] || '');
+        const bookmark = (chat.bookmarks ?? []).find(v => v.messageId === chatId);
+        if (!bookmark) return;
+
+        const newName = await alertInput(language.bookmarkAskNameOrCancel, [], bookmark.name || '');
         if (newName && newName.trim() !== '') {
-            chat.bookmarkNames[chatId] = newName;
+            bookmark.name = newName;
         }
     }
 
     function removeBookmark(chatId: string) {
         const chat = chara.chats[chara.chatPage];
-        const index = chat.bookmarks.indexOf(chatId);
+        const bookmarks = chat.bookmarks;
+        if (!bookmarks) return;
+
+        const index = bookmarks.findIndex(v => v.messageId === chatId);
         if (index > -1) {
-            chat.bookmarks.splice(index, 1);
-            delete chat.bookmarkNames[chatId];
+            bookmarks.splice(index, 1);
         }
     }
 
@@ -162,7 +167,7 @@
                             role="button"
                             tabindex="0"
                         >
-                            <span class="grow text-left truncate">{chara.chats[chara.chatPage].bookmarkNames?.[msg.chatId] || msg.data.substring(0, 30) + '...'}</span>
+                            <span class="grow text-left truncate">{msg.bookmarkName || msg.data.substring(0, 30) + '...'}</span>
                             <div class="shrink-0 flex items-center gap-2 ml-2">
                                 <button class="text-textcolor2 hover:text-blue-500" title={language.goToChat} onclick={(e) => { e.stopPropagation(); goToChat(msg.originalIndex); }}>
                                     <ArrowRightIcon size={20} />

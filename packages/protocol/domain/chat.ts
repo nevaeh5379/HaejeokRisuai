@@ -6,6 +6,12 @@ import type {
 import type { SerializableHypaV2Data } from "./hypaV2Data.ts";
 import type { SerializableHypaV3Data } from "./hypaV3Data.ts";
 
+/** Bookmark of one message. `name` is the display label; absent means unnamed. */
+export type ChatBookmark = {
+  messageId: string;
+  name?: string;
+};
+
 /** Persisted chat fields. Messages, branch mutations and UI loading state have separate owners. */
 export interface ChatFields {
   id: string;
@@ -32,8 +38,7 @@ export interface ChatFields {
   fmIndex?: number;
   hypaV3Data?: SerializableHypaV3Data;
   folderId?: string;
-  bookmarks?: string[];
-  bookmarkNames?: { [chatId: string]: string };
+  bookmarks?: ChatBookmark[];
   useLocallySetGlobalVariables?: boolean;
   GLGlobalVariables?: { [key: string]: string };
   onboardingDone?: boolean;
@@ -67,7 +72,6 @@ const FIELD_NAMES = {
   hypaV3Data: true,
   folderId: true,
   bookmarks: true,
-  bookmarkNames: true,
   useLocallySetGlobalVariables: true,
   GLGlobalVariables: true,
   onboardingDone: true,

@@ -1,8 +1,8 @@
 import type { Insertable } from "kysely";
-import type { ChatUpdate } from "../../../../../../packages/protocol/domain/chat.ts";
+import type { ChatBookmark, ChatUpdate } from "../../../../../../packages/protocol/domain/chat.ts";
 import type { ChatTables } from "../../../../../../packages/protocol/tables/chat.ts";
 import { splitLore } from "../../relationalCodec.ts";
-import { encodeJsonValue } from "../../jsonCodec.ts";
+import { canUseText, encodeJsonValue } from "../../jsonCodec.ts";
 
 //TODO 중복 선언?
 export const CHAT_RELATIONS = {
@@ -27,6 +27,19 @@ type RelationMappers = {
   ) => NonNullable<Rows[K]>;
 };
 
+/**
+ * Whether every bookmark fits the TEXT columns of `chat.bookmarks`.
+ * Values that do not are stored as one `chat.attributes` blob instead.
+ * Example usage: if (!bookmarksFitRows(patch.bookmarks)) storeAsAttribute();
+ */
+export function bookmarksFitRows(bookmarks: readonly ChatBookmark[]): boolean {
+  return bookmarks.every(
+    (bookmark) =>
+      canUseText(bookmark.messageId) &&
+      (bookmark.name == null || canUseText(bookmark.name)),
+  );
+}
+
 const relationMappers: RelationMappers = {
   localLore: (id, value) => {
     const rows: NonNullable<Rows["localLore"]> = splitLore(
@@ -45,13 +58,15 @@ const relationMappers: RelationMappers = {
     values.map((content, position) => ({ chat_id: id, position, content })),
   modules: (id, values) =>
     values.map((module_id, position) => ({ chat_id: id, position, module_id })),
-  bookmarks: (id, values, patch) =>
-    values.map((message_id, position) => ({
-      chat_id: id,
-      position,
-      message_id,
-      name: patch.bookmarkNames?.[message_id] ?? null,
-    })),
+  bookmarks: (id, values) =>
+    bookmarksFitRows(values)
+      ? values.map((bookmark, position) => ({
+          chat_id: id,
+          position,
+          message_id: bookmark.messageId,
+          name: bookmark.name ?? null,
+        }))
+      : [],
   scriptstate: (id, values) =>
     Object.entries(values).map(([key, value]) => {
       const row: Insertable<ChatTables["chat.script_state"]> = {

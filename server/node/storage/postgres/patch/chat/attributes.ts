@@ -3,6 +3,7 @@ import type { ChatUpdate } from "../../../../../../packages/protocol/domain/chat
 import type { ChatTables } from "../../../../../../packages/protocol/tables/chat.ts";
 import { CHAT_FIELD_STORAGE } from "../../relationalCodec.ts";
 import { encodeJsonValue } from "../../jsonCodec.ts";
+import { bookmarksFitRows } from "./relation.ts";
 
 export type Rows = Insertable<ChatTables["chat.attributes"]>[];
 export type Keys = (keyof ChatUpdate)[];
@@ -17,9 +18,9 @@ export const Attributes = {
       const storage = CHAT_FIELD_STORAGE[key];
       const storeAttribute =
         storage.kind === "attribute" ||
-        key === "bookmarkNames" ||
         (typeof value === "string" && value.includes("\0")) ||
         (Array.isArray(value) && !value.length) ||
+        (key === "bookmarks" && !bookmarksFitRows(patch.bookmarks)) ||
         (key === "scriptstate" && Object.keys(value).length === 0);
       if (storeAttribute) {
         attributes.push({

@@ -1,5 +1,5 @@
 import type { CharacterFields } from "@risuai/protocol/domain/character.ts";
-import type { ChatFields } from "@risuai/protocol/domain/chat.ts";
+import type { ChatBookmark, ChatFields } from "@risuai/protocol/domain/chat.ts";
 import type {
   ChatState,
   groupChat,
@@ -63,6 +63,29 @@ function legacyMessage(value: Message): LegacyMessage {
   };
 }
 
+/** Upstream keeps a message id list and a separate name map. */
+function toLegacyBookmarks(value?: readonly ChatBookmark[]) {
+  return {
+    bookmarks: value?.map((bookmark) => bookmark.messageId),
+    bookmarkNames:
+      value &&
+      Object.fromEntries(
+        value.map((bookmark) => [bookmark.messageId, bookmark.name ?? ""]),
+      ),
+  };
+}
+
+function fromLegacyBookmarks(
+  bookmarks?: readonly string[],
+  names?: { [messageId: string]: string },
+): ChatBookmark[] | undefined {
+  if (!bookmarks) return undefined;
+  return bookmarks.map((messageId) => ({
+    messageId,
+    name: names?.[messageId] || undefined,
+  }));
+}
+
 function legacyChat(
   value: ChatState,
   messages = (value.message ?? []).map(legacyMessage),
@@ -88,8 +111,7 @@ function legacyChat(
     hypaV3Data: value.hypaV3Data,
     folderId: value.folderId,
     lastDate: value.lastDate,
-    bookmarks: value.bookmarks,
-    bookmarkNames: value.bookmarkNames,
+    ...toLegacyBookmarks(value.bookmarks),
     useLocallySetGlobalVariables: value.useLocallySetGlobalVariables,
     GLGlobalVariables: value.GLGlobalVariables,
     onboardingDone: value.onboardingDone,
@@ -504,7 +526,14 @@ function applyChat(value: LegacyChat, current?: ChatState): ChatState {
       message.chatId ? messages.get(message.chatId) : undefined,
     ),
   );
-  return { ...current, ...legacyChat(value, nextMessages) };
+  const legacy = { ...legacyChat(value, nextMessages) };
+  delete legacy.bookmarks;
+  delete legacy.bookmarkNames;
+  return {
+    ...current,
+    ...legacy,
+    bookmarks: fromLegacyBookmarks(value.bookmarks, value.bookmarkNames),
+  };
 }
 function applyTriggers(
   values: readonly LegacyTrigger[],

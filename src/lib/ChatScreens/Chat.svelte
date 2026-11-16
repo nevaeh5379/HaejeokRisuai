@@ -534,7 +534,7 @@ import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode }
     let isBookmarked = $derived(
         characterStore.characters[targetCharacterIndex]
             ?.chats?.[targetChatIndex]
-            ?.bookmarks?.includes(characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.chatId) ?? false
+            ?.bookmarks?.some((bookmark) => bookmark.messageId === characterStore.characters[targetCharacterIndex]?.chats?.[targetChatIndex]?.message?.[idx]?.chatId) ?? false
     );
 
     async function toggleBookmark() {
@@ -550,22 +550,17 @@ import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode }
             chat.message[idx].chatId = messageId;
         }
 
-        chat.bookmarks ??= [];
-        chat.bookmarkNames ??= {};
-
-        const bookmarkIndex = chat.bookmarks.indexOf(messageId);
+        const bookmarks = chat.bookmarks ??= [];
+        const bookmarkIndex = bookmarks.findIndex((bookmark) => bookmark.messageId === messageId);
 
         if (bookmarkIndex > -1) {
-            chat.bookmarks.splice(bookmarkIndex, 1);
-            delete chat.bookmarkNames[messageId];
+            bookmarks.splice(bookmarkIndex, 1);
         } else {
-            chat.bookmarks.push(messageId);
-
             const msgSender = chat.message[idx]?.role === 'user' ? getUserName() : name;
-            const newName= await alertInput(language.bookmarkAskNameOrDefault, [], chat.bookmarkNames[messageId] || '');
+            const newName= await alertInput(language.bookmarkAskNameOrDefault, [], '');
 
             if (newName && newName.trim() !== '') {
-                chat.bookmarkNames[messageId] = newName;
+                bookmarks.push({ messageId, name: newName });
             } else {
                 let defaultName;
 
@@ -581,11 +576,11 @@ import type { Message, MessageGenerationInfo, StreamingDisplayOptimizationMode }
                 if (!defaultName) {
                     defaultName = messageContent.slice(0, 50) + '...';
                 }
-                chat.bookmarkNames[messageId] = msgSender + '| ' + defaultName;
+                bookmarks.push({ messageId, name: msgSender + '| ' + defaultName });
             }
         }
 
-        chat.bookmarks = [...chat.bookmarks];
+        chat.bookmarks = [...bookmarks];
     }
 
     function getMaxWidth(): string {

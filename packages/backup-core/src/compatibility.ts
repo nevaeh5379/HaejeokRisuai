@@ -115,17 +115,24 @@ function getBranchMessages(chat, branch, cloneValue) {
 }
 
 function remapBookmarks(chat, idMap) {
-  if (Array.isArray(chat.bookmarks)) {
-    chat.bookmarks = chat.bookmarks.map((id) => idMap.get(id)).filter(Boolean);
+  if (!Array.isArray(chat.bookmarks)) return;
+  const names =
+    chat.bookmarkNames && typeof chat.bookmarkNames === "object"
+      ? chat.bookmarkNames
+      : {};
+
+  const next = [];
+  for (const bookmark of chat.bookmarks) {
+    const oldId = typeof bookmark === "string" ? bookmark : bookmark?.messageId;
+    const messageId = idMap.get(oldId);
+    if (!messageId) continue;
+
+    const name = typeof bookmark === "string" ? names[oldId] : bookmark.name;
+    next.push(name ? { messageId, name } : { messageId });
   }
 
-  if (chat.bookmarkNames && typeof chat.bookmarkNames === "object") {
-    chat.bookmarkNames = Object.fromEntries(
-      Object.entries(chat.bookmarkNames)
-        .map(([id, value]) => [idMap.get(id), value])
-        .filter(([id]) => Boolean(id)),
-    );
-  }
+  chat.bookmarks = next;
+  delete chat.bookmarkNames;
 }
 
 function applyBranchScriptState(chat, branch, cloneValue) {

@@ -4,7 +4,10 @@ import {
   type CharacterFields,
   type CharacterUpdate,
 } from "../../../../packages/protocol/domain/character.ts";
-import type { ChatFields } from "../../../../packages/protocol/domain/chat.ts";
+import type {
+  ChatBookmark,
+  ChatFields,
+} from "../../../../packages/protocol/domain/chat.ts";
 import type { loreBook } from "../../../../packages/protocol/domain/database.ts";
 import type {
   CharactersTable,
@@ -87,6 +90,12 @@ function decodeJson(value?: any): any {
   return decodeJsonValue(value);
 }
 
+/**
+ * @deprecated
+ * @param value 
+ * @param seen 
+ * @returns 
+ */
 export function containsNul(value: unknown, seen = new Set<object>()): boolean {
   if (typeof value === "string") return value.includes("\0");
   if (!value || typeof value !== "object" || seen.has(value)) return false;
@@ -103,6 +112,21 @@ function relationalArray(source?: any, property?: any, attributes?: any): any {
     return [];
   }
   return value;
+}
+
+/** Chat bookmarks were a message id list plus a name map before ChatBookmark. */
+function legacyChatBookmarks(
+  bookmarks: unknown,
+  names: unknown,
+): ChatBookmark[] {
+  if (!Array.isArray(bookmarks)) return [];
+  const labels =
+    names && typeof names === "object" ? (names as Record<string, string>) : {};
+  return bookmarks.map((bookmark) =>
+    typeof bookmark === "string"
+      ? { messageId: bookmark, name: labels[bookmark] }
+      : (bookmark as ChatBookmark),
+  );
 }
 
 function extractScalarProperties(
@@ -437,6 +461,8 @@ function splitCharacter(row?: any): any {
 
 function splitChat(row?: any): any {
   const source: any = { ...row.data };
+  source.bookmarks = legacyChatBookmarks(source.bookmarks, source.bookmarkNames);
+  delete source.bookmarkNames;
   const attributes: any = [];
   const core: any = {
     id: row.id,
@@ -517,21 +543,12 @@ function splitChat(row?: any): any {
     }
   }
 
-  const unsafeBookmarkNames: any = containsNul(source.bookmarkNames);
-  if (unsafeBookmarkNames) {
-    attributes.push({
-      key: "bookmarkNames",
-      value: encodeJson(source.bookmarkNames),
-    });
-  }
   const bookmarks: any = relationalArray(source, "bookmarks", attributes).map(
-    (messageId?: any, position?: any) => ({
+    (bookmark: ChatBookmark, position: number) => ({
       chat_id: row.id,
       position,
-      message_id: messageId,
-      name: unsafeBookmarkNames
-        ? null
-        : (source.bookmarkNames?.[messageId] ?? null),
+      message_id: bookmark.messageId,
+      name: bookmark.name ?? null,
     }),
   );
   const memory: any = [];
@@ -557,7 +574,6 @@ function splitChat(row?: any): any {
     "modules",
     "scriptstate",
     "bookmarks",
-    "bookmarkNames",
     "hypaV2Data",
     "hypaV3Data",
     "localLore",
@@ -991,7 +1007,6 @@ export const CHAT_FIELD_STORAGE = {
   hypaV3Data: { kind: "relation", relation: "memory" },
   folderId: { kind: "column", column: "folder_id" },
   bookmarks: { kind: "relation", relation: "bookmarks" },
-  bookmarkNames: { kind: "relation", relation: "bookmarks" },
   activeBranchId: { kind: "branch" },
   globalAuthorNoteId: { kind: "attribute" },
   useLocallySetGlobalVariables: { kind: "attribute" },

@@ -70,13 +70,11 @@ function rebuildChatScalars(row: Partial<Selectable<ChatsTable>>): RebuiltChat {
 
 function applyChatBookmarks(
   bookmarks: readonly ChatBookmarkRow[],
-): Pick<ChatFields, "bookmarks" | "bookmarkNames"> {
-  return {
-    bookmarks: bookmarks.map((item) => item.message_id),
-    bookmarkNames: Object.fromEntries(
-      bookmarks.map((v): [string, string] => [v.message_id, v.name ?? ""]),
-    ),
-  };
+): NonNullable<ChatFields["bookmarks"]> {
+  return bookmarks.map((item) => ({
+    messageId: item.message_id,
+    name: item.name ?? undefined,
+  }));
 }
 
 function rebuildChatRows(
@@ -87,8 +85,7 @@ function rebuildChatRows(
 
   //TODO 리팩토링 필요
   if (relations.bookmarks != undefined && relations.bookmarks.length !== 0) {
-    ({ bookmarks: chat.bookmarks, bookmarkNames: chat.bookmarkNames } =
-      applyChatBookmarks(relations.bookmarks));
+    chat.bookmarks = applyChatBookmarks(relations.bookmarks);
   }
 
   chat.localLore = (relations.lore ?? []).map(rebuildLore);

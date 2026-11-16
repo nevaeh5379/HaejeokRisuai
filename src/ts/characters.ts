@@ -1402,6 +1402,18 @@ export async function changeChar(
     .catch((error) => console.error("Failed to load character modules", error));
 }
 
+/** Bookmarks follow the messages they point at. */
+function remapChatBookmarks(
+  chat: Pick<Chat, "bookmarks">,
+  idMap: ReadonlyMap<string, string>,
+): void {
+  if (!Array.isArray(chat.bookmarks)) return;
+  chat.bookmarks = chat.bookmarks.flatMap((bookmark) => {
+    const messageId = idMap.get(bookmark.messageId);
+    return messageId ? [{ ...bookmark, messageId }] : [];
+  });
+}
+
 export async function duplicateChat(
   characterIndex: number,
   chatIndex: number,
@@ -1481,20 +1493,7 @@ export async function duplicateChat(
     if (oldId && !idMap.has(oldId)) idMap.set(oldId, newId);
   }
 
-  if (Array.isArray(newChat.bookmarks)) {
-    newChat.bookmarks = newChat.bookmarks
-      .map((id) => idMap.get(id))
-      .filter((id): id is string => typeof id === "string");
-  }
-
-  if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
-    const nextBookmarkNames: { [key: string]: string } = {};
-    for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
-      const nextId = idMap.get(oldId);
-      if (nextId) nextBookmarkNames[nextId] = name;
-    }
-    newChat.bookmarkNames = nextBookmarkNames;
-  }
+  remapChatBookmarks(newChat, idMap);
 
   newChat.messagesLoaded = true;
   newChat.messagesFullyLoaded = true;
@@ -1734,20 +1733,7 @@ export async function duplicateCharacter(
 
     newChat.message = messages;
 
-    if (Array.isArray(newChat.bookmarks)) {
-      newChat.bookmarks = newChat.bookmarks
-        .map((id) => idMap.get(id))
-        .filter((id): id is string => typeof id === "string");
-    }
-
-    if (newChat.bookmarkNames && typeof newChat.bookmarkNames === "object") {
-      const nextBookmarkNames: { [key: string]: string } = {};
-      for (const [oldId, name] of Object.entries(newChat.bookmarkNames)) {
-        const nextId = idMap.get(oldId);
-        if (nextId) nextBookmarkNames[nextId] = name;
-      }
-      newChat.bookmarkNames = nextBookmarkNames;
-    }
+    remapChatBookmarks(newChat, idMap);
 
     newChat.messagesLoaded = true;
     newChat.messagesFullyLoaded = true;

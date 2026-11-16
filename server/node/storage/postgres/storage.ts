@@ -93,6 +93,7 @@ import {
   sql,
   Transaction,
   type ExpressionBuilder,
+  type Insertable,
   type PostgresPool,
   type Selectable,
 } from "kysely";
@@ -110,6 +111,37 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
   1,
   Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || "1000", 10) || 1000,
 );
+
+// PostgreSQL limits one query to 65,535 bind parameters.
+const MAX_SQL_QUERY_PARAMS = 60_000;
+
+/**
+ * Inserts rows in bounded batches; wide rows shrink the batch to stay within
+ * the query parameter limit.
+ * Example usage:
+ * await insertBatched(trx, "chat.modules", rows);
+ */
+async function insertBatched<TB extends keyof PostgresDatabase & string>(
+  trx: Transaction<PostgresDatabase>,
+  table: TB,
+  rows: readonly Insertable<PostgresDatabase[TB]>[],
+): Promise<void> {
+  const columns = Math.max(1, Object.keys(rows[0] ?? {}).length);
+  const batchRows = Math.max(
+    1,
+    Math.min(
+      BULK_INSERT_BATCH_ROWS,
+      Math.floor(MAX_SQL_QUERY_PARAMS / columns),
+    ),
+  );
+
+  for (let start = 0; start < rows.length; start += batchRows) {
+    await trx
+      .insertInto(table)
+      .values(rows.slice(start, start + batchRows))
+      .execute();
+  }
+}
 
 import type { CharacterTables } from "../../../../packages/protocol/tables/character.ts";
 import type { SystemTables } from "../../../../packages/protocol/tables/system.ts";
@@ -471,7 +503,8 @@ export class PostgresStorage implements ISqlStorage {
      * await storage.chat.update("chat-id", { name: "New Name" });
      */
     update: async (id: string, patch: ChatUpdate): Promise<void> => {
-      if (!Object.values(patch).some((value) => value !== undefined)) return;
+      // undefined는 생략된 필드로 취급합니다. 모든 필드가 undefined인 경우 건너 뜁니다.
+      if (Object.values(patch).every((value) => value === undefined)) return;
 
       await this.db.transaction().execute(async (trx) => {
         await lockStorageRevision(trx);
@@ -482,33 +515,7 @@ export class PostgresStorage implements ISqlStorage {
           .executeTakeFirst();
         if (!current) throw new Error(`Chat not found: ${id}`);
 
-        let update = patch;
-        const changesBookmarks =
-          patch.bookmarks !== undefined || patch.bookmarkNames !== undefined;
-        if (
-          changesBookmarks &&
-          (patch.bookmarks === undefined || patch.bookmarkNames === undefined)
-        ) {
-          const bookmarks = await trx
-            .selectFrom("chat.bookmarks")
-            .select(["message_id", "name", "position", "chat_id"])
-            .where("chat_id", "=", id)
-            .orderBy("position")
-            .execute();
-          const attributes = await trx
-            .selectFrom("chat.attributes")
-            .select(["key", "value"])
-            .where("chat_id", "=", id)
-            .where("key", "in", ["bookmarks", "bookmarkNames"])
-            .execute();
-          const saved = chat.rebuild({ id }, { bookmarks, attributes });
-          update = {
-            ...patch,
-            bookmarks: patch.bookmarks ?? saved.bookmarks ?? [],
-            bookmarkNames: patch.bookmarkNames ?? saved.bookmarkNames ?? {},
-          };
-        }
-        const encoded = chatPatch(id, update);
+        const encoded = chatPatch(id, patch);
         await beginRevision(trx, "chat:update");
         await trx
           .updateTable("chat.chats")
@@ -519,11 +526,9 @@ export class PostgresStorage implements ISqlStorage {
         for (const key of Object.keys(
           encoded.relations,
         ) as (keyof typeof encoded.relations)[]) {
-          const relation = CHAT_RELATIONS[key];
-          const rows = encoded.relations[key];
-          if ("memoryType" in relation && rows?.length) {
-            const memoryRows =
-              encoded.relations[key as "hypaV2Data" | "hypaV3Data"];
+          if (key === "hypaV2Data" || key === "hypaV3Data") {
+            const memoryRows = encoded.relations[key];
+            if (!memoryRows) continue;
             await trx
               .insertInto("chat.memory")
               .values(memoryRows)
@@ -535,28 +540,13 @@ export class PostgresStorage implements ISqlStorage {
               .execute();
             continue;
           }
-          let deletion = trx
-            .deleteFrom(relation.table)
-            .where("chat_id", "=", id);
-          if ("memoryType" in relation) {
-            deletion = deletion.where(
-              sql.ref("memory_type"),
-              "=",
-              relation.memoryType,
-            );
-          }
-          await deletion.execute();
-          if (!rows?.length) continue;
-          for (
-            let start = 0;
-            start < rows.length;
-            start += BULK_INSERT_BATCH_ROWS
-          ) {
-            await trx
-              .insertInto(relation.table)
-              .values(rows.slice(start, start + BULK_INSERT_BATCH_ROWS))
-              .execute();
-          }
+
+          const rows = encoded.relations[key];
+          if (!rows) continue;
+
+          const { table } = CHAT_RELATIONS[key];
+          await trx.deleteFrom(table).where("chat_id", "=", id).execute();
+          await insertBatched(trx, table, rows);
         }
         if (encoded.clearedAttributeKeys.length) {
           await trx
@@ -565,16 +555,10 @@ export class PostgresStorage implements ISqlStorage {
             .where("key", "in", encoded.clearedAttributeKeys)
             .execute();
         }
-        for (
-          let start = 0;
-          start < encoded.attributes.length;
-          start += BULK_INSERT_BATCH_ROWS
-        ) {
+        if (encoded.attributes.length) {
           await trx
             .insertInto("chat.attributes")
-            .values(
-              encoded.attributes.slice(start, start + BULK_INSERT_BATCH_ROWS),
-            )
+            .values(encoded.attributes)
             .onConflict((oc) =>
               oc
                 .columns(["chat_id", "key"])
@@ -1441,13 +1425,7 @@ export class PostgresStorage implements ISqlStorage {
           if (relation.table === "character.assets" && offset) {
             for (const row of rows) row.position += offset;
           }
-          const batchSize = Math.min(BULK_INSERT_BATCH_ROWS, 1000);
-          for (let start = 0; start < rows.length; start += batchSize) {
-            await trx
-              .insertInto(relation.table)
-              .values(rows.slice(start, start + batchSize))
-              .execute();
-          }
+          await insertBatched(trx, relation.table, rows);
         }
         if (encoded.attributeKeys.length) {
           await trx
