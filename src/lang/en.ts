@@ -2259,6 +2259,9 @@ export const languageEnglish = {
   removeFolderConfirm:
     "Do you really want to remove this folder? Modules inside will be moved to the root.",
   moveToFolder: "Move to Folder",
+  folderUncategorized: "Uncategorized",
+  presetFolderRemoveConfirm:
+    "Do you really want to remove this folder? Presets inside will become uncategorized.",
   removeFromFolder: "Remove from Folder",
   noFolder: "No Folder",
   ungrouped: "Ungrouped",
