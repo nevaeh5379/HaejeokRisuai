@@ -217,9 +217,9 @@
                             <!-- Left Info: Avatar + Details -->
                             <div class="flex items-center gap-2.5 min-w-0 flex-1">
                                 <!-- Avatar Thumbnail -->
-                                <div class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/50 flex items-center justify-center {persona.largePortrait ? 'h-13' : 'h-9'} shadow-xs">
+                                <div class="relative w-18 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/50 flex items-center justify-center {persona.largePortrait ? 'h-26' : 'h-18'} shadow-xs">
                                     {#if persona.icon === ''}
-                                        <UserIcon size={18} class="text-textcolor2/60" />
+                                        <UserIcon size={36} class="text-textcolor2/60" />
                                     {:else}
                                         {#await getCharImage(persona.icon, 'css', { thumbnail: true })}
                                             <div class="w-full h-full bg-darkbg animate-pulse"></div>
@@ -231,8 +231,8 @@
 
                                 <!-- Name & Note Info -->
                                 <div class="flex flex-col min-w-0 flex-1">
-                                    <div class="flex items-center gap-1.5">
-                                        <span class="font-bold text-xs sm:text-sm text-textcolor truncate leading-tight">
+                                    <div class="flex items-center gap-1.5 min-w-0">
+                                        <span class="font-bold text-lg sm:text-[21px] text-textcolor truncate leading-tight">
                                             {persona.name || 'New Persona'}
                                         </span>
                                         {#if isSelected}

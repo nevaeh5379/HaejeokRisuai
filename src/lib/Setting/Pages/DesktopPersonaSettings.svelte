@@ -239,12 +239,12 @@
               >
                 <!-- Avatar Thumbnail (Supports Large Portrait) -->
                 <div
-                  class="relative w-9 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/40 flex items-center justify-center {persona.largePortrait
-                    ? 'h-13'
-                    : 'h-9'}"
+                  class="relative w-18 rounded-md overflow-hidden bg-darkbg shrink-0 border border-darkborderc/40 flex items-center justify-center {persona.largePortrait
+                    ? 'h-26'
+                    : 'h-18'}"
                 >
                   {#if persona.icon === ""}
-                    <UserIcon size={18} class="text-textcolor2/60" />
+                    <UserIcon size={36} class="text-textcolor2/60" />
                   {:else}
                     {#await getCharImage( persona.icon, "css", { thumbnail: true } )}
                       <div class="w-full h-full bg-darkbg animate-pulse"></div>
@@ -260,7 +260,7 @@
                 <!-- Name & Note Info -->
                 <div class="flex flex-col min-w-0 flex-1">
                   <span
-                    class="font-bold text-xs text-textcolor truncate leading-tight"
+                    class="font-bold text-lg text-textcolor truncate leading-tight"
                   >
                     {persona.name || "New Persona"}
                   </span>
