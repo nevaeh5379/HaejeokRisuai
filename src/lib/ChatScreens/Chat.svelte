@@ -1519,11 +1519,11 @@
         {:else if settingsStore.state.theme === 'customHTML' && !blankMessage}
             {@render renderGuiHtmlPart(RenderGUIHtml(settingsStore.state.guiHTML))}
         {:else}
-            {@render senderIcon({rounded: settingsStore.state.roundIcons})}
-            <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
-                <div class="flexium items-center chat-width">
+            <span class="flex flex-col w-full max-w-full min-w-0 text-black {blankMessage ? '' : 'py-6 px-4 sm:px-8 bg-bgcolor border border-darkborderc rounded-lg'}">
+                <div class="flex items-center gap-3 min-w-0" class:mb-4={!blankMessage}>
+                    {@render senderIcon({rounded: settingsStore.state.roundIcons})}
                     {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && !blankMessage && renderedSourceMessage}
-                        <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
+                        <span class="text-lg sm:text-xl flex items-center text-textcolor">
                             <span>{renderedSourceMessage.role === 'char' ? 'Assistant' : 'User'}</span>
                             {#if !hideButtons}
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
@@ -1544,15 +1544,19 @@
                             {/if}
                         </span>
                     {:else if !blankMessage && !$HideIconStore}
-                        <div class="chat-width text-xl unmargin text-textcolor flex items-center">
-                            <span>{name}</span>
-                        </div>
+                        <span class="text-lg sm:text-xl text-textcolor truncate">{name}</span>
                     {/if}
                 </div>
-                {@render textBox()}
-                <div class="flex items-center chat-width mt-1">
-                    {@render genInfo()}
-                    {@render iconButtons()}
+                <div class={blankMessage ? '' : 'mb-3 leading-relaxed'}>
+                    {@render textBox()}
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 text-textcolor2 {blankMessage ? 'mt-1' : 'pt-2 border-t border-darkborderc/30'}">
+                    <div class="min-w-0">
+                        {@render genInfo()}
+                    </div>
+                    <div class="w-full sm:w-auto ml-auto">
+                        {@render iconButtons()}
+                    </div>
                 </div>
             </span>
         {/if}
