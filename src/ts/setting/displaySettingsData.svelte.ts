@@ -268,29 +268,21 @@ export const displayThemeSettingsItems: SettingItem[] = [
 export const displaySizeSettingsItems: SettingItem[] = [
   {
     id: "display.chatLimitSize",
-    type: "slider",
+    type: "select",
     labelKey: "chatLimitSize",
-    bindKey: "chatLimitSize",
-    options: {
-      min: -1,
-      max: 2,
-      step: 1,
-      customText: (value) => {
-        switch (value) {
-          case -1:
-            return "Unlimited";
-          case 0:
-            return "Small";
-          case 1:
-            return "Normal";
-          case 2:
-            return "Huge";
-          default:
-            return "Unlimited";
-        }
-      },
+    getValue: ({ db }) =>
+      db.chatLimitSize === -1 ? "-1" : db.chatLimitSize === 2 ? "2" : "1",
+    setValue: ({ db }, value: string) => {
+      db.chatLimitSize = Number(value);
     },
-    keywords: ["chat", "size", "limit"],
+    options: {
+      selectOptions: [
+        { value: "1", labelKey: "chatWidthStandard", label: "Standard" },
+        { value: "2", labelKey: "chatWidthWide", label: "Wide" },
+        { value: "-1", labelKey: "chatWidthFull", label: "No Limit" },
+      ],
+    },
+    keywords: ["chat", "size", "limit", "width"],
   },
   {
     id: "display.zoomsize",
