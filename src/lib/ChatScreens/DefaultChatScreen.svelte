@@ -1293,7 +1293,7 @@
                                 if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
                                     send()
                                     e.preventDefault()
-                                }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
+                                }else if(!settingsStore.state.sendWithEnter && e.ctrlKey){
                                     send()
                                     e.preventDefault()
                                 }

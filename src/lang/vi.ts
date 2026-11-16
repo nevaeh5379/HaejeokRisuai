@@ -1087,7 +1087,7 @@ export const languageVietnamese = {
   globalRegexScript: "Regex toàn cầu",
   accessibility: "Khả năng tiếp cận",
   sendWithEnter:
-    "Gửi bằng phím Enter(Shift + Enter chuyển sang gửi tin nhắn khi không kiểm tra.)",
+    "Gửi bằng phím Enter(Ctrl + Enter chuyển sang gửi tin nhắn khi không kiểm tra.)",
   fixedChatTextarea: "Cố định ở dưới khung chat",
   clickToEdit: "Bấm vào văn bản để chỉnh sửa",
   setNodePassword: "Đặt mật khẩu của bạn để bảo mật",

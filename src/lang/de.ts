@@ -1099,7 +1099,7 @@ export const languageGerman = {
   globalLoreBook: "Lore Buch",
   globalRegexScript: "Regex",
   accessibility: "Barrierefreiheit",
-  sendWithEnter: "Mit Enter senden(Umschalt + Enter beim Entpacken zu senden)",
+  sendWithEnter: "Mit Enter senden(Strg + Enter beim Entpacken zu senden)",
   fixedChatTextarea: "Unten im Chatfenster fixieren",
   clickToEdit: "Text zum Bearbeiten anklicken",
   setNodePassword: "Legen Sie Ihr Passwort für die Sicherheit fest",
