@@ -1147,12 +1147,12 @@
         </button>
     {:else if rerollIcon}
         {#if settingsStore.state.swipe}
-            {#if rerollPage}
-                <span class="flex items-center text-xs text-textcolor2 whitespace-nowrap" class:dyna-icon={rerollIcon === 'dynamic'}>{rerollPage.current}/{rerollPage.total}</span>
-            {/if}
             <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={() => rerollAtCurrentMessage('previous')}>
                 <ArrowLeft size={22}/>
             </button>
+            {#if rerollPage}
+                <span class="flex items-center text-xs text-textcolor2 whitespace-nowrap" class:dyna-icon={rerollIcon === 'dynamic'}>{rerollPage.current}/{rerollPage.total}</span>
+            {/if}
             <button class="flex items-center hover:text-blue-500 transition-colors button-icon-nextreroll" class:dyna-icon={rerollIcon === 'dynamic'} onclick={() => rerollAtCurrentMessage('next')}>
                 <ArrowRight size={22}/>
             </button>
@@ -1542,10 +1542,12 @@
                             <span>{name}</span>
                         </div>
                     {/if}
+                </div>
+                {@render textBox()}
+                <div class="flex items-center chat-width mt-1">
+                    {@render genInfo()}
                     {@render iconButtons()}
                 </div>
-                {@render genInfo()}
-                {@render textBox()}
             </span>
         {/if}
     </div>
