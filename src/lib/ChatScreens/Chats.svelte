@@ -23,6 +23,8 @@
         currentCharacter,
         onReroll = () => {},
         unReroll = () => {},
+        onNextReroll = () => {},
+        rerollPages = () => null,
         currentUsername,
         userIcon,
         loadPages = messages.length,
@@ -37,6 +39,8 @@
         currentCharacter: character|groupChat
         onReroll?: (messageIndex?: number) => void | Promise<void>
         unReroll?: (messageIndex?: number) => void | Promise<void>
+        onNextReroll?: (messageIndex?: number) => void | Promise<void>
+        rerollPages?: (messageIndex: number) => { current: number, total: number } | null
         currentUsername: string
         userIcon: string
         loadPages?: number
@@ -198,6 +202,8 @@
                         img: message.role === 'user' ? userImage : charImage,
                         onReroll: onReroll,
                         unReroll: unReroll,
+                        onNextReroll: onNextReroll,
+                        rerollPages: rerollPages,
                         rerollIcon,
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
