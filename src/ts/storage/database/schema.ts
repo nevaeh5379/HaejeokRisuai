@@ -471,6 +471,8 @@ export interface DatabaseSettings extends PresetSettings {
   /** Copied into new chats as their pinned toggle values. */
   defaultToggleValues?: Record<string, string>;
   togglePresets?: TogglePreset[];
+  /** `key=value` lines keyed by model id, added to that model's requests. */
+  modelAdditionalParams?: Record<string, string>;
   generationStatsPosition?: GenerationStatsPosition;
   chatLoadInitialPages?: number;
   chatLoadAdditionalPages?: number;

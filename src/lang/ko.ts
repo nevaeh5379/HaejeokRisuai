@@ -2196,6 +2196,8 @@ export const languageKorean = {
   popularityLevelDesc:
     "인기도는 이 캐릭터가 얼마나 인기 있는지를 나타냅니다. 여러가지 요소가 영향을 미칩니다.",
   additionalParams: "추가 파라미터",
+  modelAdditionalParamsDesc:
+    "한 줄에 하나씩. `key=value` / `key=json::{...}` / `header::Name=value` / `key={{none}}` 지원. 선택한 모델에 저장됩니다.",
   heightMode: "높이 모드",
   useAdvancedEditor: "고급 에디터 사용",
   noWaitForTranslate: "번역 기다리지 않기",
