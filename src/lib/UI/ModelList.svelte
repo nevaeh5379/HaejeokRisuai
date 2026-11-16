@@ -18,6 +18,7 @@
     noMargin?: boolean;
     inlineCard?: boolean;
     noneText?: string;
+    triggerClass?: string;
   }
 
   let { 
@@ -28,7 +29,8 @@
     excludesPrefix, 
     noMargin,
     inlineCard = false,
-    noneText
+    noneText,
+    triggerClass
   }: Props = $props();
 
   let openOptions = $state(false);
@@ -128,7 +130,7 @@
 <button 
   type="button"
   onclick={() => { openOptions = true; }}
-  class="drop-shadow-lg p-2.5 flex justify-center items-center rounded-md bg-darkbutton border-darkborderc border text-textcolor hover:bg-selected transition-colors text-sm cursor-pointer {noMargin ? '' : 'my-2'}"
+  class={triggerClass ?? `drop-shadow-lg p-2.5 flex justify-center items-center rounded-md bg-darkbutton border-darkborderc border text-textcolor hover:bg-selected transition-colors text-sm cursor-pointer ${noMargin ? '' : 'my-2'}`}
 >
-  {value ? getModelInfo(value)?.fullName || value : (noneText || language.none)}
+  <span class={triggerClass ? 'truncate' : 'contents'}>{value ? getModelInfo(value)?.fullName || value : (noneText || language.none)}</span>
 </button>

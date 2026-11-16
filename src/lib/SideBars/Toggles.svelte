@@ -21,7 +21,7 @@ import { getModuleToggles } from "src/ts/process/modules";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { pinTogglesToChat, snapshotToggleValues, unpinTogglesFromChat } from "src/ts/chatBindings";
     import { togglePresetsOpenStore } from "src/ts/stores.svelte";
-    import Button from "../UI/GUI/Button.svelte";
+    import { bindButtonClass, bindIconButtonClass, bindSetClass } from "./bindButton";
 
     interface Props {
         chara?: character|groupChat
@@ -217,15 +217,15 @@ import { getModuleToggles } from "src/ts/process/modules";
 {#if currentChat}
     <div class="text-[11px] text-textcolor2 mt-2 px-1">{language.toggleBindingLabel}</div>
     <div class="flex gap-1 items-stretch w-full">
-        <Button styled="outlined" size="sm" selected={isPinned}
-            className={`flex-1 min-w-0 justify-start gap-2 ${isPinned ? 'text-textcolor' : 'text-textcolor2'}`}
+        <button type="button"
+            class={`${bindButtonClass} flex-1 justify-center ${isPinned ? bindSetClass : ''}`}
             onclick={togglePin}>
-            <PinIcon size={16} class="shrink-0" />
+            <PinIcon size={16} />
             <span class="truncate">{isPinned ? language.togglePinnedLabel : language.togglePinLabel}</span>
-        </Button>
-        <Button styled="outlined" size="sm" className="shrink-0" onclick={() => togglePresetsOpenStore.set(true)}>
+        </button>
+        <button type="button" class={bindIconButtonClass} onclick={() => togglePresetsOpenStore.set(true)}>
             <FolderHeartIcon size={16} />
-        </Button>
+        </button>
     </div>
 {/if}
 

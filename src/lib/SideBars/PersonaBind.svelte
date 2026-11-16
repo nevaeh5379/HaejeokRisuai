@@ -4,7 +4,7 @@
     import { language } from "src/lang";
     import { openPersonaList, personaSelectCallback, selectedCharID } from "src/ts/stores.svelte";
     import { characterStore, personaStore } from "src/ts/stores/domain";
-    import Button from "../UI/GUI/Button.svelte";
+    import { bindButtonClass, bindSetClass, bindUnsetClass } from "./bindButton";
 
     let currentChat = $derived.by(() => {
         const character = characterStore.characters[$selectedCharID]
@@ -36,15 +36,14 @@
 </script>
 
 <div class="text-[11px] text-textcolor2 mt-2 px-1">{language.personaBindingLabel}</div>
-<Button
-    styled="outlined"
-    size="sm"
-    className={`w-full min-w-0 justify-start gap-2 ${boundPersona ? 'border-selected text-textcolor' : 'text-textcolor2'}`}
+<button
+    type="button"
+    class={`${bindButtonClass} w-full justify-start ${boundPersona ? bindSetClass : bindUnsetClass}`}
     onclick={openPicker}
 >
-    <ContactIcon size={16} class="shrink-0" />
+    <ContactIcon size={16} />
     <span class="truncate">{boundPersona ? (displayPersona?.name ?? 'User') : `${language.bindingInherit} (${displayPersona?.name ?? 'User'})`}</span>
     {#if displayPersona?.note}
         <span class="truncate text-xs opacity-60">({displayPersona.note})</span>
     {/if}
-</Button>
+</button>

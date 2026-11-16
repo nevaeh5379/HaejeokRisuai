@@ -48,6 +48,7 @@
   import ModelBind from "./ModelBind.svelte";
   import PromptBind from "./PromptBind.svelte";
   import PersonaBind from "./PersonaBind.svelte";
+  import { bindButtonClass } from "./bindButton";
   import { newChatBindingDefaults } from "src/ts/chatBindings";
   import { openModuleListStore } from "src/ts/stores.svelte";
   import { PackageIcon } from "@lucide/svelte";
@@ -760,10 +761,9 @@
         <PromptBind />
         <PersonaBind />
         <Toggles bind:chara noContainer />
-        <Button
-          styled="outlined"
-          size="sm"
-          className="w-full shrink-0 justify-center gap-2 mt-1"
+        <button
+          type="button"
+          class={`${bindButtonClass} w-full shrink-0 justify-center mt-1`}
           onclick={() => {
             const chat = characterStore.getCurrentChat();
             if (!chat) return;
@@ -771,9 +771,9 @@
             openModuleListStore.set(true);
           }}
         >
-          <PackageIcon size={16} class="shrink-0" />
+          <PackageIcon size={16} />
           <span class="truncate">{language.modules}</span>
-        </Button>
+        </button>
       {/if}
       {#if chara.type === "group"}
         <div class="flex mt-2 items-center">
