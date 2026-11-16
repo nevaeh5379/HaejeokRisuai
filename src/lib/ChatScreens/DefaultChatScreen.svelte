@@ -1231,6 +1231,7 @@
             <div
                 bind:this={chatScrollContainer}
                 class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+                class:nodeonly-standard={settingsStore.state.theme === ''}
                 onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             if(settingsStore.state.scrollNavButtonType !== 'off'){

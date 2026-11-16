@@ -598,6 +598,11 @@
         chat.bookmarks = [...chat.bookmarks];
     }
 
+    // The standard theme draws each message as a PocketRisu-style card.
+    let standardTheme = $derived(
+        !['mobilechat', 'cardboard', 'customHTML'].includes(settingsStore.state.theme)
+    )
+
     function getMaxWidth(): string {
         switch (settingsStore.state.chatLimitSize) {
             //Unlimited
@@ -614,7 +619,7 @@
             
             //Huge
             case 2:
-               return '1200px'
+               return '72rem'
             
             default:
                 return '100%'
@@ -1431,7 +1436,10 @@
      style:border-top={isLastMemory ? `${settingsStore.state.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
      onclickcapture={handleButtonTriggerWithin}
      onsubmitcapture={handleFormTriggerWithin}>
-    <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
+    <div class={standardTheme
+            ? "text-textcolor grow max-w-full sm:px-4 py-4"
+            : "text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start"}
+         style:max-width={standardTheme ? undefined : getMaxWidth()}>
         {#if settingsStore.state.theme === 'mobilechat' && !blankMessage}
             <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start w-full justify-start"}>
                 {#if role !== 'user'}
@@ -1518,12 +1526,12 @@
             </div>
         {:else if settingsStore.state.theme === 'customHTML' && !blankMessage}
             {@render renderGuiHtmlPart(RenderGUIHtml(settingsStore.state.guiHTML))}
-        {:else}
-            <span class="flex flex-col w-full max-w-full min-w-0 text-black {blankMessage ? '' : 'py-6 px-4 sm:px-8 bg-bgcolor border border-darkborderc rounded-lg'}">
-                <div class="flex items-center gap-3 min-w-0" class:mb-4={!blankMessage}>
+        {:else if !blankMessage}
+            <div class="flex flex-col w-full min-w-0 mx-auto py-6 px-4 sm:px-8 bg-bgcolor sm:rounded-lg" style:max-width={getMaxWidth()}>
+                <div class="flex items-center gap-3 mb-4">
                     {@render senderIcon({rounded: settingsStore.state.roundIcons})}
-                    {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && !blankMessage && renderedSourceMessage}
-                        <span class="text-lg sm:text-xl flex items-center text-textcolor">
+                    {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground" && renderedSourceMessage}
+                        <span class="text-lg sm:text-xl text-textcolor flex items-center">
                             <span>{renderedSourceMessage.role === 'char' ? 'Assistant' : 'User'}</span>
                             {#if !hideButtons}
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
@@ -1543,14 +1551,14 @@
                             }}><ArrowLeftRightIcon size="18" /></button>
                             {/if}
                         </span>
-                    {:else if !blankMessage && !$HideIconStore}
-                        <span class="text-lg sm:text-xl text-textcolor truncate">{name}</span>
+                    {:else if !$HideIconStore}
+                        <span class="text-lg sm:text-xl text-textcolor">{name}</span>
                     {/if}
                 </div>
-                <div class={blankMessage ? '' : 'mb-3 leading-relaxed'}>
+                <div class="mb-3 leading-relaxed">
                     {@render textBox()}
                 </div>
-                <div class="flex flex-wrap items-center justify-between gap-2 text-textcolor2 {blankMessage ? 'mt-1' : 'pt-2 border-t border-darkborderc/30'}">
+                <div class="flex flex-wrap items-center justify-between pt-2 border-t border-darkborderc text-textcolor2 gap-2">
                     <div class="min-w-0">
                         {@render genInfo()}
                     </div>
@@ -1558,7 +1566,14 @@
                         {@render iconButtons()}
                     </div>
                 </div>
-            </span>
+            </div>
+        {:else}
+            <div class="flex flex-col w-full min-w-0 {standardTheme ? 'max-w-3xl mx-auto px-4 sm:px-8' : ''}">
+                <div class="flexium items-center">
+                    {@render iconButtons()}
+                </div>
+                {@render textBox()}
+            </div>
         {/if}
     </div>
 </div>
