@@ -8,7 +8,7 @@
     import type { ChatAuxModelTask } from "src/ts/storage/database/schema";
     import { selectedCharID } from "src/ts/stores.svelte";
     import { characterStore, presetStore, settingsStore } from "src/ts/stores/domain";
-    import Button from "../UI/GUI/Button.svelte";
+    import { bindButtonClass, bindIconButtonClass, bindSetClass, bindUnsetClass } from "./bindButton";
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import ModelList from "../UI/ModelList.svelte";
 
@@ -28,6 +28,8 @@
     const modelName = (id: string | undefined) =>
         (id && (getModelInfo(id)?.shortName || id)) || language.none
     const inherit = (id: string | undefined) => `${language.bindingInherit} (${modelName(id)})`
+    const slotClass = (value: string | undefined) =>
+        `${bindButtonClass} w-full justify-start ${value ? bindSetClass : bindUnsetClass}`
 
     function ensureBinding() {
         const chat = characterStore.getCurrentChat()
@@ -74,14 +76,14 @@
 <div class="flex flex-col gap-1 mt-2">
     <div class="text-[11px] text-textcolor2 px-1">{language.modelBindingTitle}</div>
     {#key currentChat?.id}
-        <ModelList noMargin blankable value={shown.main} noneText={inherit(presetStore.state.aiModel)} onChange={(v) => setSlot('main', v)} />
+        <ModelList triggerClass={slotClass(shown.main)} blankable value={shown.main} noneText={inherit(presetStore.state.aiModel)} onChange={(v) => setSlot('main', v)} />
         <div class="flex gap-1 items-stretch">
             <div class="flex-1 min-w-0">
-                <ModelList noMargin blankable value={shown.sub} noneText={inherit(presetStore.state.subModel)} onChange={(v) => setSlot('sub', v)} />
+                <ModelList triggerClass={slotClass(shown.sub)} blankable value={shown.sub} noneText={inherit(presetStore.state.subModel)} onChange={(v) => setSlot('sub', v)} />
             </div>
-            <Button styled="outlined" size="sm" className="shrink-0" onclick={() => { auxExpanded = !auxExpanded }}>
+            <button type="button" class={bindIconButtonClass} title={language.seperateModelsForAxModels} onclick={() => { auxExpanded = !auxExpanded }}>
                 <ChevronDownIcon size={16} class={`transition-transform${auxExpanded ? ' rotate-180' : ''}`} />
-            </Button>
+            </button>
         </div>
         {#if auxExpanded}
             <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-selected">
@@ -89,7 +91,7 @@
                 {#if shown.separateAux}
                     {#each CHAT_AUX_MODEL_TASKS as task}
                         <div class="text-[11px] text-textcolor2 px-1">{auxLabels[task]()}</div>
-                        <ModelList noMargin blankable value={shown.aux[task]} noneText={language.submodel} onChange={(v) => setAuxSlot(task, v)} />
+                        <ModelList triggerClass={slotClass(shown.aux[task])} blankable value={shown.aux[task]} noneText={language.submodel} onChange={(v) => setAuxSlot(task, v)} />
                     {/each}
                 {/if}
             </div>

@@ -4,7 +4,7 @@
     import { openPresetList, presetSelectCallback, selectedCharID } from "src/ts/stores.svelte";
     import { characterStore, presetStore } from "src/ts/stores/domain";
     import { changeToPreset } from "src/ts/storage/presets/presetService";
-    import Button from "../UI/GUI/Button.svelte";
+    import { bindButtonClass, bindSetClass, bindUnsetClass } from "./bindButton";
 
     let currentChat = $derived.by(() => {
         const character = characterStore.characters[$selectedCharID]
@@ -41,12 +41,11 @@
 </script>
 
 <div class="text-[11px] text-textcolor2 mt-2 px-1">{language.promptBindingLabel}</div>
-<Button
-    styled="outlined"
-    size="sm"
-    className={`w-full min-w-0 justify-start gap-2 ${boundPreset ? 'border-selected text-textcolor' : 'text-textcolor2'}`}
+<button
+    type="button"
+    class={`${bindButtonClass} w-full justify-start ${boundPreset ? bindSetClass : bindUnsetClass}`}
     onclick={openPicker}
 >
-    <ScrollTextIcon size={16} class="shrink-0" />
+    <ScrollTextIcon size={16} />
     <span class="truncate">{boundPreset ? displayName : `${language.bindingInherit} (${displayName})`}</span>
-</Button>
+</button>
