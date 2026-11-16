@@ -115,6 +115,8 @@ jobs:
           echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
 
   publish-tauri:
+    # This fork only releases the Termux runtime.
+    if: false
     needs: prepare-release
     permissions:
       contents: write
@@ -341,6 +343,7 @@ jobs:
           gh release upload "$BUILD_TAG" "$ARCH_PACKAGE" --clobber
 
   publish-android:
+    if: false
     needs: prepare-release
     runs-on: ubuntu-latest
     permissions:
@@ -529,7 +532,7 @@ jobs:
         run: gh release upload "$BUILD_TAG" dist-termux/* --clobber
 
   publish-release:
-    needs: [prepare-release, publish-tauri, publish-android, publish-termux]
+    needs: [prepare-release, publish-termux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -537,6 +540,8 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Add platform download links to release notes
+        # Requires assets for every platform; this fork only has Termux.
+        if: false
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
@@ -579,6 +584,7 @@ jobs:
           fi
 
   publish-ppa:
+    if: false
     needs: [prepare-release, publish-release]
     uses: ./.github/workflows/ppa-publish.yml
     with:
