@@ -235,6 +235,36 @@ export function buildActivateStatement(
   };
 }
 
+/**
+ * Deletes a branch only when it is blank: not the root, not active, owning no
+ * messages and having no child branches. Sibling branches are never touched.
+ */
+export function buildDeleteEmptyStatement(
+  chatId: string,
+  branchId: string,
+): SqliteStatement {
+  return {
+    sql: `DELETE FROM chat_branches
+           WHERE chat_id = ? AND id = ? AND reason <> 'root'
+             AND NOT EXISTS (SELECT 1 FROM chat_active_branches active
+                              WHERE active.chat_id = ? AND active.branch_id = ?)
+             AND NOT EXISTS (SELECT 1 FROM message_branch_links links
+                              WHERE links.chat_id = ? AND links.origin_branch_id = ?)
+             AND NOT EXISTS (SELECT 1 FROM chat_branches child
+                              WHERE child.chat_id = ? AND child.parent_branch_id = ?)`,
+    bind: [
+      chatId,
+      branchId,
+      chatId,
+      branchId,
+      chatId,
+      branchId,
+      chatId,
+      branchId,
+    ],
+  };
+}
+
 const LEGACY_MIGRATION_NODE_BATCH_SIZE = 128;
 
 function nodeInsertStatements(

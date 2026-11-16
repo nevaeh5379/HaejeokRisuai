@@ -278,6 +278,21 @@ export class RemoteSqlReadClient {
     }
   }
 
+  async deleteEmptyChatBranch(
+    chatId: string,
+    branchId: string,
+  ): Promise<boolean> {
+    const response = await this.apiClient.request(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/delete-empty`,
+      { method: "POST", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await this.error(response, "SQL chat branch deletion failed");
+    }
+    const body: { deleted?: boolean } = await response.json();
+    return body.deleted === true;
+  }
+
   async listRecentChats<T>(
     limit?: number,
     activeChatId?: string,

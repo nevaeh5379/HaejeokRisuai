@@ -460,6 +460,7 @@ export interface DatabaseSettings extends PresetSettings {
   autoScrollToNewMessage?: boolean;
   alwaysScrollToNewMessage?: boolean;
   newMessageButtonStyle?: string;
+  scrollNavButtonType?: "four" | "two" | "off";
   generationStatsPosition?: GenerationStatsPosition;
   chatLoadInitialPages?: number;
   chatLoadAdditionalPages?: number;

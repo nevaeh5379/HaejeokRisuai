@@ -2122,6 +2122,37 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
+  async deleteEmptyChatBranch(chatId: unknown, branchId: unknown) {
+    assertId(chatId, "chatId");
+    assertId(branchId, "branchId");
+    let deleted = false;
+    await this.withTransaction(async (tx) => {
+      let req = tx.request();
+      req.input("deleteChatId", sql.NVarChar(450), chatId);
+      req.input("deleteBranchId", sql.NVarChar(450), branchId);
+      // Guarded delete: only a non-root, inactive branch without messages or
+      // child branches can be removed, so sibling rerolls are never affected.
+      await req.query(
+        `DELETE target FROM [chat].[branches] target
+          WHERE target.chat_id = @deleteChatId AND target.id = @deleteBranchId AND target.reason <> 'root'
+            AND NOT EXISTS (SELECT 1 FROM [chat].[active_branches] active
+                             WHERE active.chat_id = @deleteChatId AND active.branch_id = @deleteBranchId)
+            AND NOT EXISTS (SELECT 1 FROM [chat].[message_branch_links] links
+                             WHERE links.chat_id = @deleteChatId AND links.origin_branch_id = @deleteBranchId)
+            AND NOT EXISTS (SELECT 1 FROM [chat].[branches] child
+                             WHERE child.chat_id = @deleteChatId AND child.parent_branch_id = @deleteBranchId)`,
+      );
+      req = tx.request();
+      req.input("deleteChatId", sql.NVarChar(450), chatId);
+      req.input("deleteBranchId", sql.NVarChar(450), branchId);
+      const remaining = await req.query(
+        "SELECT 1 AS ok FROM [chat].[branches] WHERE chat_id = @deleteChatId AND id = @deleteBranchId",
+      );
+      deleted = remaining.recordset.length === 0;
+    });
+    return deleted;
+  }
+
   async loadPlugins(options: LoadPluginsOptions = {}) {
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;

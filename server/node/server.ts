@@ -6990,6 +6990,39 @@ app.post(
   },
 );
 
+app.post(
+  "/api/database-v2/chats/:chatId/branches/:branchId/delete-empty",
+  authenticatedRouteLimiter,
+  async (req: Request, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!postgresStorage.enabled) {
+      res
+        .status(404)
+        .send({ error: "SQL storage is not configured", code: "sql_disabled" });
+      return;
+    }
+    try {
+      const deleted = await databaseMutations.deleteEmptyChatBranch(
+        req.params.chatId,
+        req.params.branchId,
+        req.headers["x-risu-client-id"],
+      );
+      res.send({ deleted: deleted === true });
+    } catch (error) {
+      if (
+        error instanceof PostgresPayloadError ||
+        error instanceof StoragePayloadError
+      ) {
+        res
+          .status(400)
+          .send({ error: error.message, code: "invalid_chat_branch_request" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
 app.get(
   "/api/database-v2/recent-chats",
   authenticatedRouteLimiter,

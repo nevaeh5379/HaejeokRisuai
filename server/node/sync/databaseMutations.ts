@@ -21,6 +21,7 @@ type ServerMutationStorage = {
   ) => Promise<any>;
   createChatBranch: (input?: any) => Promise<any>;
   activateChatBranch: (chatId: string, branchId: string) => Promise<void>;
+  deleteEmptyChatBranch: (chatId: string, branchId: string) => Promise<boolean>;
   restoreRevision: (revisionId?: any) => Promise<any>;
   updateSetting: (key: string, value?: any) => Promise<any>;
   deleteSetting: (key: string) => Promise<any>;
@@ -71,6 +72,11 @@ type MutationArgs = {
   togglePlugin: Parameters<PluginToggleMutation>;
   createChatBranch: [input: any, rawSourceClientId: unknown];
   activateChatBranch: [
+    chatId: string,
+    branchId: string,
+    rawSourceClientId: unknown,
+  ];
+  deleteEmptyChatBranch: [
     chatId: string,
     branchId: string,
     rawSourceClientId: unknown,
@@ -331,6 +337,15 @@ function createDatabaseMutations({
         rawSourceClientId,
       }),
     },
+    deleteEmptyChatBranch: {
+      mutate: async (chatId, branchId) =>
+        await storage().deleteEmptyChatBranch(chatId, branchId),
+      describe: (_result, chatId, _branchId, rawSourceClientId) => ({
+        action: "chat-branch-delete",
+        details: { chatIds: [chatId], charactersChanged: false },
+        rawSourceClientId,
+      }),
+    },
     restoreRevision: {
       mutate: async (revisionId) => await storage().restoreRevision(revisionId),
       describe: (_result, _revisionId, rawSourceClientId) => ({
@@ -434,6 +449,8 @@ function createDatabaseMutations({
     togglePlugin: (...args) => execute("togglePlugin", ...args),
     createChatBranch: (...args) => execute("createChatBranch", ...args),
     activateChatBranch: (...args) => execute("activateChatBranch", ...args),
+    deleteEmptyChatBranch: (...args) =>
+      execute("deleteEmptyChatBranch", ...args),
     restoreRevision: (...args) => execute("restoreRevision", ...args),
     updateSetting: (...args) => execute("updateSetting", ...args),
     deleteSetting: (...args) => execute("deleteSetting", ...args),

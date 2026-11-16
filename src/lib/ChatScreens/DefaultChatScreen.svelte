@@ -1,13 +1,15 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, ExternalLinkIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon, CompassIcon, ChevronRightIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, ExternalLinkIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon, CompassIcon, ChevronRightIcon, ChevronsUpIcon, ChevronUpIcon, ChevronDownIcon, ChevronsDownIcon } from "@lucide/svelte";
     import { isTauriWindows } from "src/ts/platform";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase, onboardingModalStore } from "../../ts/stores.svelte";
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
     import Chat from "./Chat.svelte";
     import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
+    import type { SqlChatBranchSummary } from "../../ts/storage/sql/ISqlStorage";
+    import { scrollWithinContainer } from "./scrollWithin";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
     import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chat/runtimeState";
@@ -293,6 +295,82 @@
         chatsInstance?.scrollToLatestMessage();
     }
 
+    let showScrollNav = $state(false)
+    let scrollNavTimer: ReturnType<typeof setTimeout> | null = null
+
+    function bumpScrollNav() {
+        showScrollNav = true
+        if (scrollNavTimer) clearTimeout(scrollNavTimer)
+        scrollNavTimer = setTimeout(() => { showScrollNav = false }, 1500)
+    }
+
+    function getLoadedMessages(container: HTMLElement) {
+        return Array.from(container.querySelectorAll('[data-chat-index]'))
+            .map(el => ({ el: el as HTMLElement, idx: parseInt(el.getAttribute('data-chat-index')!) }))
+            .sort((a, b) => a.idx - b.idx)
+    }
+
+    // Top of the currently loaded messages; older pages are not force-loaded.
+    function scrollToLoadedTop() {
+        const container = chatScrollContainer
+        if (!container) return
+        const messages = getLoadedMessages(container)
+        if (messages.length === 0) return
+        scrollWithinContainer(messages[0].el, container, { block: 'start', behavior: 'smooth' })
+    }
+
+    function scrollToLoadedBottom() {
+        const container = chatScrollContainer
+        if (!container) return
+        const messages = getLoadedMessages(container)
+        if (messages.length === 0) return
+        scrollWithinContainer(messages[messages.length - 1].el, container, { block: 'end', behavior: 'smooth' })
+    }
+
+    function navigateMessage(direction: 'prev' | 'next') {
+        const container = chatScrollContainer
+        if (!container) return
+        const messages = getLoadedMessages(container)
+        if (messages.length === 0) return
+
+        const containerRect = container.getBoundingClientRect()
+        const threshold = 30
+
+        // The message currently at the top of the viewport
+        let current = messages[0]
+        for (const msg of messages) {
+            const rect = msg.el.getBoundingClientRect()
+            if (rect.bottom > containerRect.top + threshold) {
+                current = msg
+                break
+            }
+        }
+
+        const currentRect = current.el.getBoundingClientRect()
+
+        if (direction === 'prev') {
+            const topVisible = currentRect.top >= containerRect.top - threshold
+            if (!topVisible) {
+                scrollWithinContainer(current.el, container, { block: 'start', behavior: 'smooth' })
+            } else {
+                const prev = messages.find(m => m.idx === current.idx - 1)
+                if (prev) {
+                    scrollWithinContainer(prev.el, container, { block: 'start', behavior: 'smooth' })
+                }
+            }
+        } else {
+            const bottomVisible = currentRect.bottom <= containerRect.bottom + threshold
+            if (!bottomVisible) {
+                scrollWithinContainer(current.el, container, { block: 'end', behavior: 'smooth' })
+            } else {
+                const next = messages.find(m => m.idx === current.idx + 1)
+                if (next) {
+                    scrollWithinContainer(next.el, container, { block: 'start', behavior: 'smooth' })
+                }
+            }
+        }
+    }
+
     async function scrollToBeginning() {
         if(isScrollingToMessage) return
         const chat = currentCharacter?.chats?.[selectedChatIndex]
@@ -576,6 +654,7 @@
             createdAt: Date.now(),
         })
         activeChat.activeBranchId = branch.id
+        rerollBranchCache = null
         activeChat.message.splice(branchMessageIndex + 1)
         const absoluteLength = (activeChat.messageOffset ?? 0) + activeChat.message.length
         activeChat.messageTotal = absoluteLength
@@ -583,16 +662,32 @@
         return branch
     }
 
+    // Branch list reused between prev/next clicks. It is refetched whenever the
+    // active branch is unknown or navigation reaches either end of the list.
+    let rerollBranchCache: { chatId: string, branches: SqlChatBranchSummary[] } | null = null
+
+    async function listRerollBranches(chatId: string, refresh: boolean) {
+        if(!refresh && rerollBranchCache?.chatId === chatId) return rerollBranchCache.branches
+        const storage = await getSqlBranchStorage()
+        const branches = await storage.listChatBranches(chatId)
+        rerollBranchCache = { chatId, branches }
+        return branches
+    }
+
     async function resolveRerollAlternatives(
         activeChat: ChatSession,
         branchMessageIndex: number,
+        refresh = false,
     ) {
         if(!activeChat.id) return null
-        const storage = await getSqlBranchStorage()
-        const branches = await storage.listChatBranches(activeChat.id)
-        const forkMessageId = activeChat.message[branchMessageIndex]?.chatId
-        const activeId = activeChat.activeBranchId
+        let branches = await listRerollBranches(activeChat.id, refresh)
+        const findActiveId = () => activeChat.activeBranchId
             ?? branches.find((branch) => branch.reason === 'root')?.id
+        if(!refresh && !branches.some((branch) => branch.id === findActiveId())){
+            branches = await listRerollBranches(activeChat.id, true)
+        }
+        const forkMessageId = activeChat.message[branchMessageIndex]?.chatId
+        const activeId = findActiveId()
         const active = branches.find((branch) => branch.id === activeId)
         if(!activeId || !active) return null
         const sameFork = active.reason === 'reroll'
@@ -631,11 +726,15 @@
         const { branchMessageIndex, responseMessageIndex } = target
 
         const alternatives = await resolveRerollAlternatives(activeChat, branchMessageIndex)
+            .then((cached) => cached && cached.currentIndex < cached.branchIds.length - 1
+                ? cached
+                : resolveRerollAlternatives(activeChat, branchMessageIndex, true))
         if(!alternatives) return
         if(alternatives.currentIndex < alternatives.branchIds.length - 1){
             await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex + 1])
             return
         }
+        const previousBranchId = alternatives.branchIds[alternatives.currentIndex]
 
         const sourceResponse = responseMessageIndex === null
             ? undefined
@@ -658,8 +757,42 @@
         }
 
         openMenu = false
-        await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
+        const forkMessageId = msgs[branchMessageIndex]?.chatId
+        const branch = await createRerollBranch(activeChat, branchMessageIndex, alternatives.parentBranchId)
         await sendChatMain(false, selectedChar, currentChatPage)
+        if(forkMessageId){
+            await revertBlankReroll(selectedChar, activeChat.id, branch.id, previousBranchId, forkMessageId)
+        }
+    }
+
+    // A reroll that produced no text at all goes back to the reply that was
+    // showing and removes only its own empty branch. Partial output, stopped
+    // streams and inlaid error messages count as output and are kept.
+    async function revertBlankReroll(
+        characterIndex: number,
+        chatId: string,
+        branchId: string,
+        previousBranchId: string,
+        forkMessageId: string,
+    ) {
+        const chat = characterStore.characters[characterIndex]?.chats?.find((item) => item?.id === chatId)
+        if(!chat || chat.activeBranchId !== branchId) return
+        const forkIndex = chat.message.findIndex((message) => message.chatId === forkMessageId)
+        if(forkIndex < 0) return
+        const produced = chat.message.slice(forkIndex + 1)
+        if(produced.some((message) => message.data?.trim())) return
+
+        try {
+            const blankIds = produced.map((message) => message.chatId).filter(Boolean)
+            if(blankIds.length > 0) await messageStore.deleteMessages(chatId, blankIds)
+            if(await persistBranchSwitch(chat, previousBranchId)){
+                const storage = await getSqlBranchStorage()
+                await storage.deleteEmptyChatBranch?.(chatId, branchId)
+            }
+        } catch (error) {
+            console.error(error)
+        }
+        rerollBranchCache = null
     }
 
     async function unReroll(targetMessageIndex?: number) {
@@ -673,6 +806,9 @@
         if(!target) return
 
         const alternatives = await resolveRerollAlternatives(activeChat, target.branchMessageIndex)
+            .then((cached) => cached && cached.currentIndex > 0
+                ? cached
+                : resolveRerollAlternatives(activeChat, target.branchMessageIndex, true))
         if(!alternatives || alternatives.currentIndex <= 0) return
         await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex - 1])
     }
@@ -689,6 +825,7 @@
         if(!targetCharacter?.chaId || !targetChat?.id) return true
         targetChat.preventMessageCompaction = true
         messageInput = ''
+        const messageIdsBefore = new Set(targetChat.message.map((message) => message.chatId))
         const controller = new AbortController()
         abortControllers.set(targetChat.id, controller)
         let completed = false
@@ -708,6 +845,17 @@
                 abortControllers.delete(targetChat.id)
             }
             targetChat.preventMessageCompaction = false
+        }
+        if(!completed){
+            // A stopped or broken stream is only committed on completion, so
+            // keep whatever text arrived instead of losing it on reload.
+            const chat = targetCharacter.chats?.find((item) => item?.id === targetChat.id)
+            const partial = (chat?.message ?? []).filter((message) =>
+                message.role === 'char'
+                && message.chatId
+                && !messageIdsBefore.has(message.chatId)
+                && message.data?.trim())
+            if(partial.length > 0) await messageStore.commitMessages(targetChat.id, partial)
         }
         compactChatMessages(targetChat.id)
         return !completed || controller.signal.aborted
@@ -925,6 +1073,46 @@
     openMenu = false
 }}>
 
+    {#if settingsStore.state.scrollNavButtonType !== 'off' && (currentChatSession?.message?.length ?? 0) > 0}
+        <div
+            class="absolute right-3 bottom-16 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc/30 shadow-lg overflow-hidden transition-opacity duration-300"
+            class:opacity-0={!showScrollNav}
+            class:pointer-events-none={!showScrollNav}
+        >
+            {#if settingsStore.state.scrollNavButtonType !== 'two'}
+                <button
+                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                    onclick={() => { bumpScrollNav(); scrollToLoadedTop() }}
+                >
+                    <ChevronsUpIcon size={18} />
+                </button>
+                <div class="border-t border-darkborderc/30"></div>
+            {/if}
+            <button
+                class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                onclick={() => { bumpScrollNav(); navigateMessage('prev') }}
+            >
+                <ChevronUpIcon size={18} />
+            </button>
+            <div class="border-t border-darkborderc/30"></div>
+            <button
+                class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                onclick={() => { bumpScrollNav(); navigateMessage('next') }}
+            >
+                <ChevronDownIcon size={18} />
+            </button>
+            {#if settingsStore.state.scrollNavButtonType !== 'two'}
+                <div class="border-t border-darkborderc/30"></div>
+                <button
+                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                    onclick={() => { bumpScrollNav(); scrollToLoadedBottom() }}
+                >
+                    <ChevronsDownIcon size={18} />
+                </button>
+            {/if}
+        </div>
+    {/if}
+
     {#if showNewMessageButton}
         {#if (settingsStore.state.newMessageButtonStyle === 'bottom-center' || !settingsStore.state.newMessageButtonStyle)}
             <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
@@ -1021,6 +1209,9 @@
                 class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
                 onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
+            if(settingsStore.state.scrollNavButtonType !== 'off'){
+                bumpScrollNav()
+            }
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
             const reachedPaginationEdge = readingFromBeginning
                 ? Math.abs(chatTarget.scrollTop) < 100
