@@ -209,6 +209,20 @@ export const accessibilitySettingsItems: SettingItem[] = [
     },
   },
   {
+    id: "acc.scrollNavButtonType",
+    type: "select",
+    labelKey: "scrollNavButtonType",
+    bindKey: "scrollNavButtonType",
+    options: {
+      selectOptions: [
+        { value: "four", label: language.scrollButtonTypeFour },
+        { value: "two", label: language.scrollButtonTypeTwo },
+        { value: "off", label: language.scrollButtonTypeOff },
+      ],
+    },
+    keywords: ["scroll", "button", "navigate", "message"],
+  },
+  {
     id: "acc.hamburgerButtonBottom",
     type: "check",
     labelKey: "hamburgerButtonBottom",

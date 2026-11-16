@@ -78,6 +78,7 @@ const INDIRECT_CLIENT_VISIBLE_MUTATION_HELPERS = new Set([
 const CLIENT_VISIBLE_WRITE_METHODS = new Set([
   "activateChatBranch",
   "createChatBranch",
+  "deleteEmptyChatBranch",
   "deleteMessage",
   "deleteModule",
   "deleteSetting",

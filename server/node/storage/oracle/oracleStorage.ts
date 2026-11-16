@@ -3265,6 +3265,44 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async deleteEmptyChatBranch(chatId: unknown, branchId: unknown) {
+    this.assertEnabled();
+    assertId(chatId, "chatId");
+    assertId(branchId, "branchId");
+    const conn = await this.pool.getConnection();
+    try {
+      // Guarded delete: only a non-root, inactive branch without messages or
+      // child branches can be removed, so sibling rerolls are never affected.
+      await conn.execute(
+        `DELETE FROM chat_branches target
+          WHERE target.chat_id = :chatId AND target.id = :branchId AND target.reason <> 'root'
+            AND NOT EXISTS (SELECT 1 FROM chat_active_branches active
+                             WHERE active.chat_id = :chatId AND active.branch_id = :branchId)
+            AND NOT EXISTS (SELECT 1 FROM chat_message_branch_links links
+                             WHERE links.chat_id = :chatId AND links.origin_branch_id = :branchId)
+            AND NOT EXISTS (SELECT 1 FROM chat_branches child
+                             WHERE child.chat_id = :chatId AND child.parent_branch_id = :branchId)`,
+        { chatId, branchId },
+      );
+      const remaining = await fetchOne<BranchRow>(
+        conn,
+        `SELECT 1 AS ok FROM chat_branches WHERE chat_id = :1 AND id = :2`,
+        [chatId, branchId],
+      );
+      await conn.commit();
+      return !remaining;
+    } catch (error) {
+      try {
+        await conn.rollback();
+      } catch (e) {}
+      throw error;
+    } finally {
+      try {
+        await conn.close();
+      } catch (e) {}
+    }
+  }
+
   // ============================================================
   // 설정 로드: loadPlugins, loadPluginCustomStorage, ...
   // ============================================================

@@ -51,7 +51,11 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
           return commitChain as Promise<SqlCommitResult>;
         };
       }
-      if (prop === "createChatBranch" || prop === "activateChatBranch") {
+      if (
+        prop === "createChatBranch" ||
+        prop === "activateChatBranch" ||
+        prop === "deleteEmptyChatBranch"
+      ) {
         const orig = Reflect.get(target, prop, receiver);
         if (typeof orig === "function") {
           return async (...args: any[]) => {

@@ -1007,6 +1007,20 @@ export class WebSqliteStorage implements ISqlStorage {
     ]);
   }
 
+  async deleteEmptyChatBranch(
+    chatId: string,
+    branchId: string,
+  ): Promise<boolean> {
+    await this.runBranchTransaction([
+      sqliteBranch.buildDeleteEmptyStatement(chatId, branchId),
+    ]);
+    return !(await sqliteBranch.exists(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
+      branchId,
+    ));
+  }
+
   async listRecentChats(
     limit = 50,
     activeChatId?: string,

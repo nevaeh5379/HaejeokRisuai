@@ -873,6 +873,16 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     await this.readClient.activateChatBranch(chatId, branchId);
   }
 
+  async deleteEmptyChatBranch(
+    chatId: string,
+    branchId: string,
+  ): Promise<boolean> {
+    if (!(await this.ensureEnabled())) {
+      throw new Error("SQL storage is not enabled");
+    }
+    return await this.readClient.deleteEmptyChatBranch(chatId, branchId);
+  }
+
   async listRecentChats(
     limit?: number,
     activeChatId?: string,

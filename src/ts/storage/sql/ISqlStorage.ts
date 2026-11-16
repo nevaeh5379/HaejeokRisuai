@@ -256,6 +256,9 @@ export interface ISqlStorage {
     input: SqlCreateChatBranchInput,
   ): Promise<SqlChatBranchSummary>;
   activateChatBranch?(chatId: string, branchId: string): Promise<void>;
+  /** Removes a blank branch (non-root, inactive, no messages, no children).
+   * Resolves to whether the branch is gone; other branches are never deleted. */
+  deleteEmptyChatBranch?(chatId: string, branchId: string): Promise<boolean>;
   /** Lightweight recent-chat feed; avoids hydrating character/chat trees.
    * `activeChatId` pins the most recently opened chat ahead of the LIMIT and
    * lets it inherit character interaction time without boosting that

@@ -3721,6 +3721,30 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
+  async deleteEmptyChatBranch(chatId: unknown, branchId: unknown) {
+    this.assertEnabled();
+    assertId(chatId, "chatId");
+    assertId(branchId, "branchId");
+    // Guarded delete: only a non-root, inactive branch without messages or
+    // child branches can be removed, so sibling rerolls are never affected.
+    await this.pool.query(
+      `DELETE FROM chat.branches target
+        WHERE target.chat_id = $1 AND target.id = $2 AND target.reason <> 'root'
+          AND NOT EXISTS (SELECT 1 FROM chat.active_branches active
+                           WHERE active.chat_id = $1 AND active.branch_id = $2)
+          AND NOT EXISTS (SELECT 1 FROM chat.message_branch_links links
+                           WHERE links.chat_id = $1 AND links.origin_branch_id = $2)
+          AND NOT EXISTS (SELECT 1 FROM chat.branches child
+                           WHERE child.chat_id = $1 AND child.parent_branch_id = $2)`,
+      [chatId, branchId],
+    );
+    const remaining = await this.pool.query(
+      "SELECT 1 FROM chat.branches WHERE chat_id = $1 AND id = $2",
+      [chatId, branchId],
+    );
+    return remaining.rows.length === 0;
+  }
+
   async loadPlugins(options: LoadPluginsOptions = {}) {
     this.assertEnabled();
     const pluginId =

@@ -50,6 +50,7 @@ const runtimeScalarDefaults = {
   alwaysScrollToNewMessage: defaultBoolean(false),
   androidWidgetBotCount: defaultNumber(12),
   newMessageButtonStyle: defaultString("bottom-center"),
+  scrollNavButtonType: defaultPicklist(["four", "two", "off"], "four"),
   generationStatsPosition: defaultPicklist(
     ["bottom-right", "bottom-left", "top-right", "top-left", "off"],
     "bottom-right",
