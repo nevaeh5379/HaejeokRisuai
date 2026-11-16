@@ -6047,6 +6047,21 @@ class PostgresStorage extends SqlStorageBase {
           [payload.chatDeletes],
         );
       }
+      // A manifest is the character's full chat list in display order. Chat
+      // rows are only upserted when their own content changes, so a reorder
+      // would otherwise leave every other chat at its old position.
+      for (const manifest of payload.chatManifests ?? []) {
+        if (manifest.ids.length === 0) continue;
+        await client.query(
+          `UPDATE chat.chats AS ch
+              SET position = ordered.position - 1
+             FROM UNNEST($2::text[]) WITH ORDINALITY AS ordered(id, position)
+            WHERE ch.id = ordered.id
+              AND ch.character_id = $1
+              AND ch.position IS DISTINCT FROM ordered.position - 1`,
+          [manifest.characterId, manifest.ids],
+        );
+      }
       if (payload.messageDeletes) {
         await this.detachMessagesFromBranchGraph(
           client,
