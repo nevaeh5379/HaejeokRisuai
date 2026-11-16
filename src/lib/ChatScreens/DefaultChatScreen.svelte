@@ -187,6 +187,19 @@
     )
     let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
 
+    // A chat bound to a prompt preset makes that preset the active one while
+    // the chat is focused, so everything reading the active preset follows it.
+    $effect(() => {
+        if(!isFocusedPane) return
+        const presetId = currentChatSession?.bindedBotPreset
+        if(!presetId || presetId === presetStore.activeId) return
+        const index = presetStore.summaries.findIndex((preset) => preset.id === presetId)
+        if(index < 0) return
+        untrack(() => {
+            void import('src/ts/storage/presets/presetService').then(({ changeToPreset }) => changeToPreset(index))
+        })
+    })
+
     $effect(() => {
         // The "loading chat data" fallback must only ever be a transient
         // hydration state. If the selection or the active tab points at a
