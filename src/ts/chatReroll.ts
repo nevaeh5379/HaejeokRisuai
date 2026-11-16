@@ -1,4 +1,51 @@
 import type { Message } from "./storage/database/schema";
+import type { SqlChatBranchSummary } from "./storage/sql/ISqlStorage";
+
+export interface RerollAlternatives {
+  parentBranchId: string;
+  branchIds: string[];
+  currentIndex: number;
+}
+
+// The replies available at one fork message: the branch that was rerolled
+// first, followed by its reroll branches in creation order.
+export function findRerollAlternatives(
+  branches: SqlChatBranchSummary[],
+  activeBranchId: string | undefined,
+  forkMessageId: string | undefined,
+): RerollAlternatives | null {
+  const activeId =
+    activeBranchId ?? branches.find((branch) => branch.reason === "root")?.id;
+  const active = branches.find((branch) => branch.id === activeId);
+  if (!activeId || !active) return null;
+  const sameFork =
+    active.reason === "reroll" &&
+    (!active.forkMessageId ||
+      !forkMessageId ||
+      active.forkMessageId === forkMessageId);
+  const parentBranchId = sameFork
+    ? (active.parentBranchId ?? active.id)
+    : active.id;
+  const siblings = branches
+    .filter(
+      (branch) =>
+        branch.reason === "reroll" &&
+        branch.parentBranchId === parentBranchId &&
+        (!forkMessageId ||
+          !branch.forkMessageId ||
+          branch.forkMessageId === forkMessageId),
+    )
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const branchIds = [
+    parentBranchId,
+    ...siblings.map((branch) => branch.id).filter((id) => id !== parentBranchId),
+  ];
+  return {
+    parentBranchId,
+    branchIds,
+    currentIndex: Math.max(0, branchIds.indexOf(activeId)),
+  };
+}
 
 export interface RerollTarget {
   branchMessageIndex: number;

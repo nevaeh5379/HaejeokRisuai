@@ -22,7 +22,7 @@
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
-    import { resolveRerollTarget } from 'src/ts/chatReroll';
+    import { findRerollAlternatives, resolveRerollTarget } from 'src/ts/chatReroll';
     import { requireChatTargetFromIndexes } from 'src/ts/chatTarget';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -677,7 +677,29 @@
 
     // Branch list reused between prev/next clicks. It is refetched whenever the
     // active branch is unknown or navigation reaches either end of the list.
-    let rerollBranchCache: { chatId: string, branches: SqlChatBranchSummary[] } | null = null
+    let rerollBranchCache = $state.raw<{ chatId: string, branches: SqlChatBranchSummary[] } | null>(null)
+
+    // The n/m counter next to the swipe arrows needs the list up front.
+    $effect(() => {
+        const chatId = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]?.id
+        if(!settingsStore.state.swipe || !chatId || rerollBranchCache?.chatId === chatId) return
+        void listRerollBranches(chatId, true).catch(console.error)
+    })
+
+    function rerollPages(messageIndex: number) {
+        const chat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
+        const cache = rerollBranchCache
+        if(!chat?.id || cache?.chatId !== chat.id) return null
+        const target = resolveRerollTarget(chat.message, messageIndex)
+        if(!target) return null
+        const alternatives = findRerollAlternatives(
+            cache.branches,
+            chat.activeBranchId,
+            chat.message[target.branchMessageIndex]?.chatId,
+        )
+        if(!alternatives) return null
+        return { current: alternatives.currentIndex + 1, total: alternatives.branchIds.length }
+    }
 
     async function listRerollBranches(chatId: string, refresh: boolean) {
         if(!refresh && rerollBranchCache?.chatId === chatId) return rerollBranchCache.branches
@@ -693,35 +715,15 @@
         refresh = false,
     ) {
         if(!activeChat.id) return null
-        let branches = await listRerollBranches(activeChat.id, refresh)
-        const findActiveId = () => activeChat.activeBranchId
-            ?? branches.find((branch) => branch.reason === 'root')?.id
-        if(!refresh && !branches.some((branch) => branch.id === findActiveId())){
-            branches = await listRerollBranches(activeChat.id, true)
-        }
         const forkMessageId = activeChat.message[branchMessageIndex]?.chatId
-        const activeId = findActiveId()
-        const active = branches.find((branch) => branch.id === activeId)
-        if(!activeId || !active) return null
-        const sameFork = active.reason === 'reroll'
-            && (!active.forkMessageId || !forkMessageId || active.forkMessageId === forkMessageId)
-        const parentBranchId = sameFork
-            ? (active.parentBranchId ?? active.id)
-            : active.id
-        const siblings = branches
-            .filter((branch) => branch.reason === 'reroll'
-                && branch.parentBranchId === parentBranchId
-                && (!forkMessageId || !branch.forkMessageId || branch.forkMessageId === forkMessageId))
-            .sort((a, b) => a.createdAt - b.createdAt)
-        const branchIds = [
-            parentBranchId,
-            ...siblings.map((branch) => branch.id).filter((id) => id !== parentBranchId),
-        ]
-        return {
-            parentBranchId,
-            branchIds,
-            currentIndex: Math.max(0, branchIds.indexOf(activeId)),
-        }
+        const branches = await listRerollBranches(activeChat.id, refresh)
+        const alternatives = findRerollAlternatives(branches, activeChat.activeBranchId, forkMessageId)
+        if(alternatives || refresh) return alternatives
+        return findRerollAlternatives(
+            await listRerollBranches(activeChat.id, true),
+            activeChat.activeBranchId,
+            forkMessageId,
+        )
     }
 
     async function reroll(targetMessageIndex?: number) {
@@ -738,15 +740,8 @@
         if(!target) return
         const { branchMessageIndex, responseMessageIndex } = target
 
-        const alternatives = await resolveRerollAlternatives(activeChat, branchMessageIndex)
-            .then((cached) => cached && cached.currentIndex < cached.branchIds.length - 1
-                ? cached
-                : resolveRerollAlternatives(activeChat, branchMessageIndex, true))
+        const alternatives = await resolveRerollAlternatives(activeChat, branchMessageIndex, true)
         if(!alternatives) return
-        if(alternatives.currentIndex < alternatives.branchIds.length - 1){
-            await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex + 1])
-            return
-        }
         const previousBranchId = alternatives.branchIds[alternatives.currentIndex]
 
         const sourceResponse = responseMessageIndex === null
@@ -824,6 +819,22 @@
                 : resolveRerollAlternatives(activeChat, target.branchMessageIndex, true))
         if(!alternatives || alternatives.currentIndex <= 0) return
         await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex - 1])
+    }
+
+    // Moves to the next existing reply. It never generates a new one.
+    async function nextReroll(targetMessageIndex?: number) {
+        if(currentChatGenerating) return
+        const activeChat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
+        if(!activeChat) return
+        const target = resolveRerollTarget(activeChat.message, targetMessageIndex)
+        if(!target) return
+
+        let alternatives = await resolveRerollAlternatives(activeChat, target.branchMessageIndex)
+        if(!alternatives || alternatives.currentIndex >= alternatives.branchIds.length - 1){
+            alternatives = await resolveRerollAlternatives(activeChat, target.branchMessageIndex, true)
+        }
+        if(!alternatives || alternatives.currentIndex >= alternatives.branchIds.length - 1) return
+        await persistBranchSwitch(activeChat, alternatives.branchIds[alternatives.currentIndex + 1])
     }
 
     const abortControllers = new Map<string, AbortController>()
@@ -1571,6 +1582,8 @@
                 renderFromBeginning={readingFromBeginning}
                 onReroll={reroll}
                 unReroll={unReroll}
+                onNextReroll={nextReroll}
+                rerollPages={rerollPages}
                 currentCharacter={currentCharacter}
                 currentUsername={currentUsername}
                 userIcon={userIcon}
