@@ -51,7 +51,7 @@ sudo apt install haejeok-risuai
 ```
 
 ### termux 이용하여 서버 열기
-자세한 설명은 [Termux 배포 가이드](https://github.com/nevaeh5379/HaejeokRisuai/blob/main/deploy/termux/README.ko.md)를 참고해주세요.
+설치 및 기존 원본 서버 전환 방법은 [Termux 배포 가이드](deploy/termux/README.ko.md)를 참고해주세요.
 
 1. pkg 업데이트하기
 
@@ -59,7 +59,7 @@ sudo apt install haejeok-risuai
 
 2. 해적리스 설치하기
 
-`curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash`
+`curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash`
 
 이때 node.js과 postgresql 함께 설치하게 됩니다.
 

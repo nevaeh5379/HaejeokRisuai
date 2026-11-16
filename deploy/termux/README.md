@@ -16,7 +16,7 @@ The Termux runtime uses:
 Use a current Termux installation, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash
 ```
 
 The installer starts the server and opens `http://127.0.0.1:6001` when
@@ -27,6 +27,58 @@ The default data directory is:
 ```text
 ~/.local/share/haejeok-risuai
 ```
+
+## Switch an existing upstream server to this fork
+
+These steps assume a working native Termux installation from
+`nevaeh5379/HaejeokRisuai`. Only the installation/update source changes to
+`ioshn/HaejeokRisuai_c4`; the runtime setup stays the same. No Git clone or new
+database is needed.
+
+First confirm that this fork's latest public release contains
+`RisuAI-Termux-<tag>.tar.gz` and its matching `.sha256` file. Do not switch before
+the runtime is released.
+
+1. Stop the existing server and back up its data directory. Both commands must
+   succeed before continuing.
+
+   ```sh
+   haejeok stop
+   tar -czf "$HOME/haejeok-before-c4-$(date +%Y%m%d-%H%M%S).tar.gz" \
+     -C "${HAEJEOK_TERMUX_HOME:-$HOME/.local/share/haejeok-risuai}" .
+   ```
+
+   Keep this backup private: it includes credentials and PostgreSQL data. If you
+   use a custom `HAEJEOK_TERMUX_HOME`, keep the same value during the switch.
+   Back up any data paths configured outside that directory separately.
+
+2. Run **this fork's installer directly once**, not the existing
+   `haejeok update`, which still points to upstream.
+
+   ```sh
+   unset HAEJEOK_TERMUX_TAG
+   curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash
+   ```
+
+   Like the upstream installer, this also upgrades Termux packages. It reuses
+   your existing configuration, data, ports, and LAN settings, replaces the app
+   and `haejeok` command, then starts the services. If it reports an error such as
+   a PostgreSQL major-version mismatch, resolve that error without deleting or
+   reinitializing your existing data directory.
+
+3. Check the services and installed version, then open the existing address.
+
+   ```sh
+   haejeok status
+   haejeok version
+   haejeok open
+   ```
+
+   Confirm that your characters, chats, and assets are present. Future
+   `haejeok update` commands install this fork's latest release. The existing
+   home-screen shortcut still works. For startup failures, use `haejeok logs`
+   and `haejeok logs postgres`.
+
 ## Commands
 
 ```sh

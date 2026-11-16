@@ -51,7 +51,7 @@ sudo apt install haejeok-risuai
 ```
 
 ### Launching the server using Termux
-Please refer to the [Termux deployment guide](https://github.com/nevaeh5379/HaejeokRisuai/blob/main/deploy/termux/README.ko.md) for detailed instructions.
+See the [Termux deployment guide](deploy/termux/README.md) for installation and switching an existing upstream server.
 
 1. Update packages
 
@@ -59,7 +59,7 @@ Please refer to the [Termux deployment guide](https://github.com/nevaeh5379/Haej
 
 2. Install Haejeok-Risuai
 
-`curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash`
+`curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash`
 
 This will also install Node.js and PostgreSQL.
 

@@ -195,7 +195,7 @@ case "$command_name" in
   logs) show_logs "${1:-app}" ;;
   lan) set_lan_mode "${1:-}" ;;
   update)
-    curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash
     ;;
   doctor) run_doctor ;;
   version)

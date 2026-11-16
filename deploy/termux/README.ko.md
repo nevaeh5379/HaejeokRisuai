@@ -16,7 +16,7 @@ Termux 런타임은 다음을 사용합니다:
 최신 버전의 Termux에서 다음 명령어를 실행합니다:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deploy/termux/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash
 ```
 
 설치 프로그램이 서버를 시작하며, `termux-open-url`을 사용할 수 있는 경우 브라우저로 `http://127.0.0.1:6001`을 자동으로 엽니다.
@@ -26,6 +26,41 @@ curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/deplo
 ```text
 ~/.local/share/haejeok-risuai
 ```
+
+## 기존 원본 서버에서 이 포크로 전환
+
+`nevaeh5379/HaejeokRisuai`의 네이티브 Termux 설치 프로그램으로 정상 실행 중인 서버 기준입니다. 실행 구성은 그대로 두고 설치·업데이트 대상만 `ioshn/HaejeokRisuai_c4`로 변경합니다. Git 저장소를 새로 clone하거나 데이터베이스를 새로 만들 필요는 없습니다.
+
+먼저 이 포크의 최신 공개 릴리스에 `RisuAI-Termux-<태그>.tar.gz`와 같은 이름의 `.sha256` 파일이 있는지 확인하세요. 스크립트만 변경되고 런타임이 아직 릴리스되지 않았다면 전환하지 마세요.
+
+1. 기존 서버를 중지하고 데이터 디렉터리를 백업합니다. 두 명령이 모두 성공한 뒤 진행하세요.
+
+   ```sh
+   haejeok stop
+   tar -czf "$HOME/haejeok-before-c4-$(date +%Y%m%d-%H%M%S).tar.gz" \
+     -C "${HAEJEOK_TERMUX_HOME:-$HOME/.local/share/haejeok-risuai}" .
+   ```
+
+   백업에는 설정·인증 정보와 PostgreSQL 데이터가 포함되므로 비공개로 보관하세요. 별도 `HAEJEOK_TERMUX_HOME`을 사용했다면 전환할 때도 동일한 값을 유지하세요. `config.env`에서 데이터 경로를 해당 디렉터리 밖으로 바꿨다면 그 경로도 별도로 백업해야 합니다.
+
+2. 기존 `haejeok update` 대신 **포크의 설치 프로그램을 직접 한 번** 실행합니다. 기존 명령은 아직 원본 저장소를 가리킵니다.
+
+   ```sh
+   unset HAEJEOK_TERMUX_TAG
+   curl -fsSL https://raw.githubusercontent.com/ioshn/HaejeokRisuai_c4/main/deploy/termux/install.sh | bash
+   ```
+
+   원본 설치 프로그램과 동일하게 Termux 패키지 업데이트도 수행합니다. 기존 `config.env`와 저장된 데이터·포트·LAN 설정을 재사용하고 앱과 `haejeok` 명령을 교체한 뒤 자동으로 시작합니다. PostgreSQL 버전 불일치 등으로 실패하면 오류를 먼저 해결하고, 기존 데이터 디렉터리를 삭제하거나 초기화하지 마세요.
+
+3. 서비스와 설치 버전을 확인하고 기존 주소로 접속합니다.
+
+   ```sh
+   haejeok status
+   haejeok version
+   haejeok open
+   ```
+
+   기존 캐릭터·대화·에셋이 보이는지 확인하세요. 이후에는 `haejeok update`가 이 포크의 최신 릴리스를 설치합니다. 기존 홈 화면 바로가기도 그대로 사용합니다. 시작에 실패하면 `haejeok logs`와 `haejeok logs postgres`로 확인하세요.
 
 ## 명령어 안내
 

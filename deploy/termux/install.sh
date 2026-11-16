@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-REPO="nevaeh5379/HaejeokRisuAI"
+REPO="ioshn/HaejeokRisuai_c4"
 APP_ROOT="${HAEJEOK_TERMUX_HOME:-$HOME/.local/share/haejeok-risuai}"
 APP_DIR="$APP_ROOT/app"
 SAVE_DIR="$APP_ROOT/save"
