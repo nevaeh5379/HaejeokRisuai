@@ -535,11 +535,23 @@
         return sendMain(true)
     }
 
+    const pendingSends = new Set<string>()
+
     async function sendMain(continueResponse:boolean) {
-        let selectedChar = selectedCharacterIndex
-        if(currentChatGenerating){
+        const chatKey = currentChatSession?.id ?? `${selectedCharacterIndex}:${selectedChatIndex}`
+        if(pendingSends.has(chatKey) || currentChatGenerating){
             return
         }
+        pendingSends.add(chatKey)
+        try {
+            await prepareAndSend(continueResponse)
+        } finally {
+            pendingSends.delete(chatKey)
+        }
+    }
+
+    async function prepareAndSend(continueResponse:boolean) {
+        let selectedChar = selectedCharacterIndex
         if(readingFromBeginning){
             readingFromBeginning = false
             await tick()
