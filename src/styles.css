@@ -638,6 +638,13 @@ html[data-theme-type="light"]:not(
     color-scheme: dark;
   }
 
+  /* Plugin srcdoc documents declare no color-scheme. Browsers paint an
+     opaque white canvas behind an iframe whose color-scheme differs from the
+     embedded document's, so keep plugin frames on the document default. */
+  iframe[data-risu-plugin-frame] {
+    color-scheme: normal;
+  }
+
   select option,
   select optgroup {
     background-color: var(--color-darkbg, var(--risu-theme-darkbg, #21222c));

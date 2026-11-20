@@ -854,6 +854,10 @@ export class SandboxHost {
     this.iframe.style.border = "none";
 
     this.iframe.style.backgroundColor = "transparent";
+    // Marks the frame for the `color-scheme: normal` rule in styles.css. A
+    // stylesheet rule survives plugins replacing this element's whole style
+    // attribute (SafeElement.setStyleAttribute) to position their overlay.
+    this.iframe.setAttribute("data-risu-plugin-frame", "");
     this.iframe.setAttribute("allowTransparency", "true");
 
     this.iframe.sandbox.add("allow-scripts");
