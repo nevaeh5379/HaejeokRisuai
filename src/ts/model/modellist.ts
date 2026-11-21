@@ -17,6 +17,7 @@ import { GoogleModels } from "./providers/google";
 import { fetchNative } from "../globalApi.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { customV3ProviderMetaStore } from "../plugins/apiV3/providerStore";
+import { pocketRegistryStore } from "./pocketRegistry/state.svelte";
 
 // Re-export types for backwards compatibility
 export {
@@ -835,6 +836,7 @@ for (const element of LLMModels) {
     });
 }
 
+const BASE_STATIC_MODELS: LLMModel[] = [...LLMModels];
 const LLMModelsMap = new Map<string, LLMModel>();
 
 function indexLLMModels() {
@@ -847,7 +849,53 @@ function indexLLMModels() {
   }
 }
 
-indexLLMModels();
+export function applyPocketRegistryModels(registryModels: LLMModel[]) {
+  const dynamicEntries = LLMModels.filter(
+    (m) => !m.fromPocketRegistry && !BASE_STATIC_MODELS.includes(m),
+  );
+  LLMModels.length = 0;
+  LLMModels.push(...BASE_STATIC_MODELS);
+
+  const existingIds = new Set(LLMModels.map((m) => m.id));
+  for (const regModel of registryModels) {
+    if (!existingIds.has(regModel.id)) {
+      LLMModels.push(regModel);
+      existingIds.add(regModel.id);
+
+      if (
+        regModel.provider === LLMProvider.OpenAI &&
+        regModel.format === LLMFormat.OpenAICompatible &&
+        !existingIds.has(`${regModel.id}-response-api`)
+      ) {
+        const respId = `${regModel.id}-response-api`;
+        LLMModels.push({
+          ...regModel,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [...regModel.flags, LLMFlags.hasPrefill],
+          id: respId,
+          name: `${regModel.name} (Response API)`,
+          fullName: `${regModel.fullName ?? regModel.name} (Response API)`,
+          recommended: false,
+          fromPocketRegistry: true,
+        });
+        existingIds.add(respId);
+      }
+    }
+  }
+
+  for (const dyn of dynamicEntries) {
+    if (!existingIds.has(dyn.id)) {
+      LLMModels.push(dyn);
+      existingIds.add(dyn.id);
+    }
+  }
+
+  indexLLMModels();
+}
+
+pocketRegistryStore.init((models) => {
+  applyPocketRegistryModels(models);
+});
 
 export async function registerModelDynamic() {
   if (!settingsStore.state.dynamicModelRegistry) return;
@@ -1027,6 +1075,7 @@ export async function registerModelDynamic() {
 globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
+  void pocketRegistryStore.version;
   const db = settingsStore.state;
   if (!id)
     return {
@@ -1091,14 +1140,28 @@ export function getModelInfo(id?: string | null): LLMModel {
   if (id.startsWith("xcustom:::")) {
     const customModels = db?.customModels || [];
     const found = customModels.find((model) => model.id === id);
-    if (found)
+    if (found) {
+      let mappedProvider: LLMProvider = LLMProvider.AsIs;
+      if (found.providerGroup === "OpenAI") mappedProvider = LLMProvider.OpenAI;
+      else if (found.providerGroup === "Anthropic") mappedProvider = LLMProvider.Anthropic;
+      else if (found.providerGroup === "Google Cloud") mappedProvider = LLMProvider.GoogleCloud;
+      else if (found.providerGroup === "Vertex AI") mappedProvider = LLMProvider.VertexAI;
+      else if (found.providerGroup === "DeepSeek") mappedProvider = LLMProvider.DeepSeek;
+      else if (found.providerGroup === "DeepInfra") mappedProvider = LLMProvider.DeepInfra;
+      else if (found.providerGroup === "Ollama") mappedProvider = LLMProvider.Ollama;
+
       return {
         id: found.id,
         name: found.name,
         shortName: found.name,
-        fullName: found.name,
+        fullName: found.providerGroup
+          ? `${found.providerGroup} ${found.name}`.trim()
+          : found.name,
         internalID: found.internalId || found.name || found.id,
-        provider: LLMProvider.AsIs,
+        provider: mappedProvider,
+        providerGroup: found.providerGroup,
+        keyIdentifier: found.keyIdentifier,
+        endpoint: found.url || undefined,
         format: found.format,
         flags: found.flags,
         parameters: [
@@ -1110,10 +1173,15 @@ export function getModelInfo(id?: string | null): LLMModel {
           "min_p",
           "top_a",
           "top_k",
+          "reasoning_effort",
+          "reasoning_effort_none",
+          "reasoning_effort_xhigh",
           "thinking_tokens",
+          "verbosity",
         ],
         tokenizer: found.tokenizer,
       };
+    }
   }
 
   if (id.startsWith("pluginmodel:::")) {
@@ -1156,6 +1224,7 @@ export function getModelList(
     groupedByProvider?: boolean;
   } = {},
 ): LLMModel[] | GetModelListGroup[] {
+  void pocketRegistryStore.version;
   const models = arg.recommendedOnly
     ? LLMModels.filter((model) => model.recommended)
     : LLMModels;
@@ -1169,8 +1238,9 @@ export function getModelList(
     const groupMap = new Map<string, GetModelListGroup>();
     for (const model of models) {
       if (
-        model.provider === LLMProvider.AsIs ||
-        model.provider === LLMProvider.NanoGPT
+        !model.providerGroup &&
+        (model.provider === LLMProvider.AsIs ||
+          model.provider === LLMProvider.NanoGPT)
       ) {
         group.push({
           providerName: "@as-is",
@@ -1179,7 +1249,8 @@ export function getModelList(
         continue;
       }
 
-      const providerName = ProviderNames.get(model.provider) || "Unknown";
+      const providerName =
+        model.providerGroup || ProviderNames.get(model.provider) || "Unknown";
       let targetGroup = groupMap.get(providerName);
       if (!targetGroup) {
         targetGroup = {

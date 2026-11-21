@@ -321,9 +321,17 @@ function buildResponsesHeaders(
     "Content-Type": "application/json",
   };
 
-  if (arg.modelInfo?.keyIdentifier) {
+  if (!arg.key && arg.modelInfo?.keyIdentifier) {
+    const fallbackKey =
+      arg.modelInfo.keyIdentifier === "openrouter"
+        ? db.openrouterKey
+        : arg.modelInfo.keyIdentifier === "nanogpt"
+          ? db.nanogptKey
+          : arg.modelInfo.keyIdentifier === "ollama-cloud"
+            ? db.ollamaApiKey
+            : "";
     headers["Authorization"] =
-      "Bearer " + db.OaiCompAPIKeys[arg.modelInfo.keyIdentifier];
+      "Bearer " + (db.OaiCompAPIKeys?.[arg.modelInfo.keyIdentifier] || fallbackKey || "");
   }
   if (risuIdentify) {
     headers["X-Proxy-Risu"] = "RisuAI";

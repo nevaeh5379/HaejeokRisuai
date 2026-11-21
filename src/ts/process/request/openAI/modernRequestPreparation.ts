@@ -195,18 +195,38 @@ export async function prepareModernOpenAIRequest(
     body.service_tier = "flex";
   }
 
+  const keyByIdentifier: Record<string, string> = {
+    openrouter: db.openrouterKey,
+    nanogpt: db.nanogptKey,
+    "ollama-cloud": db.ollamaApiKey,
+    ...(db.OaiCompAPIKeys ?? {}),
+  };
+  if (!keyByIdentifier.openrouter && db.openrouterKey) {
+    keyByIdentifier.openrouter = db.openrouterKey;
+  }
+  if (!keyByIdentifier.nanogpt && db.nanogptKey) {
+    keyByIdentifier.nanogpt = db.nanogptKey;
+  }
+  if (!keyByIdentifier["ollama-cloud"] && db.ollamaApiKey) {
+    keyByIdentifier["ollama-cloud"] = db.ollamaApiKey;
+  }
+
   const headers = buildOpenAIRequestHeaders({
     aiModel,
-    key: arg.key,
+    key: arg.key || undefined,
     openAIKey: db.openAIKey,
     nanoGPTKey: db.nanogptKey,
     proxyKey: presetStore.state.proxyKey,
     openRouterKey: db.openrouterKey,
-    keyIdentifier: arg.modelInfo?.keyIdentifier,
-    keyByIdentifier: db.OaiCompAPIKeys,
+    keyIdentifier: arg.key ? undefined : arg.modelInfo?.keyIdentifier,
+    keyByIdentifier,
     nanoGPTProvider,
     risuIdentify: endpoint.risuIdentify,
   });
+  if (arg.modelInfo?.keyIdentifier === "openrouter") {
+    headers["X-Title"] = "RisuAI";
+    headers["HTTP-Referer"] = "https://risuai.xyz";
+  }
 
   body = applyAdditionalParameters(
     body,

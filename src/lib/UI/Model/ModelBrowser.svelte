@@ -17,7 +17,8 @@
     CheckIcon,
     LayersIcon,
     RotateCcwIcon,
-    ChevronDownIcon
+    ChevronDownIcon,
+    TrashIcon
   } from "@lucide/svelte";
   import { ColorSchemeTypeStore, getCurrentlyColorScheme, isLight } from 'src/ts/gui/colorscheme';
 
@@ -60,12 +61,18 @@
         models.push({
           id: cm.id,
           name: cm.name || "Custom Model",
-          fullName: `Custom: ${cm.name || cm.id}`,
+          fullName: cm.providerGroup
+            ? `${cm.providerGroup}: ${cm.name || cm.internalId || cm.id}`
+            : `Custom: ${cm.name || cm.id}`,
+          internalID: cm.internalId || cm.name || cm.id,
           provider: LLMProvider.AsIs,
-          flags: [],
-          format: 0 as any,
+          providerGroup: cm.providerGroup,
+          keyIdentifier: cm.keyIdentifier,
+          endpoint: cm.url || undefined,
+          flags: cm.flags ?? [],
+          format: cm.format ?? (0 as any),
           parameters: [],
-          tokenizer: 0 as any,
+          tokenizer: cm.tokenizer ?? (0 as any),
           recommended: true
         });
       }
@@ -80,10 +87,42 @@
     });
   });
 
-  // Providers list
+  // Providers list (including provider-assigned custom models)
   let providerGroups = $derived.by(() => {
-    return getModelList({ recommendedOnly: false, groupedByProvider: true });
+    const baseGroups = getModelList({ recommendedOnly: false, groupedByProvider: true });
+    const map = new Map<string, LLMModel[]>();
+    for (const g of baseGroups) {
+      if (g.providerName === '@as-is') continue;
+      map.set(g.providerName, [...g.models]);
+    }
+    if (settingsStore.state.customModels?.length > 0) {
+      for (const cm of settingsStore.state.customModels) {
+        if (!cm.providerGroup) continue;
+        const arr = map.get(cm.providerGroup) ?? [];
+        arr.push({
+          id: cm.id,
+          name: cm.name || "Custom Model",
+          provider: LLMProvider.AsIs,
+          providerGroup: cm.providerGroup,
+          flags: cm.flags ?? [],
+          format: cm.format ?? (0 as any),
+          parameters: [],
+          tokenizer: cm.tokenizer ?? (0 as any),
+        });
+        map.set(cm.providerGroup, arr);
+      }
+    }
+    return [...map.entries()].map(([providerName, models]) => ({ providerName, models }));
   });
+
+  let unassignedCustomCount = $derived(
+    (settingsStore.state.customModels ?? []).filter(cm => !cm.providerGroup).length
+  );
+
+  function removeCustomModel(modelId: string) {
+    if (!settingsStore.state.customModels) return;
+    settingsStore.state.customModels = settingsStore.state.customModels.filter(m => m.id !== modelId);
+  }
 
   function hasVision(model: LLMModel): boolean {
     return model.flags?.includes(LLMFlags.hasImageInput) ?? false;
@@ -92,10 +131,12 @@
   function hasThinking(model: LLMModel): boolean {
     if (!model.flags) return false;
     return model.flags.includes(LLMFlags.claudeThinking) ||
+      model.flags.includes(LLMFlags.claudeAdaptiveThinking) ||
       model.flags.includes(LLMFlags.geminiThinking) ||
       model.flags.includes(LLMFlags.deepSeekThinkingInput) ||
       model.flags.includes(LLMFlags.deepSeekThinkingOutput) ||
-      model.flags.includes(LLMFlags.deepSeekThinkingToggle);
+      model.flags.includes(LLMFlags.deepSeekThinkingToggle) ||
+      (model.parameters?.includes('reasoning_effort') ?? false);
   }
 
   function hasStreaming(model: LLMModel): boolean {
@@ -103,7 +144,7 @@
   }
 
   function isCustomOrPlugin(model: LLMModel): boolean {
-    return model.id.startsWith('custom') || model.id.startsWith('plugin') || model.provider === LLMProvider.AsIs;
+    return model.id.startsWith('xcustom:::') || model.id.startsWith('custom') || model.id.startsWith('plugin') || (!model.providerGroup && model.provider === LLMProvider.AsIs);
   }
 
   // Filtered models
@@ -114,9 +155,10 @@
     const query = searchQuery.trim().toLowerCase();
     if (query) {
       list = list.filter(m => {
-        const pName = ProviderNames.get(m.provider) || '';
+        const pName = m.providerGroup || ProviderNames.get(m.provider) || '';
         return m.name.toLowerCase().includes(query) ||
           (m.fullName && m.fullName.toLowerCase().includes(query)) ||
+          (m.internalID && m.internalID.toLowerCase().includes(query)) ||
           m.id.toLowerCase().includes(query) ||
           pName.toLowerCase().includes(query);
       });
@@ -140,7 +182,7 @@
         list = list.filter(m => m.id.startsWith('xcustom:::'));
       } else {
         list = list.filter(m => {
-          const pName = ProviderNames.get(m.provider) || 'Unknown';
+          const pName = m.providerGroup || ProviderNames.get(m.provider) || 'Unknown';
           return pName === selectedProvider || (selectedProvider === 'Plugins' && m.id.startsWith('plugin'));
         });
       }
@@ -160,11 +202,11 @@
       list = list.filter(m => m.recommended);
     }
 
-    // Custom models are separated out of the regular provider flow
+    // Unassigned custom models form their own section; provider-assigned custom models stay with their provider
     const customModelsDisplayed = (selectedProvider === 'all' || selectedProvider === 'custom')
-      ? list.filter(m => m.id.startsWith('xcustom:::'))
+      ? list.filter(m => m.id.startsWith('xcustom:::') && (!m.providerGroup || selectedProvider === 'custom'))
       : [];
-    list = list.filter(m => !m.id.startsWith('xcustom:::'));
+    list = list.filter(m => !(m.id.startsWith('xcustom:::') && (!m.providerGroup || selectedProvider === 'custom')));
 
     return { main: list, custom: customModelsDisplayed };
   });
@@ -176,6 +218,7 @@
   function getProviderDisplayName(model: LLMModel): string {
     if (model.id.startsWith('plugin')) return 'Plugin';
     if (model.id.startsWith('horde:::')) return 'Horde';
+    if (model.providerGroup) return model.providerGroup;
     if (model.id.startsWith('xcustom:::')) return language.customModels || "Custom Models";
     return ProviderNames.get(model.provider) || 'AI';
   }
@@ -437,7 +480,9 @@
                         <span class="truncate text-[13px] font-semibold leading-tight text-textcolor" title={model.fullName || model.name}>
                           {model.name}
                         </span>
-                        {#if model.recommended}
+                        {#if model.id.startsWith('xcustom:::')}
+                          <span class="rounded bg-selected/60 px-1 py-0.5 text-[9px] font-bold text-textcolor shrink-0">Custom</span>
+                        {:else if model.recommended}
                           <span title="Recommended" class="inline-flex shrink-0 items-center text-textcolor2/70">
                             <SparkleIcon size={11} />
                           </span>
@@ -460,6 +505,19 @@
                         <span class="inline-flex rounded p-1" title="Streaming" aria-label="Streaming">
                           <ZapIcon size={11} />
                         </span>
+                      {/if}
+                      {#if model.id.startsWith('xcustom:::')}
+                        <button
+                          class="rounded p-1 text-textcolor2/40 transition-colors hover:text-draculared"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            removeCustomModel(model.id);
+                          }}
+                          title="Delete Custom Model"
+                          aria-label="Delete Custom Model"
+                        >
+                          <TrashIcon size={13} />
+                        </button>
                       {/if}
                       <button
                         class="rounded p-1 text-textcolor2/35 transition-colors hover:text-textcolor"

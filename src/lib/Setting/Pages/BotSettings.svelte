@@ -46,6 +46,8 @@
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import ModelBrowser from "src/lib/UI/Model/ModelBrowser.svelte";
     import GoogleSafetySettings from "./GoogleSafetySettings.svelte";
+    import PocketRegistryControls from "./Model/PocketRegistryControls.svelte";
+    import { pocketRegistryStore } from "src/ts/model/pocketRegistry/state.svelte";
 
     let modelTab = $state<'main' | 'sub' | 'provider'>('main');
     let providerModelRole = $state<'main' | 'sub' | 'memory' | 'translate' | 'emotion' | 'otherAx'>('main');
@@ -235,7 +237,40 @@
     })
 
     let usesOllamaLocal = $derived(configuredModelIds.includes('ollama-hosted'))
-    let usesOllamaCloud = $derived(configuredModelIds.includes('ollama-cloud'))
+    let usesOllamaCloud = $derived(configuredModelIds.some((id) => id === 'ollama-cloud' || id.startsWith('pocket_ollama-cloud:')))
+
+    let activeKeyIdentifiers = $derived.by(() => {
+        const set = new Set<string>();
+        for (const mId of configuredModelIds) {
+            if (!mId) continue;
+            const info = getModelInfo(mId);
+            if (info?.keyIdentifier) set.add(info.keyIdentifier);
+        }
+        return set;
+    });
+
+    let oaiCompRegistryProviders = $derived(
+        pocketRegistryStore.providers.filter((p) => !p.usesDedicatedSettingKey && !!p.keyIdentifier)
+    );
+
+    let addCustomProviderTarget = $state('openai');
+    let openAddFormSignal = $state(0);
+
+    function openAddModelForProvider(providerId: string) {
+        addCustomProviderTarget = providerId;
+        openAddFormSignal += 1;
+    }
+
+    function getOaiCompApiKey(keyId: string): string {
+        return settingsStore.state.OaiCompAPIKeys?.[keyId] ?? '';
+    }
+
+    function setOaiCompApiKey(keyId: string, val: string) {
+        settingsStore.state.OaiCompAPIKeys = {
+            ...(settingsStore.state.OaiCompAPIKeys ?? {}),
+            [keyId]: val,
+        };
+    }
 
     let activeProviders = $derived.by(() => {
         const set = new Set<LLMProvider>();
@@ -263,8 +298,8 @@
     let usesNovelList = $derived(isProviderActive(LLMProvider.NovelList));
     let usesCohere = $derived(isProviderActive(LLMProvider.Cohere));
     let usesMancer = $derived(configuredModelIds.some((modelId) => modelId.startsWith('mancer')));
-    let usesOpenRouter = $derived(configuredModelIds.includes('openrouter'));
-    let usesNanoGPT = $derived(configuredModelIds.includes('nanogpt'));
+    let usesOpenRouter = $derived(configuredModelIds.includes('openrouter') || activeKeyIdentifiers.has('openrouter'));
+    let usesNanoGPT = $derived(configuredModelIds.includes('nanogpt') || activeKeyIdentifiers.has('nanogpt'));
     let usesReverseProxy = $derived(configuredModelIds.includes('reverse_proxy'));
     let usesHorde = $derived(configuredModelIds.some((modelId) => modelId.startsWith('horde')));
     let usesKobold = $derived(configuredModelIds.includes('kobold'));
@@ -311,6 +346,10 @@
             { key: 'ooba', inUse: usesOoba },
             { key: 'plugin', inUse: usesCustomPlugin },
             { key: 'echo', inUse: usesEcho },
+            ...oaiCompRegistryProviders.map((rp) => ({
+                key: `reg_${rp.id}`,
+                inUse: activeKeyIdentifiers.has(rp.keyIdentifier!),
+            })),
         ];
         const allOpen = providers.every(p => isProviderOpen(p.key, p.inUse));
         for (const p of providers) {
@@ -427,6 +466,11 @@
                 </button>
             </div>
         {/if}
+
+        <PocketRegistryControls
+            initialProviderId={addCustomProviderTarget}
+            {openAddFormSignal}
+        />
 
         {#if modelTab === 'main'}
             <!-- Main Model Inline Browser & Quick Options -->
@@ -1269,6 +1313,55 @@
                             </div>
                         {/if}
                     </div>
+
+                    <!-- PocketRisu Registry Gateway / OpenAI-Compatible Providers -->
+                    {#each oaiCompRegistryProviders as regProv (regProv.id)}
+                        {@const keyId = regProv.keyIdentifier!}
+                        {@const inUse = activeKeyIdentifiers.has(keyId)}
+                        {@const cardKey = `reg_${regProv.id}`}
+                        <div class="rounded-xl border border-darkborderc overflow-hidden bg-darkbg/25 transition-all">
+                            <button
+                                class="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-darkbutton/40 transition-colors text-left cursor-pointer"
+                                onclick={() => toggleProvider(cardKey, inUse)}
+                            >
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-sm text-textcolor">{regProv.providerGroup}</span>
+                                    {#if inUse}
+                                        <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-selected text-textcolor">In Use</span>
+                                    {/if}
+                                </div>
+                                <span class="text-textcolor2">
+                                    {#if isProviderOpen(cardKey, inUse)}<ChevronUpIcon size={16} />{:else}<ChevronDownIcon size={16} />{/if}
+                                </span>
+                            </button>
+                            {#if isProviderOpen(cardKey, inUse)}
+                                <div class="px-3.5 pb-3.5 pt-1 border-t border-darkborderc/40 flex flex-col gap-2">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs text-textcolor2">{regProv.providerGroup} {language.apiKey}</span>
+                                        <button
+                                            class="text-[11px] text-textcolor2 hover:text-textcolor flex items-center gap-0.5 cursor-pointer"
+                                            onclick={() => openAddModelForProvider(regProv.id)}
+                                        >
+                                            <PlusIcon size={11} /> 커스텀 모델 추가
+                                        </button>
+                                    </div>
+                                    <TextInput
+                                        hideText={settingsStore.state.hideApiKey}
+                                        marginBottom={false}
+                                        size={"sm"}
+                                        placeholder="sk-..."
+                                        value={getOaiCompApiKey(keyId)}
+                                        oninput={(e) => setOaiCompApiKey(keyId, e.currentTarget.value)}
+                                    />
+                                    {#if regProv.defaultEndpointUrl}
+                                        <span class="text-[11px] text-textcolor2/70 font-mono truncate" title={regProv.defaultEndpointUrl}>
+                                            Endpoint: {regProv.defaultEndpointUrl}
+                                        </span>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
+                    {/each}
                 </div>
             </div>
         {/if}

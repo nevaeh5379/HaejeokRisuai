@@ -96,8 +96,8 @@ function prepareProviderExecutionContext<
     const customModel = settings.customModels?.find(
       (item) => item.id === aiModel,
     );
-    customURL = customModel?.url;
-    key = customModel?.key;
+    customURL = customModel?.url || undefined;
+    key = customModel?.key || undefined;
   }
 
   return {

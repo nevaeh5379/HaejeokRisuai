@@ -394,6 +394,8 @@ export interface DatabaseSettings extends PresetSettings {
     name: string;
     params: string;
     flags: LLMFlags[];
+    providerGroup?: string;
+    keyIdentifier?: string;
   }[];
   igpPrompt: string;
   useTokenizerCaching: boolean;

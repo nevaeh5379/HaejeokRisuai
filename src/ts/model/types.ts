@@ -73,6 +73,7 @@ export interface LLMModel {
   fullName?: string;
   internalID?: string;
   provider: LLMProvider;
+  providerGroup?: string;
   flags: LLMFlags[];
   format: LLMFormat;
   parameters: LLMParameter[];
@@ -80,6 +81,7 @@ export interface LLMModel {
   recommended?: boolean;
   keyIdentifier?: string;
   endpoint?: string;
+  fromPocketRegistry?: boolean;
 }
 
 export const ProviderNames = new Map<LLMProvider, string>([

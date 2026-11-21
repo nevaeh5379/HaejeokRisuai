@@ -50,7 +50,12 @@
                     openedModels = new Set(openedModels)
                 }}
             >
-                <span class="text-left">{model.name || "Unnamed"}</span>
+                <span class="text-left">
+                    {#if model.providerGroup}
+                        <span class="text-xs px-1.5 py-0.5 mr-1.5 rounded bg-textcolor/10 text-textcolor2">{model.providerGroup}</span>
+                    {/if}
+                    {model.name || "Unnamed"}
+                </span>
                 <div class="flex items-center gap-1">
                     <Button size="sm" styled="outlined" onclick={(e) => {
                         e.stopPropagation()
@@ -90,6 +95,15 @@
             <div class="flex flex-col border border-selected p-2 rounded-b-md overflow-x-auto">
             <span class="text-textcolor mt-4">{language.name}</span>
             <TextInput size={"sm"} bind:value={settingsStore.state.customModels[index].name}/>
+            <span class="text-textcolor mt-4">Provider Group (Optional)</span>
+            <TextInput
+                size={"sm"}
+                value={settingsStore.state.customModels[index].providerGroup ?? ""}
+                oninput={(e) => {
+                    settingsStore.state.customModels[index].providerGroup = e.currentTarget.value || undefined
+                }}
+                placeholder="e.g. Vercel AI Gateway, Cerebras, OpenAI..."
+            />
             <span class="text-textcolor mt-4">{language.proxyRequestModel}</span>
             <TextInput size={"sm"} bind:value={settingsStore.state.customModels[index].internalId}/>
             <span class="text-textcolor mt-4">URL</span>
