@@ -160,6 +160,66 @@ describe("module sandbox groups", () => {
     expect(once[0].sandboxModuleIds).toEqual(["backend", "art", "weather"]);
   });
 
+  it("runs a bundled module once more in the shared environment for unbundled modules", () => {
+    moduleStore.modules = [
+      {
+        id: "backend",
+        name: "Backend",
+        description: "",
+        trigger: [
+          {
+            comment: "Render",
+            type: "manual",
+            conditions: [],
+            effect: [{ type: "triggerlua", code: "return true" }],
+          },
+        ],
+      },
+      { id: "art", name: "Art", description: "" },
+      {
+        id: "map",
+        name: "Map",
+        description: "",
+        lorebook: [
+          {
+            key: "",
+            comment: "manifest.lb",
+            content: "identifier=map",
+            mode: "normal",
+            insertorder: 0,
+            alwaysActive: false,
+            secondkey: "",
+            selective: false,
+          },
+        ],
+      },
+    ];
+    moduleStore.enabledModules = ["backend", "art", "map"];
+    moduleStore.sandboxGroups = [
+      {
+        id: "a",
+        name: "A",
+        members: [
+          { instanceId: "backend-a", moduleId: "backend" },
+          { instanceId: "art-a", moduleId: "art" },
+        ],
+      },
+    ];
+    const triggers = getModuleTriggers(undefined, undefined);
+    expect(triggers.map((t) => [t.sandboxGroupId, t.sandboxModuleIds])).toEqual(
+      [
+        [undefined, ["backend", "map"]],
+        ["a", ["backend", "art"]],
+      ],
+    );
+    const once = getModuleTriggers(undefined, undefined, undefined, {
+      onePerModule: true,
+    });
+    expect(once.map((t) => [t.sandboxGroupId, t.sandboxModuleIds])).toEqual([
+      ["a", ["backend", "art", "map"]],
+    ]);
+  });
+
   it("keeps dependency members out of runtime but in lorebook scope", () => {
     const withTrigger = (id: string): RisuModule => ({
       id,

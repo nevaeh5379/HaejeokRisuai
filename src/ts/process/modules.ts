@@ -644,9 +644,8 @@ export function getModuleTriggers(
   },
 ) {
   const modules = getModules(character, overrideIds, chat);
-  // A bundle runs a member only while that module is enabled for the chat,
-  // and then replaces the module's run in the shared environment. Dependency
-  // members only lend their lorebooks to the bundle.
+  // A bundle runs a member only while that module is enabled for the chat.
+  // Dependency members only lend their lorebooks to the bundle.
   const activeIds = new Set(modules.map((module) => module.id));
   const sandboxes =
     overrideIds === undefined
@@ -664,9 +663,18 @@ export function getModuleTriggers(
       group.members.filter((m) => !m.dependency).map((m) => m.moduleId),
     ),
   );
+  // A bundled module also runs once in the shared environment, where it sees
+  // only the modules that are not bundled, so it can still serve them.
+  const sharedLoreIds = modules
+    .filter((module) => !bundledIds.has(module.id) && module.lorebook?.length)
+    .map((module) => module.id);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
-    if (!module?.trigger || bundledIds.has(module.id)) {
+    if (!module?.trigger) {
+      continue;
+    }
+    const bundled = bundledIds.has(module.id);
+    if (bundled && (options?.onePerModule || sharedLoreIds.length === 0)) {
       continue;
     }
     const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
@@ -692,6 +700,9 @@ export function getModuleTriggers(
         }
         if (sandboxOwnerModuleIds.length > 0) {
           trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
+        }
+        if (bundled) {
+          trigger.sandboxModuleIds = [module.id, ...sharedLoreIds];
         }
         return [trigger];
       }),
@@ -739,6 +750,17 @@ export function getModuleTriggers(
       );
       emitted.set(member.moduleId, memberTriggers);
       triggers = triggers.concat(memberTriggers);
+    }
+  }
+  // Edit listeners skip the shared run above, so their single run also gets
+  // the unbundled modules.
+  if (options?.onePerModule && sharedLoreIds.length > 0) {
+    for (const memberTriggers of emitted.values()) {
+      for (const trigger of memberTriggers) {
+        trigger.sandboxModuleIds = [
+          ...new Set([...(trigger.sandboxModuleIds ?? []), ...sharedLoreIds]),
+        ];
+      }
     }
   }
   return triggers;

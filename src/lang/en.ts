@@ -159,7 +159,7 @@ export const languageEnglish = {
     missingModule: "Missing module",
     removeGroupConfirm: "Remove this module bundle?",
     usage:
-      "A module in a bundle runs its Lua once per bundle, and not in the shared environment, only while the module is enabled. Its regex and lorebooks apply as usual.",
+      "A module in a bundle runs its Lua once per bundle, only while the module is enabled. If unbundled modules have lorebooks, it also runs once in the shared environment, where it sees only the unbundled modules. Its regex and lorebooks apply as usual.",
     dependency: "Dependency",
     dependencyHelp:
       "In this bundle the module only provides its lorebooks to the other members; its Lua does not run.",
