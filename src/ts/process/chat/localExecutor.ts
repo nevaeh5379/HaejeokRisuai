@@ -1,6 +1,7 @@
 import type { MessageGenerationInfo } from "../../storage/database/schema";
 import { language } from "../../../lang";
 import { setChatProcessStage } from "./runtimeState";
+import { getRequestModelLabel } from "../models/modelString";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
@@ -200,7 +201,7 @@ export class LocalChatExecutor implements ChatExecutor {
         generationId,
         selectedChar,
         selectedChat,
-        model: generationModel,
+        model: getRequestModelLabel(generationModel),
         startedAt: generationStartedAt,
       });
     }
@@ -239,7 +240,10 @@ export class LocalChatExecutor implements ChatExecutor {
     if (req.model) {
       generationInfo.model = runtime.getGenerationModel(req.model);
       if (trackGeneration) {
-        updateChatGenerationModel(generationId, generationInfo.model);
+        updateChatGenerationModel(
+          generationId,
+          getRequestModelLabel(generationInfo.model),
+        );
       }
       console.log(generationInfo.model, req.model);
     }

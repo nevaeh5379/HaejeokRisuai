@@ -1,5 +1,16 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { getModelInfo } from "../../model/modellist";
+
+/** Display labels only; never substitute these into a provider request. */
+export function getRequestModelLabel(id: string, registeredName?: string) {
+  if (id.startsWith("xcustom:::") || id.startsWith("pluginmodel:::")) {
+    const name = registeredName ?? getModelInfo(id).name;
+    return name && name !== id ? name : id.split(":::")[1] || id;
+  }
+  if (id === "custom") return presetStore.state.currentPluginProvider || id;
+  return getGenerationModelString(id);
+}
 
 export function getGenerationModelString(name?: string) {
   const db = settingsStore.state;
