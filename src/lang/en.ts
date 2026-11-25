@@ -2433,6 +2433,9 @@ export const languageEnglish = {
   createCopy: "Create a Copy",
   bindPersona: "Bind Persona",
   chatOptions: "Chat Options",
+  aiChatTitle: "Rename chat with AI",
+  aiChatTitleEmpty: "There are no recent messages to name this chat from.",
+  aiChatTitleFailed: "The auxiliary model did not return a chat title.",
   doYouWantToBindCurrentPersona:
     "Do you want to bind the current persona to this chat?",
   doYouWantToUnbindCurrentPersona:

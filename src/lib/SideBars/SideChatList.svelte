@@ -364,6 +364,7 @@
   };
 
   const handleChatMenu = async (chat: Chat, chatIdx: number) => {
+    const target = { characterId: chara.chaId, chatId: chat.id };
     const option = await alertChatOptions();
     switch (option) {
       case 0: {
@@ -406,6 +407,15 @@
           "src/ts/windowsShortcut"
         );
         await createWindowsChatShortcut($selectedCharID, chatIdx);
+        break;
+      }
+      case 4: {
+        try {
+          const { renameChatWithAI } = await import("src/ts/process/chatTitle");
+          await renameChatWithAI(target);
+        } catch (error) {
+          alertError(error instanceof Error ? error : String(error));
+        }
         break;
       }
     }
