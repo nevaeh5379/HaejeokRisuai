@@ -2969,6 +2969,26 @@ class AzureStorage extends SqlStorageBase {
           await chatDeleteReq.query(`DELETE target FROM [chat].[chats] target
                         INNER JOIN OPENJSON(@chat_delete_ids) values_json ON target.id = values_json.[value];`);
         }
+        for (const manifest of payload.chatManifests ?? []) {
+          if (manifest.ids.length === 0) continue;
+          const manifestReq = tx.request();
+          manifestReq.input(
+            "manifest_ids",
+            sql.NVarChar(sql.MAX),
+            JSON.stringify(manifest.ids),
+          );
+          manifestReq.input(
+            "manifest_character_id",
+            sql.NVarChar(450),
+            manifest.characterId,
+          );
+          await manifestReq.query(`UPDATE target
+                        SET position = CAST(values_json.[key] AS INT), updated_at = SYSDATETIMEOFFSET()
+                        FROM [chat].[chats] target
+                        INNER JOIN OPENJSON(@manifest_ids) values_json ON target.id = values_json.[value]
+                        WHERE target.character_id = @manifest_character_id
+                          AND target.position <> CAST(values_json.[key] AS INT);`);
+        }
         if (payload.messageDeletes) {
           await this.detachMessagesFromBranchGraph(tx, payload.messageDeletes);
           for (const del of payload.messageDeletes) {

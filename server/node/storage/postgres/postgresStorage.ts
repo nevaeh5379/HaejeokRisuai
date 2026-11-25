@@ -6023,6 +6023,17 @@ class PostgresStorage extends SqlStorageBase {
           [payload.chatDeletes],
         );
       }
+      for (const manifest of payload.chatManifests ?? []) {
+        if (manifest.ids.length === 0) continue;
+        await client.query(
+          `UPDATE chat.chats AS ch
+              SET position = (spec.ordinal - 1)::integer, updated_at = NOW()
+             FROM UNNEST($1::text[]) WITH ORDINALITY AS spec(id, ordinal)
+            WHERE ch.id = spec.id AND ch.character_id = $2
+              AND ch.position <> (spec.ordinal - 1)::integer`,
+          [manifest.ids, manifest.characterId],
+        );
+      }
       if (payload.messageDeletes) {
         await this.detachMessagesFromBranchGraph(
           client,

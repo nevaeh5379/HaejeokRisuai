@@ -4661,6 +4661,19 @@ class OracleStorage extends SqlStorageBase {
           payload.chatDeletes.map((id) => [id]),
         );
       }
+      for (const manifest of payload.chatManifests ?? []) {
+        if (manifest.ids.length === 0) continue;
+        await conn.executeMany(
+          `UPDATE chat_chats SET position = :1
+            WHERE id = :2 AND character_id = :3 AND position <> :4`,
+          manifest.ids.map((id, position) => [
+            position,
+            id,
+            manifest.characterId,
+            position,
+          ]),
+        );
+      }
       if (payload.messageDeletes) {
         await this.detachMessagesFromBranchGraph(conn, payload.messageDeletes);
         for (const del of payload.messageDeletes) {

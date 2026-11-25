@@ -107,23 +107,23 @@ function mergeLoadedChatVariables(
   }
 }
 
-function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
+function mergeLoadedChats(
+  loaded: Chat[],
+  current: Chat[],
+  keepCurrentOrder = false,
+): Chat[] {
   if (current.length === 0) return loaded;
 
-  // The DB-loaded list is ORDER BY position and is the authoritative sequence.
-  // In-memory state (transient flags, variable writes) is overlaid on top of it
-  // so that every hydration snaps the chat order back to the persisted order.
+  // Storage returns chats ORDER BY position, which is the saved list order.
+  // A pending manifest means the in-memory order is newer than storage.
+  // In-memory state (transient flags, variable writes) is overlaid either way.
+  const loadedById = new Map(
+    loaded.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+  );
   const currentById = new Map(
     current.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
   );
-  const loadedIds = new Set(
-    loaded.filter((chat) => chat.id).map((chat) => chat.id!),
-  );
-
-  const merged = loaded.map((loadedChat) => {
-    if (!loadedChat.id) return loadedChat;
-    const inMemory = currentById.get(loadedChat.id);
-    if (!inMemory) return loadedChat;
+  const overlay = (loadedChat: Chat, inMemory: Chat) => {
     const loadedVariableState: ChatVariableState = {
       scriptstate: loadedChat.scriptstate,
       GLGlobalVariables: loadedChat.GLGlobalVariables,
@@ -132,11 +132,19 @@ function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
     Object.assign(loadedChat, inMemory);
     mergeLoadedChatVariables(loadedChat, loadedVariableState, inMemory);
     return loadedChat;
-  });
+  };
 
-  // Append in-memory chats that have no DB counterpart (new, not yet persisted).
-  for (const chat of current) {
-    if (!chat.id || !loadedIds.has(chat.id)) merged.push(chat);
+  const [primary, secondary, primaryIds] = keepCurrentOrder
+    ? [current, loaded, currentById]
+    : [loaded, current, loadedById];
+  const merged = primary.map((chat) => {
+    if (!chat.id) return chat;
+    const loadedChat = loadedById.get(chat.id);
+    const inMemory = currentById.get(chat.id);
+    return loadedChat && inMemory ? overlay(loadedChat, inMemory) : chat;
+  });
+  for (const chat of secondary) {
+    if (!chat.id || !primaryIds.has(chat.id)) merged.push(chat);
   }
   return merged;
 }
@@ -1494,7 +1502,11 @@ class CharacterStore
             const currentChatPage = currentCharacter.chatPage ?? 0;
             const activeChatId = existingChats[currentChatPage]?.id;
             const loadedChats = fullChar.chats ?? [];
-            const mergedChats = mergeLoadedChats(loadedChats, existingChats);
+            const mergedChats = mergeLoadedChats(
+              loadedChats,
+              existingChats,
+              this.dirtyChatManifests.has(chaId),
+            );
             const activeChatIndex = activeChatId
               ? mergedChats.findIndex((chat) => chat.id === activeChatId)
               : -1;

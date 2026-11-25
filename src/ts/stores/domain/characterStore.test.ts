@@ -220,6 +220,27 @@ describe("CharacterStore", () => {
     expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-stable-b");
   });
 
+  it("keeps an unsaved chat reorder when hydration returns the older order", async () => {
+    const shallow = makeChar("pending-reorder", 2);
+    shallow.detailsLoaded = false;
+    shallow.chats[0].id = "chat-pending-b";
+    shallow.chats[1].id = "chat-pending-a";
+    const loaded = makeChar("pending-reorder", 2);
+    loaded.chaId = shallow.chaId;
+    loaded.chats[0].id = "chat-pending-a";
+    loaded.chats[1].id = "chat-pending-b";
+    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    characterStore.init([shallow], mockStorage);
+    characterStore.markChatManifestDirty(shallow.chaId!);
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    expect(characterStore.characters[0].chats.map((chat) => chat.id)).toEqual([
+      "chat-pending-b",
+      "chat-pending-a",
+    ]);
+  });
+
   it("restores the persisted chat order even when the in-memory list drifted", async () => {
     const shallow = makeChar("drifted-order", 3);
     shallow.detailsLoaded = false;
