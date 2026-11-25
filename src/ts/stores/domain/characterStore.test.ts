@@ -213,11 +213,52 @@ describe("CharacterStore", () => {
 
     const hydrated = characterStore.characters[0];
     expect(hydrated.chats.map((chat) => chat.id)).toEqual([
-      "chat-stable-a",
       "chat-stable-b",
+      "chat-stable-a",
       "chat-stable-new",
     ]);
     expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-stable-b");
+  });
+
+  it("restores the persisted chat order even when the in-memory list drifted", async () => {
+    const shallow = makeChar("drifted-order", 3);
+    shallow.detailsLoaded = false;
+    shallow.chatPage = 0;
+    // In-memory order drifted (e.g. the active chat was moved to the end by a
+    // previous buggy hydration). The DB list is the source of truth.
+    shallow.chats[0].id = "chat-drift-a";
+    shallow.chats[1].id = "chat-drift-b";
+    shallow.chats[2].id = "chat-drift-c";
+
+    const loaded = makeChar("drifted-order", 3);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chatPage = 1;
+    loaded.chats[0].id = "chat-drift-a";
+    loaded.chats[1].id = "chat-drift-b";
+    loaded.chats[2].id = "chat-drift-c";
+    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    characterStore.init([shallow], mockStorage);
+
+    // Simulate drift: in-memory order became [c, b, a], user is viewing c (index 0).
+    shallow.chats = [
+      shallow.chats[2],
+      shallow.chats[1],
+      shallow.chats[0],
+    ] as Chat[];
+    shallow.chatPage = 0; // index 0 of [c, b, a] = c
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    // After hydration the DB order [a, b, c] is restored.
+    // The active chat (c) is now at index 2.
+    const hydrated = characterStore.characters[0];
+    expect(hydrated.chats.map((chat) => chat.id)).toEqual([
+      "chat-drift-a",
+      "chat-drift-b",
+      "chat-drift-c",
+    ]);
+    expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-drift-c");
   });
 
   it("does not let an incomplete chat summary erase loaded variables", async () => {

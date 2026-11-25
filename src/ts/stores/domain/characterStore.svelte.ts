@@ -110,27 +110,33 @@ function mergeLoadedChatVariables(
 function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
   if (current.length === 0) return loaded;
 
-  const loadedById = new Map(
-    loaded.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+  // The DB-loaded list is ORDER BY position and is the authoritative sequence.
+  // In-memory state (transient flags, variable writes) is overlaid on top of it
+  // so that every hydration snaps the chat order back to the persisted order.
+  const currentById = new Map(
+    current.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
   );
-  const currentIds = new Set<string>();
-  const merged = current.map((chat) => {
-    if (!chat.id) return chat;
-    currentIds.add(chat.id);
-    const persisted = loadedById.get(chat.id);
-    if (!persisted) return chat;
+  const loadedIds = new Set(
+    loaded.filter((chat) => chat.id).map((chat) => chat.id!),
+  );
+
+  const merged = loaded.map((loadedChat) => {
+    if (!loadedChat.id) return loadedChat;
+    const inMemory = currentById.get(loadedChat.id);
+    if (!inMemory) return loadedChat;
     const loadedVariableState: ChatVariableState = {
-      scriptstate: persisted.scriptstate,
-      GLGlobalVariables: persisted.GLGlobalVariables,
-      useLocallySetGlobalVariables: persisted.useLocallySetGlobalVariables,
+      scriptstate: loadedChat.scriptstate,
+      GLGlobalVariables: loadedChat.GLGlobalVariables,
+      useLocallySetGlobalVariables: loadedChat.useLocallySetGlobalVariables,
     };
-    Object.assign(persisted, chat);
-    mergeLoadedChatVariables(persisted, loadedVariableState, chat);
-    return persisted;
+    Object.assign(loadedChat, inMemory);
+    mergeLoadedChatVariables(loadedChat, loadedVariableState, inMemory);
+    return loadedChat;
   });
 
-  for (const chat of loaded) {
-    if (chat.id && !currentIds.has(chat.id)) merged.push(chat);
+  // Append in-memory chats that have no DB counterpart (new, not yet persisted).
+  for (const chat of current) {
+    if (!chat.id || !loadedIds.has(chat.id)) merged.push(chat);
   }
   return merged;
 }
