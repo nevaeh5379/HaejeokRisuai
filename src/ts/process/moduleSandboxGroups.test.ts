@@ -114,6 +114,52 @@ describe("module sandbox groups", () => {
     expect(getModuleTriggers(undefined, undefined)).toEqual([]);
   });
 
+  it("emits a module shared by bundles once for edit listeners", () => {
+    moduleStore.modules = [
+      {
+        id: "backend",
+        name: "Backend",
+        description: "",
+        trigger: [
+          {
+            comment: "Render",
+            type: "manual",
+            conditions: [],
+            effect: [{ type: "triggerlua", code: "return true" }],
+          },
+        ],
+      },
+      { id: "art", name: "Art", description: "" },
+      { id: "weather", name: "Weather", description: "" },
+    ];
+    moduleStore.enabledModules = ["backend", "art", "weather"];
+    moduleStore.sandboxGroups = [
+      {
+        id: "a",
+        name: "A",
+        members: [
+          { instanceId: "backend-a", moduleId: "backend" },
+          { instanceId: "art-a", moduleId: "art" },
+        ],
+      },
+      {
+        id: "b",
+        name: "B",
+        members: [
+          { instanceId: "backend-b", moduleId: "backend" },
+          { instanceId: "weather-b", moduleId: "weather" },
+        ],
+      },
+    ];
+    expect(getModuleTriggers(undefined, undefined)).toHaveLength(2);
+    const once = getModuleTriggers(undefined, undefined, undefined, {
+      onePerModule: true,
+    });
+    expect(once).toHaveLength(1);
+    expect(once[0].sandboxGroupId).toBe("a");
+    expect(once[0].sandboxModuleIds).toEqual(["backend", "art", "weather"]);
+  });
+
   it("keeps missing definitions out of runtime", () => {
     moduleStore.modules = [];
     moduleStore.sandboxGroups = [

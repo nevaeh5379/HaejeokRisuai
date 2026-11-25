@@ -613,6 +613,14 @@ export function getModuleTriggers(
   character?: character | groupChat,
   overrideIds?: string[],
   chat?: Chat,
+  options?: {
+    /**
+     * Emits a module that sits in several bundles once, in its first bundle,
+     * with access to the modules of all of them. For edit listeners, which
+     * must not transform the same text once per bundle.
+     */
+    onePerModule?: boolean;
+  },
 ) {
   const modules = getModules(character, overrideIds, chat);
   // A bundle runs a member only while that module is enabled for the chat,
@@ -668,12 +676,27 @@ export function getModuleTriggers(
 
   // First-class groups intentionally do not flatten into getModules(). A
   // definition can appear in multiple groups and must execute once per group.
+  const emitted = new Map<string, triggerscript[]>();
   for (const group of sandboxes) {
     const sandboxModuleIds = group.members.map((member) => member.moduleId);
     for (const member of group.members) {
       if (!member.module.trigger) continue;
-      triggers = triggers.concat(
-        member.module.trigger.flatMap((value) => {
+      const previous = options?.onePerModule
+        ? emitted.get(member.moduleId)
+        : undefined;
+      if (previous) {
+        for (const trigger of previous) {
+          trigger.sandboxModuleIds = [
+            ...new Set([
+              ...(trigger.sandboxModuleIds ?? []),
+              ...sandboxModuleIds,
+            ]),
+          ];
+        }
+        continue;
+      }
+      const memberTriggers: triggerscript[] = member.module.trigger.flatMap(
+        (value) => {
           const trigger = normalizeModuleTrigger(value);
           if (!trigger) return [];
           return [
@@ -688,8 +711,10 @@ export function getModuleTriggers(
               sandboxModuleIds,
             },
           ];
-        }),
+        },
       );
+      emitted.set(member.moduleId, memberTriggers);
+      triggers = triggers.concat(memberTriggers);
     }
   }
   return triggers;

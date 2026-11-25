@@ -1881,6 +1881,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
       moduleCharacter,
       undefined,
       targetChat,
+      { onePerModule: true },
     );
 
     const triggers =

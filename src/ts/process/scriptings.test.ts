@@ -644,6 +644,7 @@ test("resolves module edit triggers against the explicit character", async () =>
     char,
     undefined,
     databaseState.value.characters[0].chats[0],
+    { onePerModule: true },
   );
 });
 
