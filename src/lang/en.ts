@@ -160,6 +160,9 @@ export const languageEnglish = {
     removeGroupConfirm: "Remove this module bundle?",
     usage:
       "A module in a bundle runs its Lua once per bundle, and not in the shared environment, only while the module is enabled. Its regex and lorebooks apply as usual.",
+    dependency: "Dependency",
+    dependencyHelp:
+      "In this bundle the module only provides its lorebooks to the other members; its Lua does not run.",
   },
   moduleRequestRules: {
     title: "Auxiliary model request rules",

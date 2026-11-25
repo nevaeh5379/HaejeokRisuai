@@ -160,6 +160,40 @@ describe("module sandbox groups", () => {
     expect(once[0].sandboxModuleIds).toEqual(["backend", "art", "weather"]);
   });
 
+  it("keeps dependency members out of runtime but in lorebook scope", () => {
+    const withTrigger = (id: string): RisuModule => ({
+      id,
+      name: id,
+      description: "",
+      trigger: [
+        {
+          comment: "Run",
+          type: "manual",
+          conditions: [],
+          effect: [{ type: "triggerlua", code: "return true" }],
+        },
+      ],
+    });
+    moduleStore.modules = [withTrigger("news"), withTrigger("art")];
+    moduleStore.enabledModules = ["news", "art"];
+    moduleStore.sandboxGroups = [
+      {
+        id: "b",
+        name: "B",
+        members: [
+          { instanceId: "news-b", moduleId: "news" },
+          { instanceId: "art-b", moduleId: "art", dependency: true },
+        ],
+      },
+    ];
+    const triggers = getModuleTriggers(undefined, undefined);
+    expect(triggers.map((t) => [t.sourceModuleId, t.sandboxGroupId])).toEqual([
+      ["art", undefined],
+      ["news", "b"],
+    ]);
+    expect(triggers[1].sandboxModuleIds).toEqual(["news", "art"]);
+  });
+
   it("keeps missing definitions out of runtime", () => {
     moduleStore.modules = [];
     moduleStore.sandboxGroups = [

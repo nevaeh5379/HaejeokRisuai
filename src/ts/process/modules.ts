@@ -85,6 +85,11 @@ export interface ModuleSandboxMember {
   instanceId: string;
   moduleId: string;
   enabled?: boolean;
+  /**
+   * Only provides lorebooks to the other members of this bundle; the module's
+   * own triggers do not run here.
+   */
+  dependency?: boolean;
 }
 
 export interface ModuleSandboxGroup {
@@ -544,6 +549,22 @@ export function getModuleSandboxes(): ResolvedModuleSandbox[] {
     .filter((group) => group.members.length > 0);
 }
 
+/** What a script running inside a bundle may know about that bundle. */
+export function describeModuleSandbox(groupId: string | undefined) {
+  const group = getModuleSandboxes().find((g) => g.id === groupId);
+  if (!group) return null;
+  return {
+    id: group.id,
+    name: group.name,
+    members: group.members.map((member) => ({
+      moduleId: member.moduleId,
+      name: member.module.name,
+      namespace: member.module.namespace ?? null,
+      dependency: member.dependency === true,
+    })),
+  };
+}
+
 export interface ModuleLorebookSource {
   lorebook: loreBook;
   sourceModuleId: string;
@@ -624,7 +645,8 @@ export function getModuleTriggers(
 ) {
   const modules = getModules(character, overrideIds, chat);
   // A bundle runs a member only while that module is enabled for the chat,
-  // and then replaces the module's run in the shared environment.
+  // and then replaces the module's run in the shared environment. Dependency
+  // members only lend their lorebooks to the bundle.
   const activeIds = new Set(modules.map((module) => module.id));
   const sandboxes =
     overrideIds === undefined
@@ -638,7 +660,9 @@ export function getModuleTriggers(
           .filter((group) => group.members.length > 0)
       : [];
   const bundledIds = new Set(
-    sandboxes.flatMap((group) => group.members.map((m) => m.moduleId)),
+    sandboxes.flatMap((group) =>
+      group.members.filter((m) => !m.dependency).map((m) => m.moduleId),
+    ),
   );
   let triggers: triggerscript[] = [];
   for (const module of modules) {
@@ -680,7 +704,7 @@ export function getModuleTriggers(
   for (const group of sandboxes) {
     const sandboxModuleIds = group.members.map((member) => member.moduleId);
     for (const member of group.members) {
-      if (!member.module.trigger) continue;
+      if (!member.module.trigger || member.dependency) continue;
       const previous = options?.onePerModule
         ? emitted.get(member.moduleId)
         : undefined;

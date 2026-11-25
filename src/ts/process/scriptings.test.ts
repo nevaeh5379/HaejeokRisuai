@@ -10,6 +10,9 @@ const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
 const moduleList = vi.hoisted(() => vi.fn(() => []));
+const describeSandbox = vi.hoisted(() =>
+  vi.fn((_id?: string): unknown => null),
+);
 const databaseState = vi.hoisted(() => ({
   value: {
     characters: [
@@ -126,6 +129,7 @@ vi.mock("./modules", () => ({
   getModuleLorebooksWithSource: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
   getModules: moduleList,
+  describeModuleSandbox: describeSandbox,
 }));
 
 vi.mock("./files/inlays", () => ({
@@ -317,6 +321,36 @@ test("scopes Lua lorebooks to first-class sandbox members", async () => {
     ["lightboard", "illustration-module"],
     chat,
   );
+});
+
+test("tells Lua which bundle it runs in and which members are dependencies", async () => {
+  describeSandbox.mockReturnValue({
+    id: "news",
+    name: "News",
+    members: [
+      {
+        moduleId: "illustration",
+        name: "Art",
+        namespace: null,
+        dependency: true,
+      },
+    ],
+  });
+  const result = await runScripted(
+    `function onStart(id)
+      local s = getModuleSandbox(id)
+      return s.name .. ":" .. tostring(s.members[1].dependency)
+    end`,
+    {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      sandboxGroupId: "news",
+    },
+  );
+  expect(describeSandbox).toHaveBeenLastCalledWith("news");
+  expect(result.res).toBe("News:true");
+  describeSandbox.mockReturnValue(null);
 });
 
 test("scopes Lua module lorebooks to the backend-owner sandbox", async () => {

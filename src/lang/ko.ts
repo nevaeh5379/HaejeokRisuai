@@ -160,6 +160,9 @@ export const languageKorean = {
     removeGroupConfirm: "이 모듈 묶음을 삭제할까요?",
     usage:
       "묶음에 넣은 모듈은 모듈 목록에서 켜져 있을 때만 묶음마다 따로 Lua를 실행하고, 공유 환경에서는 실행하지 않습니다. 정규식과 로어북은 평소처럼 적용됩니다.",
+    dependency: "종속성",
+    dependencyHelp:
+      "이 묶음에서는 로어북만 다른 모듈에 제공하고, 이 모듈의 Lua는 실행하지 않습니다.",
   },
   moduleRequestRules: {
     title: "보조모델 요청 규칙",

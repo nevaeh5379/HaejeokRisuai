@@ -49,6 +49,7 @@ import { v4 } from "uuid";
 import {
   getModuleLorebooksWithSource,
   getModuleTriggers,
+  describeModuleSandbox,
   getModules,
 } from "./modules";
 import { Mutex } from "../mutex";
@@ -1053,6 +1054,12 @@ export async function runScripted(
         return JSON.stringify(found);
       });
 
+      declareAPI("getModuleSandboxMain", () =>
+        JSON.stringify(
+          describeModuleSandbox(ScriptingEngineState.sandboxGroupId),
+        ),
+      );
+
       type upsertLoreBookOptions = {
         alwaysActive?: boolean;
         insertOrder?: number;
@@ -1700,6 +1707,10 @@ end
 
 function getLoreBooks(id, search)
     return json.decode(getLoreBooksMain(id, search))
+end
+
+function getModuleSandbox(id)
+    return json.decode(getModuleSandboxMain(id))
 end
 
 

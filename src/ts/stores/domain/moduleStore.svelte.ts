@@ -602,6 +602,21 @@ class ModuleStore
     await this.flush();
   }
 
+  async setSandboxMemberDependency(
+    groupId: string,
+    instanceId: string,
+    dependency: boolean,
+  ): Promise<void> {
+    const group = this.getSandboxGroup(groupId);
+    if (!group) throw new Error(`Module sandbox group not found: ${groupId}`);
+    const member = group.members.find((m) => m.instanceId === instanceId);
+    if (!member) return;
+    if (dependency) member.dependency = true;
+    else delete member.dependency;
+    this.dirtySandboxGroups = true;
+    await this.flush();
+  }
+
   async moveSandboxModule(
     groupId: string,
     instanceId: string,
