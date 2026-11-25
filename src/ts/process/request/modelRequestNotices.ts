@@ -1,4 +1,5 @@
 import { writable } from "svelte/store";
+import { pauseActiveChatGenerationStats } from "../chat/generationStats";
 import type { ModelModeExtended } from "./shared";
 
 export interface ModelRequestNotice {
@@ -8,9 +9,10 @@ export interface ModelRequestNotice {
   startedAt: number;
   endedAt?: number;
   failed?: boolean;
+  outputText?: string;
 }
 
-const visibleAfterEndMs = 3500;
+const visibleAfterEndMs = 8_000;
 // Guards against a request whose stream is never consumed or closed.
 const maxPendingMs = 10 * 60 * 1000;
 
@@ -18,6 +20,8 @@ let nextId = 0;
 let notices: ModelRequestNotice[] = [];
 let timer: ReturnType<typeof setTimeout> | undefined;
 export const modelRequestNotices = writable<readonly ModelRequestNotice[]>([]);
+/** Mounted generation stats floats that show these notices next to them. */
+export const modelRequestNoticeHosts = writable(0);
 
 function expiresAt(notice: ModelRequestNotice) {
   return notice.endedAt !== undefined
@@ -36,23 +40,30 @@ function publish() {
   }
 }
 
-/** Shows a toast for a model request; call the returned function when it ends. */
-export function notifyModelRequest(model: string, mode: ModelModeExtended) {
-  const notice: ModelRequestNotice = {
-    id: ++nextId,
-    mode,
-    model,
-    startedAt: Date.now(),
-  };
-  notices = [...notices.slice(-3), notice];
+type Finish = (failed?: boolean, outputText?: string) => void;
+const noop: Finish = () => {};
+
+/**
+ * Shows a toast for an auxiliary model request and freezes the main model
+ * timer. Main model requests are shown by the generation stats float.
+ */
+export function notifyModelRequest(
+  model: string,
+  mode: ModelModeExtended,
+): Finish {
+  if (mode === "model") return noop;
+  const startedAt = Date.now();
+  pauseActiveChatGenerationStats(startedAt);
+  const id = ++nextId;
+  notices = [...notices.slice(-3), { id, mode, model, startedAt }];
   publish();
   let done = false;
-  return (failed = false) => {
+  return (failed = false, outputText) => {
     if (done) return;
     done = true;
     const endedAt = Date.now();
     notices = notices.map((n) =>
-      n.id === notice.id ? { ...n, endedAt, failed } : n,
+      n.id === id ? { ...n, endedAt, failed, outputText } : n,
     );
     publish();
   };
@@ -61,14 +72,16 @@ export function notifyModelRequest(model: string, mode: ModelModeExtended) {
 /** Ends the toast when the response, including any stream, has finished. */
 export function trackModelResponse<T extends { type: string; result: unknown }>(
   response: Promise<T>,
-  finish: (failed?: boolean) => void,
+  finish: Finish,
 ): Promise<T> {
+  if (finish === noop) return response;
   return response.then(
     (res) => {
       if (res.type === "streaming" && res.result instanceof ReadableStream) {
         return { ...res, result: trackStream(res.result, finish) };
       }
-      finish(res.type === "fail");
+      const text = typeof res.result === "string" ? res.result : undefined;
+      finish(res.type === "fail", res.type === "fail" ? undefined : text);
       return res;
     },
     (error) => {
@@ -80,17 +93,19 @@ export function trackModelResponse<T extends { type: string; result: unknown }>(
 
 function trackStream<C>(
   source: ReadableStream<C>,
-  finish: (failed?: boolean) => void,
+  finish: Finish,
 ): ReadableStream<C> {
   const reader = source.getReader();
+  let last: C | undefined;
   return new ReadableStream<C>({
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
         if (done) {
-          finish();
+          finish(false, streamText(last));
           controller.close();
         } else {
+          last = value;
           controller.enqueue(value);
         }
       } catch (error) {
@@ -99,8 +114,15 @@ function trackStream<C>(
       }
     },
     cancel(reason) {
-      finish();
+      finish(false, streamText(last));
       return reader.cancel(reason);
     },
   });
+}
+
+// Stream chunks carry the accumulated text keyed by response slot.
+function streamText(chunk: unknown) {
+  if (!chunk || typeof chunk !== "object") return undefined;
+  const values = Object.values(chunk as Record<string, unknown>);
+  return typeof values[0] === "string" ? values[0] : undefined;
 }
