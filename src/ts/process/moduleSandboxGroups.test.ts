@@ -57,6 +57,7 @@ describe("module sandbox groups", () => {
       ],
     };
     moduleStore.modules = [lightboard];
+    moduleStore.enabledModules = ["lightboard"];
     moduleStore.sandboxGroups = [
       {
         id: "illustration-group",
@@ -85,6 +86,32 @@ describe("module sandbox groups", () => {
       "illustration-model",
       "weather-model",
     ]);
+  });
+
+  it("skips bundle members whose module is not enabled for the chat", () => {
+    moduleStore.modules = [
+      {
+        id: "lightboard",
+        name: "Lightboard",
+        description: "",
+        trigger: [
+          {
+            comment: "Render",
+            type: "manual",
+            conditions: [],
+            effect: [{ type: "triggerlua", code: "return true" }],
+          },
+        ],
+      },
+    ];
+    moduleStore.sandboxGroups = [
+      {
+        id: "group",
+        name: "Group",
+        members: [{ instanceId: "lightboard-a", moduleId: "lightboard" }],
+      },
+    ];
+    expect(getModuleTriggers(undefined, undefined)).toEqual([]);
   });
 
   it("keeps missing definitions out of runtime", () => {

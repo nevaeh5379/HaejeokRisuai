@@ -155,10 +155,11 @@
   onpointercancel={endDrag}
 />
 
-<div class="flex justify-end pb-3">
+<div class="flex items-start justify-between gap-3 pb-3">
+  <p class="text-sm text-textcolor2">{language.moduleSandboxGroups.usage}</p>
   <button
     type="button"
-    class="rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected cursor-pointer"
+    class="shrink-0 rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected cursor-pointer"
     onclick={() => createGroup()}
   >{language.moduleSandboxGroups.new}</button>
 </div>

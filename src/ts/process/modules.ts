@@ -615,9 +615,26 @@ export function getModuleTriggers(
   chat?: Chat,
 ) {
   const modules = getModules(character, overrideIds, chat);
+  // A bundle runs a member only while that module is enabled for the chat,
+  // and then replaces the module's run in the shared environment.
+  const activeIds = new Set(modules.map((module) => module.id));
+  const sandboxes =
+    overrideIds === undefined
+      ? getModuleSandboxes()
+          .map((group) => ({
+            ...group,
+            members: group.members.filter((member) =>
+              activeIds.has(member.moduleId),
+            ),
+          }))
+          .filter((group) => group.members.length > 0)
+      : [];
+  const bundledIds = new Set(
+    sandboxes.flatMap((group) => group.members.map((m) => m.moduleId)),
+  );
   let triggers: triggerscript[] = [];
   for (const module of modules) {
-    if (!module?.trigger) {
+    if (!module?.trigger || bundledIds.has(module.id)) {
       continue;
     }
     const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
@@ -651,30 +668,28 @@ export function getModuleTriggers(
 
   // First-class groups intentionally do not flatten into getModules(). A
   // definition can appear in multiple groups and must execute once per group.
-  if (overrideIds === undefined) {
-    for (const group of getModuleSandboxes()) {
-      const sandboxModuleIds = group.members.map((member) => member.moduleId);
-      for (const member of group.members) {
-        if (!member.module.trigger) continue;
-        triggers = triggers.concat(
-          member.module.trigger.flatMap((value) => {
-            const trigger = normalizeModuleTrigger(value);
-            if (!trigger) return [];
-            return [
-              {
-                ...trigger,
-                sourceModuleId: member.module.id,
-                lowLevelAccess: member.module.lowLevelAccess,
-                subModel: group.subModel,
-                sandboxGroupId: group.id,
-                sandboxGroupName: group.name,
-                sandboxInstanceId: member.instanceId,
-                sandboxModuleIds,
-              },
-            ];
-          }),
-        );
-      }
+  for (const group of sandboxes) {
+    const sandboxModuleIds = group.members.map((member) => member.moduleId);
+    for (const member of group.members) {
+      if (!member.module.trigger) continue;
+      triggers = triggers.concat(
+        member.module.trigger.flatMap((value) => {
+          const trigger = normalizeModuleTrigger(value);
+          if (!trigger) return [];
+          return [
+            {
+              ...trigger,
+              sourceModuleId: member.module.id,
+              lowLevelAccess: member.module.lowLevelAccess,
+              subModel: group.subModel,
+              sandboxGroupId: group.id,
+              sandboxGroupName: group.name,
+              sandboxInstanceId: member.instanceId,
+              sandboxModuleIds,
+            },
+          ];
+        }),
+      );
     }
   }
   return triggers;
