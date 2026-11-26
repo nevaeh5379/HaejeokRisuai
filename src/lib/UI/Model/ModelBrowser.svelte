@@ -157,7 +157,7 @@
 
     // Unrecommended filter
     if (!showUnrecommended && !query && activeCategory === 'all' && activeTag === 'all' && selectedProvider === 'all') {
-      list = list.filter(m => m.recommended);
+      list = list.filter(m => m.recommended || m.id.startsWith('pluginmodel:::'));
     }
 
     // Custom models are separated out of the regular provider flow
