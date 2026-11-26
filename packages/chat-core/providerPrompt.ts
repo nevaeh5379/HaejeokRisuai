@@ -46,8 +46,13 @@ function formatProviderMessages(
 
   if (!flags.includes(LLM_FLAGS.hasFullSystemPrompt)) {
     if (flags.includes(LLM_FLAGS.hasFirstSystemPrompt)) {
-      while (messages.length > 0 && messages[0].role === "system") {
-        const current: any = messages.shift();
+      // The first run of system messages becomes the system prompt, even when
+      // user or model turns come before it.
+      const start: any = messages.findIndex(
+        (message: any) => message.role === "system",
+      );
+      while (start >= 0 && messages[start]?.role === "system") {
+        const current: any = messages.splice(start, 1)[0];
         if (systemPrompt) systemPrompt.content += `\n\n${current.content}`;
         else systemPrompt = current;
       }
