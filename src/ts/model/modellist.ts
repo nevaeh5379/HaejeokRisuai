@@ -10,6 +10,7 @@ import {
   ClaudeParameters,
   type LLMModel,
   GPT5XHighParameters,
+  applyGeminiThinkingLevel,
 } from "./types";
 import { OpenAIModels } from "./providers/openai";
 import { AnthropicModels } from "./providers/anthropic";
@@ -1027,6 +1028,10 @@ export async function registerModelDynamic() {
 globalThis.registerModelDynamic = registerModelDynamic;
 
 export function getModelInfo(id?: string | null): LLMModel {
+  return applyGeminiThinkingLevel(resolveModelInfo(id));
+}
+
+function resolveModelInfo(id?: string | null): LLMModel {
   const db = settingsStore.state;
   if (!id)
     return {
