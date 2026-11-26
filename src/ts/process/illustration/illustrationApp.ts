@@ -44,6 +44,7 @@ import { NodeStorage } from "../../storage/files/nodeStorage";
 import { forageStorage } from "../../globalApi.svelte";
 import { encode } from "../../tokenizer";
 import { requestChatDataMain } from "../request/request";
+import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.ts";
 import { prepareBrowserProviderContext } from "../request/providerContextAdapter";
 import { LLMFormat } from "../../model/modellist";
 import type { character, Message } from "../../storage/database/schema";
@@ -281,9 +282,20 @@ const runner = createIllustrationRunner({
    * 한국어: 보조 모델을 호출하고 지원되는 비스트리밍 태그 응답을 하나의 텍스트로 합치는 함수.
    */
   createTags: async (target, record) => {
-    const response = await requestChatDataMain(
-      await tagArguments(target, record),
-      "submodel",
+    const tagArgs = await tagArguments(target, record);
+    // Retries failed tag requests (such as 429) as often as the global
+    // "request retries" setting allows, like other submodel requests.
+    const response = await executeChatRequestFallbacks(
+      {
+        fallbackModels: [""],
+        requestRetries: settingsStore.state.requestRetrys,
+        antiServerOverloads: settingsStore.state.antiServerOverloads,
+        fallbackWhenBlankResponse: false,
+      },
+      {
+        // requestChatDataMain rewrites its argument, so each try gets a copy.
+        executeAttempt: () => requestChatDataMain({ ...tagArgs }, "submodel"),
+      },
     );
     if (response.type === "multiline")
       return response.result.map((entry) => entry[1]).join("\n");
