@@ -15,6 +15,28 @@ describe("provider prompt formatting", () => {
     ).toEqual([{ role: "system", content: "one\n\ntwo" }]);
   });
 
+  it("takes the first system run as the system prompt after leading turns", () => {
+    expect(
+      formatProviderMessages(
+        [
+          { role: "assistant", content: "greeting" },
+          { role: "user", content: "hi" },
+          { role: "system", content: "one" },
+          { role: "system", content: "two" },
+          { role: "user", content: "next" },
+          { role: "system", content: "late" },
+        ],
+        [LLM_FLAGS.hasFirstSystemPrompt],
+      ),
+    ).toEqual([
+      { role: "system", content: "one\n\ntwo" },
+      { role: "assistant", content: "greeting" },
+      { role: "user", content: "hi" },
+      { role: "user", content: "next" },
+      { role: "user", content: "system: late" },
+    ]);
+  });
+
   it("replaces unsupported system messages with configured role and template", () => {
     expect(
       formatProviderMessages([{ role: "system", content: "rules" }], [], {
