@@ -209,7 +209,7 @@ export const languageEnglish = {
       "This request was truncated. Preview is unavailable; selected text can still be used to create a rule.",
     inactive: "This module was not enabled for this request.",
     fallbackHelp:
-      "Explicit error-fallback models retain priority. Matching rules do not change retry behavior.",
+      "The configured model (including a matched module model) runs first. Once its request retries are used up, the error-fallback models run in order.",
   },
   formating: {
     main: "Main Prompt",

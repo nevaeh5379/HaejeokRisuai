@@ -51,7 +51,6 @@ export async function requestChatData(
         }))
       : [];
   const tools = arg.tools ?? (await getTools(requestCharacter));
-  fallBackModels.push("");
 
   if (arg.escape) {
     arg.useStreaming = false;
@@ -63,9 +62,33 @@ export async function requestChatData(
     return message;
   });
 
+  // The configured model runs first, with retries, and then each fallback
+  // model in order. A fallback equal to the configured model is skipped.
+  const configuredModel =
+    arg.staticModel ||
+    (useModuleRules
+      ? resolveModuleRequestRules(
+          ruleModules,
+          originalFormated,
+          arg.sourceModuleId,
+        ).model
+      : undefined) ||
+    (presetStore.state.seperateModelsForAxModels
+      ? (presetStore.state.seperateModels as Record<string, string>)?.[model]
+      : undefined) ||
+    (model === "model"
+      ? presetStore.state.aiModel
+      : presetStore.state.subModel);
+  const attemptModels = [
+    "",
+    ...fallBackModels.filter(
+      (fallback) => fallback && fallback !== configuredModel,
+    ),
+  ];
+
   return executeChatRequestFallbacks(
     {
-      fallbackModels: fallBackModels,
+      fallbackModels: attemptModels,
       requestRetries: db.requestRetrys,
       antiServerOverloads: db.antiServerOverloads,
       fallbackWhenBlankResponse: presetStore.state.fallbackWhenBlankResponse,

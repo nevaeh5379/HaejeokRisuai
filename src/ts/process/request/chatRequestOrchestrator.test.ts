@@ -242,12 +242,46 @@ describe("requestChatData", () => {
     expect(response).toEqual({ type: "success", result: "ok" });
     expect(mocks.executeChatRequestFallbacks).toHaveBeenCalledWith(
       {
-        fallbackModels: ["fallback-model", ""],
+        fallbackModels: ["", "fallback-model"],
         requestRetries: 2,
         antiServerOverloads: true,
         fallbackWhenBlankResponse: true,
         bannedCharacterSets: ["Hangul"],
       },
+      expect.any(Object),
+    );
+  });
+
+  it("tries a module-routed model before the fallback models", async () => {
+    await requestChatData(
+      {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "hello" }],
+        staticModel: "module-model",
+      } as any,
+      "model" as any,
+    );
+
+    expect(mocks.executeChatRequestFallbacks).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackModels: ["", "fallback-model"] }),
+      expect.any(Object),
+    );
+  });
+
+  it("skips a fallback model equal to the configured model", async () => {
+    await requestChatData(
+      {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "hello" }],
+        staticModel: "fallback-model",
+      } as any,
+      "model" as any,
+    );
+
+    expect(mocks.executeChatRequestFallbacks).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackModels: [""] }),
       expect.any(Object),
     );
   });
