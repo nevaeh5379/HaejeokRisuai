@@ -252,6 +252,23 @@ describe("requestChatData", () => {
     );
   });
 
+  it("tries a module-routed model before the fallback models", async () => {
+    await requestChatData(
+      {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "hello" }],
+        staticModel: "module-model",
+      } as any,
+      "model" as any,
+    );
+
+    expect(mocks.executeChatRequestFallbacks).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackModels: ["", "fallback-model"] }),
+      expect.any(Object),
+    );
+  });
+
   it("preserves arg.staticModel when fallbackModel is empty", async () => {
     mocks.executeChatRequestFallbacks.mockImplementation(
       async (_options, callbacks) => {

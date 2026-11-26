@@ -51,7 +51,6 @@ export async function requestChatData(
         }))
       : [];
   const tools = arg.tools ?? (await getTools(requestCharacter));
-  fallBackModels.push("");
 
   if (arg.escape) {
     arg.useStreaming = false;
@@ -62,6 +61,22 @@ export async function requestChatData(
     message.content = risuUnescape(message.content);
     return message;
   });
+
+  // A request routed to a module's own model tries that model first, with
+  // retries, and only then the fallback models. Others keep the fallback
+  // models first and the configured model last.
+  const routedToModuleModel =
+    Boolean(arg.staticModel) ||
+    (useModuleRules &&
+      Boolean(
+        resolveModuleRequestRules(
+          ruleModules,
+          originalFormated,
+          arg.sourceModuleId,
+        ).model,
+      ));
+  if (routedToModuleModel) fallBackModels.unshift("");
+  else fallBackModels.push("");
 
   return executeChatRequestFallbacks(
     {
