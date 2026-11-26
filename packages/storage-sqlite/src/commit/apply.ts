@@ -479,6 +479,16 @@ export async function apply(
   }
   for (const id of commit.chatDeletes ?? [])
     await execute("DELETE FROM chats WHERE id = ?", [id]);
+  // The manifest is the chat list order; chat upserts only carry the
+  // positions of the chats that changed.
+  for (const manifest of commit.chatManifests ?? []) {
+    for (const [position, id] of manifest.ids.entries()) {
+      await execute(
+        "UPDATE chats SET position = ? WHERE id = ? AND character_id = ? AND position <> ?",
+        [position, id, manifest.characterId, position],
+      );
+    }
+  }
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;

@@ -154,6 +154,31 @@ describe("WebSqliteStorage", () => {
     database.close();
   });
 
+  it("persists a chat manifest as the chat list order", async () => {
+    const { database, storage } = makeFreshWeb();
+    database.exec(`
+      INSERT INTO characters (id, position, name) VALUES ('char-order', 0, 'Order');
+      INSERT INTO chats (id, character_id, position, name) VALUES
+        ('chat-a', 'char-order', 0, 'A'),
+        ('chat-b', 'char-order', 1, 'B'),
+        ('chat-c', 'char-order', 2, 'C');
+    `);
+    const commit = createEmptySqlCommit(0, "chat");
+    commit.chatManifests = [
+      { characterId: "char-order", ids: ["chat-c", "chat-a", "chat-b"] },
+    ];
+
+    await storage.commit(commit);
+
+    const loaded = await storage.loadCharacterForSelection!("char-order");
+    expect(loaded?.chats.map((chat) => chat.id)).toEqual([
+      "chat-c",
+      "chat-a",
+      "chat-b",
+    ]);
+    database.close();
+  });
+
   it("updates relational trees without rewriting every node", async () => {
     const { database, storage } = makeFreshWeb();
     const initialValue = {
