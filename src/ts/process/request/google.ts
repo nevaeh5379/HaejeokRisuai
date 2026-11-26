@@ -218,7 +218,9 @@ export async function requestGoogleCloudVertex(
   });
 
   const para = selectGoogleGenerationParameters(arg.modelInfo.parameters, {
-    thinking: arg.modelInfo.flags.includes(LLMFlags.geminiThinking),
+    thinking:
+      arg.modelInfo.flags.includes(LLMFlags.geminiThinking) ||
+      arg.modelInfo.flags.includes(LLMFlags.geminiThinkingLevel),
   });
 
   let body: any = {
@@ -263,7 +265,9 @@ export async function requestGoogleCloudVertex(
   const finalizedGeneration = finalizeGoogleGenerationConfig(
     body.generation_config,
     {
-      thinking: arg.modelInfo.flags.includes(LLMFlags.geminiThinking),
+      thinking:
+        arg.modelInfo.flags.includes(LLMFlags.geminiThinking) ||
+        arg.modelInfo.flags.includes(LLMFlags.geminiThinkingLevel),
       thinkingNoMinimal: arg.modelInfo.flags.includes(
         LLMFlags.geminiThinkingNoMinimal,
       ),

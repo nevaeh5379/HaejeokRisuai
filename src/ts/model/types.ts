@@ -82,6 +82,30 @@ export interface LLMModel {
   endpoint?: string;
 }
 
+/**
+ * With the geminiThinkingLevel flag, a Gemini model sends a thinking level
+ * (low to xhigh) instead of a thinking token budget.
+ */
+export function applyGeminiThinkingLevel(model: LLMModel): LLMModel {
+  if (
+    !model.flags?.includes(LLMFlags.geminiThinkingLevel) ||
+    (model.format !== LLMFormat.GoogleCloud &&
+      model.format !== LLMFormat.VertexAIGemini)
+  ) {
+    return model;
+  }
+  const parameters: LLMParameter[] = model.parameters.filter(
+    (parameter) => parameter !== "thinking_tokens",
+  );
+  for (const parameter of [
+    "reasoning_effort",
+    "reasoning_effort_xhigh",
+  ] as const) {
+    if (!parameters.includes(parameter)) parameters.push(parameter);
+  }
+  return { ...model, parameters };
+}
+
 export const ProviderNames = new Map<LLMProvider, string>([
   [LLMProvider.OpenAI, "OpenAI"],
   [LLMProvider.Anthropic, "Anthropic"],

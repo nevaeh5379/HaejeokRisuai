@@ -30,6 +30,7 @@ const LLM_FLAGS: Readonly<{
   noStructuredOutput: 25;
   geminiThinkingNoMinimal: 26;
   claudeThinkingOnByDefault: 27;
+  geminiThinkingLevel: 28;
 }> = Object.freeze({
   hasImageInput: 0,
   hasImageOutput: 1,
@@ -59,6 +60,7 @@ const LLM_FLAGS: Readonly<{
   noStructuredOutput: 25,
   geminiThinkingNoMinimal: 26,
   claudeThinkingOnByDefault: 27,
+  geminiThinkingLevel: 28,
 });
 
 export { LLM_FLAGS };
