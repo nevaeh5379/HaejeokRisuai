@@ -2333,6 +2333,9 @@ export const languageKorean = {
   createCopy: "복사본 생성",
   bindPersona: "페르소나 바인드",
   chatOptions: "채팅 옵션",
+  aiChatTitle: "AI로 채팅 이름 변경",
+  aiChatTitleEmpty: "채팅 이름을 지을 때 참고할 최근 메시지가 없어요.",
+  aiChatTitleFailed: "보조 모델이 채팅 이름을 반환하지 않았어요.",
   doYouWantToBindCurrentPersona:
     "현재 페르소나를 이 채팅에 바인드하시겠습니까?",
   doYouWantToUnbindCurrentPersona:

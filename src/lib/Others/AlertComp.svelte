@@ -894,6 +894,10 @@
                     <h1 class="text-xl mb-4 font-bold">
                         {language.chatOptions}
                     </h1>
+                    <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => alertStore.set({ type: 'none', msg: '4' })}>
+                        <span>{language.aiChatTitle}</span>
+                        <ChevronRightIcon class="ml-auto" />
+                    </button>
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
                         alertStore.set({
                             type: 'none',
