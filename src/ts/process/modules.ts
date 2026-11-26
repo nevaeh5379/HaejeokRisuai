@@ -549,19 +549,44 @@ export function getModuleSandboxes(): ResolvedModuleSandbox[] {
     .filter((group) => group.members.length > 0);
 }
 
-/** What a script running inside a bundle may know about that bundle. */
-export function describeModuleSandbox(groupId: string | undefined) {
+/**
+ * What a script running inside a bundle may know about that bundle. Other
+ * visible modules (the unbundled ones) are listed as dependency members,
+ * since the bundle only reads their lorebooks.
+ */
+export function describeModuleSandbox(
+  groupId: string | undefined,
+  visibleModuleIds?: readonly string[],
+) {
   const group = getModuleSandboxes().find((g) => g.id === groupId);
   if (!group) return null;
+  const memberIds = new Set(group.members.map((member) => member.moduleId));
+  const shared = (visibleModuleIds ?? []).flatMap((moduleId) => {
+    if (memberIds.has(moduleId)) return [];
+    const module = moduleStore.list.find((m) => m.id === moduleId);
+    return module
+      ? [
+          {
+            moduleId,
+            name: module.name,
+            namespace: module.namespace ?? null,
+            dependency: true,
+          },
+        ]
+      : [];
+  });
   return {
     id: group.id,
     name: group.name,
-    members: group.members.map((member) => ({
-      moduleId: member.moduleId,
-      name: member.module.name,
-      namespace: member.module.namespace ?? null,
-      dependency: member.dependency === true,
-    })),
+    members: [
+      ...group.members.map((member) => ({
+        moduleId: member.moduleId,
+        name: member.module.name,
+        namespace: member.module.namespace ?? null,
+        dependency: member.dependency === true,
+      })),
+      ...shared,
+    ],
   };
 }
 
@@ -713,7 +738,13 @@ export function getModuleTriggers(
   // definition can appear in multiple groups and must execute once per group.
   const emitted = new Map<string, triggerscript[]>();
   for (const group of sandboxes) {
-    const sandboxModuleIds = group.members.map((member) => member.moduleId);
+    // Bundles also read the lorebooks of the unbundled modules.
+    const sandboxModuleIds = [
+      ...new Set([
+        ...group.members.map((member) => member.moduleId),
+        ...sharedLoreIds,
+      ]),
+    ];
     for (const member of group.members) {
       if (!member.module.trigger || member.dependency) continue;
       const previous = options?.onePerModule
@@ -750,17 +781,6 @@ export function getModuleTriggers(
       );
       emitted.set(member.moduleId, memberTriggers);
       triggers = triggers.concat(memberTriggers);
-    }
-  }
-  // Edit listeners skip the shared run above, so their single run also gets
-  // the unbundled modules.
-  if (options?.onePerModule && sharedLoreIds.length > 0) {
-    for (const memberTriggers of emitted.values()) {
-      for (const trigger of memberTriggers) {
-        trigger.sandboxModuleIds = [
-          ...new Set([...(trigger.sandboxModuleIds ?? []), ...sharedLoreIds]),
-        ];
-      }
     }
   }
   return triggers;

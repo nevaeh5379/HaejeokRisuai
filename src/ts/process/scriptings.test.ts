@@ -348,7 +348,7 @@ test("tells Lua which bundle it runs in and which members are dependencies", asy
       sandboxGroupId: "news",
     },
   );
-  expect(describeSandbox).toHaveBeenLastCalledWith("news");
+  expect(describeSandbox).toHaveBeenLastCalledWith("news", undefined);
   expect(result.res).toBe("News:true");
   describeSandbox.mockReturnValue(null);
 });

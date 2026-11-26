@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import {
+  describeModuleSandbox,
   getModuleSandboxes,
   getModuleTriggers,
   type RisuModule,
@@ -209,7 +210,7 @@ describe("module sandbox groups", () => {
     expect(triggers.map((t) => [t.sandboxGroupId, t.sandboxModuleIds])).toEqual(
       [
         [undefined, ["backend", "map"]],
-        ["a", ["backend", "art"]],
+        ["a", ["backend", "art", "map"]],
       ],
     );
     const once = getModuleTriggers(undefined, undefined, undefined, {
@@ -217,6 +218,15 @@ describe("module sandbox groups", () => {
     });
     expect(once.map((t) => [t.sandboxGroupId, t.sandboxModuleIds])).toEqual([
       ["a", ["backend", "art", "map"]],
+    ]);
+    expect(
+      describeModuleSandbox("a", triggers[1].sandboxModuleIds)?.members.map(
+        (m) => [m.moduleId, m.dependency],
+      ),
+    ).toEqual([
+      ["backend", false],
+      ["art", false],
+      ["map", true],
     ]);
   });
 

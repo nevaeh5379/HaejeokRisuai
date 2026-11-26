@@ -1056,7 +1056,10 @@ export async function runScripted(
 
       declareAPI("getModuleSandboxMain", () =>
         JSON.stringify(
-          describeModuleSandbox(ScriptingEngineState.sandboxGroupId),
+          describeModuleSandbox(
+            ScriptingEngineState.sandboxGroupId,
+            ScriptingEngineState.sandboxModuleIds,
+          ),
         ),
       );
 
