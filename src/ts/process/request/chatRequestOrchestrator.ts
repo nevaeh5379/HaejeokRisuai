@@ -62,25 +62,33 @@ export async function requestChatData(
     return message;
   });
 
-  // A request routed to a module's own model tries that model first, with
-  // retries, and only then the fallback models. Others keep the fallback
-  // models first and the configured model last.
-  const routedToModuleModel =
-    Boolean(arg.staticModel) ||
-    (useModuleRules &&
-      Boolean(
-        resolveModuleRequestRules(
+  // The configured model runs first, with retries, and then each fallback
+  // model in order. A fallback equal to the configured model is skipped.
+  const configuredModel =
+    arg.staticModel ||
+    (useModuleRules
+      ? resolveModuleRequestRules(
           ruleModules,
           originalFormated,
           arg.sourceModuleId,
-        ).model,
-      ));
-  if (routedToModuleModel) fallBackModels.unshift("");
-  else fallBackModels.push("");
+        ).model
+      : undefined) ||
+    (presetStore.state.seperateModelsForAxModels
+      ? (presetStore.state.seperateModels as Record<string, string>)?.[model]
+      : undefined) ||
+    (model === "model"
+      ? presetStore.state.aiModel
+      : presetStore.state.subModel);
+  const attemptModels = [
+    "",
+    ...fallBackModels.filter(
+      (fallback) => fallback && fallback !== configuredModel,
+    ),
+  ];
 
   return executeChatRequestFallbacks(
     {
-      fallbackModels: fallBackModels,
+      fallbackModels: attemptModels,
       requestRetries: db.requestRetrys,
       antiServerOverloads: db.antiServerOverloads,
       fallbackWhenBlankResponse: presetStore.state.fallbackWhenBlankResponse,
