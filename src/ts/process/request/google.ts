@@ -502,34 +502,15 @@ async function requestGoogle(
 ): Promise<requestDataResponse> {
   const db = settingsStore.state;
 
+  // Overloaded requests go back to the request loop, which waits, counts
+  // retries and moves on to fallback models.
   const fallBackGemini = async (
     originalError: string,
-  ): Promise<requestDataResponse> => {
-    if (!db.antiServerOverloads) {
-      return {
-        type: "fail",
-        result: originalError,
-        failByServerError: true,
-      };
-    }
-
-    if (arg?.abortSignal?.aborted) {
-      return {
-        type: "fail",
-        result: originalError,
-        failByServerError: true,
-      };
-    }
-    if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
-      return {
-        type: "fail",
-        result: originalError,
-        failByServerError: true,
-      };
-    }
-
-    return requestGoogle(url, body, headers, arg);
-  };
+  ): Promise<requestDataResponse> => ({
+    type: "fail",
+    result: originalError,
+    failByServerError: true,
+  });
 
   // process the text parts into a single text response
   const processTextResponse = (
