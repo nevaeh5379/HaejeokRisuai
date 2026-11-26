@@ -781,7 +781,7 @@
         </div>
     {:else}
         <!-- Standalone Mobile Modal (Dynamic GUI) -->
-        <div class="fixed inset-0 z-[60] bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
+        <div class="fixed inset-0 z-[900] bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
             <!-- Mobile Header (Safe Area Aware) -->
             <div class="relative w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20 rs-setting-mobile-header">
                 <div
@@ -837,7 +837,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-        class="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
+        class="fixed inset-0 z-[900] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
         role="presentation"
         onclick={(e) => {
             if (e.target === e.currentTarget) {
@@ -847,7 +847,7 @@
     >
         {#if isTauri}
             <div
-                class="fixed top-0 left-0 h-8 z-[75]"
+                class="fixed top-0 left-0 h-8 z-[915]"
                 class:right-1={!isTauriWindows}
                 class:right-36={isTauriWindows}
                 use:windowDragRegion
@@ -891,7 +891,7 @@
 {/if}
 
 {#if openLoreList || dbExplorerOpen || storageExplorerOpen || pluginStorageExplorerOpen}
-    <div class="fixed inset-0 z-[70]">
+    <div class="fixed inset-0 z-[910]">
         {#if openLoreList}
             <Lorepreset close={() => {openLoreList = false}} />
         {/if}
