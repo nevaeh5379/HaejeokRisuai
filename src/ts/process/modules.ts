@@ -85,6 +85,11 @@ export interface ModuleSandboxMember {
   instanceId: string;
   moduleId: string;
   enabled?: boolean;
+  /**
+   * Only provides lorebooks to the other members of this bundle; the module's
+   * own triggers do not run here.
+   */
+  dependency?: boolean;
 }
 
 export interface ModuleSandboxGroup {
@@ -544,6 +549,47 @@ export function getModuleSandboxes(): ResolvedModuleSandbox[] {
     .filter((group) => group.members.length > 0);
 }
 
+/**
+ * What a script running inside a bundle may know about that bundle. Other
+ * visible modules (the unbundled ones) are listed as dependency members,
+ * since the bundle only reads their lorebooks.
+ */
+export function describeModuleSandbox(
+  groupId: string | undefined,
+  visibleModuleIds?: readonly string[],
+) {
+  const group = getModuleSandboxes().find((g) => g.id === groupId);
+  if (!group) return null;
+  const memberIds = new Set(group.members.map((member) => member.moduleId));
+  const shared = (visibleModuleIds ?? []).flatMap((moduleId) => {
+    if (memberIds.has(moduleId)) return [];
+    const module = moduleStore.list.find((m) => m.id === moduleId);
+    return module
+      ? [
+          {
+            moduleId,
+            name: module.name,
+            namespace: module.namespace ?? null,
+            dependency: true,
+          },
+        ]
+      : [];
+  });
+  return {
+    id: group.id,
+    name: group.name,
+    members: [
+      ...group.members.map((member) => ({
+        moduleId: member.moduleId,
+        name: member.module.name,
+        namespace: member.module.namespace ?? null,
+        dependency: member.dependency === true,
+      })),
+      ...shared,
+    ],
+  };
+}
+
 export interface ModuleLorebookSource {
   lorebook: loreBook;
   sourceModuleId: string;
@@ -613,11 +659,47 @@ export function getModuleTriggers(
   character?: character | groupChat,
   overrideIds?: string[],
   chat?: Chat,
+  options?: {
+    /**
+     * Emits a module that sits in several bundles once, in its first bundle,
+     * with access to the modules of all of them. For edit listeners, which
+     * must not transform the same text once per bundle.
+     */
+    onePerModule?: boolean;
+  },
 ) {
   const modules = getModules(character, overrideIds, chat);
+  // A bundle runs a member only while that module is enabled for the chat.
+  // Dependency members only lend their lorebooks to the bundle.
+  const activeIds = new Set(modules.map((module) => module.id));
+  const sandboxes =
+    overrideIds === undefined
+      ? getModuleSandboxes()
+          .map((group) => ({
+            ...group,
+            members: group.members.filter((member) =>
+              activeIds.has(member.moduleId),
+            ),
+          }))
+          .filter((group) => group.members.length > 0)
+      : [];
+  const bundledIds = new Set(
+    sandboxes.flatMap((group) =>
+      group.members.filter((m) => !m.dependency).map((m) => m.moduleId),
+    ),
+  );
+  // A bundled module also runs once in the shared environment, where it sees
+  // only the modules that are not bundled, so it can still serve them.
+  const sharedLoreIds = modules
+    .filter((module) => !bundledIds.has(module.id) && module.lorebook?.length)
+    .map((module) => module.id);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
     if (!module?.trigger) {
+      continue;
+    }
+    const bundled = bundledIds.has(module.id);
+    if (bundled && (options?.onePerModule || sharedLoreIds.length === 0)) {
       continue;
     }
     const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
@@ -644,6 +726,9 @@ export function getModuleTriggers(
         if (sandboxOwnerModuleIds.length > 0) {
           trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
         }
+        if (bundled) {
+          trigger.sandboxModuleIds = [module.id, ...sharedLoreIds];
+        }
         return [trigger];
       }),
     );
@@ -651,30 +736,51 @@ export function getModuleTriggers(
 
   // First-class groups intentionally do not flatten into getModules(). A
   // definition can appear in multiple groups and must execute once per group.
-  if (overrideIds === undefined) {
-    for (const group of getModuleSandboxes()) {
-      const sandboxModuleIds = group.members.map((member) => member.moduleId);
-      for (const member of group.members) {
-        if (!member.module.trigger) continue;
-        triggers = triggers.concat(
-          member.module.trigger.flatMap((value) => {
-            const trigger = normalizeModuleTrigger(value);
-            if (!trigger) return [];
-            return [
-              {
-                ...trigger,
-                sourceModuleId: member.module.id,
-                lowLevelAccess: member.module.lowLevelAccess,
-                subModel: group.subModel,
-                sandboxGroupId: group.id,
-                sandboxGroupName: group.name,
-                sandboxInstanceId: member.instanceId,
-                sandboxModuleIds,
-              },
-            ];
-          }),
-        );
+  const emitted = new Map<string, triggerscript[]>();
+  for (const group of sandboxes) {
+    // Bundles also read the lorebooks of the unbundled modules.
+    const sandboxModuleIds = [
+      ...new Set([
+        ...group.members.map((member) => member.moduleId),
+        ...sharedLoreIds,
+      ]),
+    ];
+    for (const member of group.members) {
+      if (!member.module.trigger || member.dependency) continue;
+      const previous = options?.onePerModule
+        ? emitted.get(member.moduleId)
+        : undefined;
+      if (previous) {
+        for (const trigger of previous) {
+          trigger.sandboxModuleIds = [
+            ...new Set([
+              ...(trigger.sandboxModuleIds ?? []),
+              ...sandboxModuleIds,
+            ]),
+          ];
+        }
+        continue;
       }
+      const memberTriggers: triggerscript[] = member.module.trigger.flatMap(
+        (value) => {
+          const trigger = normalizeModuleTrigger(value);
+          if (!trigger) return [];
+          return [
+            {
+              ...trigger,
+              sourceModuleId: member.module.id,
+              lowLevelAccess: member.module.lowLevelAccess,
+              subModel: group.subModel,
+              sandboxGroupId: group.id,
+              sandboxGroupName: group.name,
+              sandboxInstanceId: member.instanceId,
+              sandboxModuleIds,
+            },
+          ];
+        },
+      );
+      emitted.set(member.moduleId, memberTriggers);
+      triggers = triggers.concat(memberTriggers);
     }
   }
   return triggers;

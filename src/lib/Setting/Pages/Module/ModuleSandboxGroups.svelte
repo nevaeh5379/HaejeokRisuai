@@ -155,10 +155,11 @@
   onpointercancel={endDrag}
 />
 
-<div class="flex justify-end pb-3">
+<div class="flex items-start justify-between gap-3 pb-3">
+  <p class="text-sm text-textcolor2">{language.moduleSandboxGroups.usage}</p>
   <button
     type="button"
-    class="rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected cursor-pointer"
+    class="shrink-0 rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected cursor-pointer"
     onclick={() => createGroup()}
   >{language.moduleSandboxGroups.new}</button>
 </div>
@@ -214,10 +215,22 @@
 
         <div class="flex flex-col gap-2 p-3">
           {#each group.members as member (member.instanceId)}
-            <div class="flex min-h-10 items-center gap-2 rounded-md border border-darkborderc bg-selected/30 px-3 py-2">
+            <div class="flex min-h-10 items-center gap-2 rounded-md border border-darkborderc bg-selected/30 px-3 py-2" class:opacity-60={member.dependency}>
               <span class="min-w-0 grow truncate text-sm font-medium">
                 {moduleName(member.moduleId)}
               </span>
+              <button
+                type="button"
+                aria-pressed={member.dependency === true}
+                title={language.moduleSandboxGroups.dependencyHelp}
+                class="shrink-0 rounded px-2 py-1 text-xs hover:bg-textcolor/10 cursor-pointer {member.dependency ? 'bg-textcolor/10 text-textcolor' : 'text-textcolor2'}"
+                onclick={() =>
+                  moduleStore.setSandboxMemberDependency(
+                    group.id,
+                    member.instanceId,
+                    !member.dependency,
+                  )}
+              >{language.moduleSandboxGroups.dependency}</button>
               <button
                 type="button"
                 class="shrink-0 rounded px-2 py-1 text-xs text-textcolor2 hover:bg-textcolor/10 hover:text-draculared cursor-pointer"

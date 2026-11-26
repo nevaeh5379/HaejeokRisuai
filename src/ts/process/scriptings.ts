@@ -49,6 +49,7 @@ import { v4 } from "uuid";
 import {
   getModuleLorebooksWithSource,
   getModuleTriggers,
+  describeModuleSandbox,
   getModules,
 } from "./modules";
 import { Mutex } from "../mutex";
@@ -1053,6 +1054,15 @@ export async function runScripted(
         return JSON.stringify(found);
       });
 
+      declareAPI("getModuleSandboxMain", () =>
+        JSON.stringify(
+          describeModuleSandbox(
+            ScriptingEngineState.sandboxGroupId,
+            ScriptingEngineState.sandboxModuleIds,
+          ),
+        ),
+      );
+
       type upsertLoreBookOptions = {
         alwaysActive?: boolean;
         insertOrder?: number;
@@ -1702,6 +1712,10 @@ function getLoreBooks(id, search)
     return json.decode(getLoreBooksMain(id, search))
 end
 
+function getModuleSandbox(id)
+    return json.decode(getModuleSandboxMain(id))
+end
+
 
 function loadLoreBooks(id)
     return json.decode(loadLoreBooksMain(id):await())
@@ -1881,6 +1895,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
       moduleCharacter,
       undefined,
       targetChat,
+      { onePerModule: true },
     );
 
     const triggers =

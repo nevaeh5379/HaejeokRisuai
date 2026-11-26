@@ -158,6 +158,11 @@ export const languageEnglish = {
     title: "Module bundles",
     missingModule: "Missing module",
     removeGroupConfirm: "Remove this module bundle?",
+    usage:
+      "A module in a bundle runs its Lua once per bundle, only while the module is enabled. If unbundled modules have lorebooks, it also runs once in the shared environment, where it sees only the unbundled modules. Inside a bundle, the lorebooks of unbundled modules are also readable, as dependency members. Its regex and lorebooks apply as usual.",
+    dependency: "Dependency",
+    dependencyHelp:
+      "In this bundle the module only provides its lorebooks to the other members; its Lua does not run.",
   },
   moduleRequestRules: {
     title: "Auxiliary model request rules",
