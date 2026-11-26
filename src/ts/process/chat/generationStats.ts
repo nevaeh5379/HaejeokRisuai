@@ -10,6 +10,8 @@ export interface ChatGenerationStats {
   firstTokenAt?: number;
   lastTokenAt?: number;
   completedAt?: number;
+  /** Set when an auxiliary model request starts; the timer stays frozen. */
+  pausedAt?: number;
   outputText: string;
 }
 
@@ -119,6 +121,17 @@ export function cancelChatGenerationStats(generationId: string) {
   publish();
 }
 
+/** Freezes the timers of main model generations that are still running. */
+export function pauseActiveChatGenerationStats(pausedAt = Date.now()) {
+  let changed = false;
+  for (const [id, stats] of statsByGeneration) {
+    if (stats.phase !== "generating" || stats.pausedAt !== undefined) continue;
+    statsByGeneration.set(id, { ...stats, pausedAt });
+    changed = true;
+  }
+  if (changed) publish();
+}
+
 export function getChatGenerationStats(
   stats: ChatGenerationStatsMap,
   selectedChar: number,
@@ -142,13 +155,14 @@ export function calculateChatGenerationMetrics(
   outputTokens: number | null,
   now = Date.now(),
 ): ChatGenerationMetrics {
-  const totalEnd = stats.completedAt ?? now;
+  const totalEnd = stats.pausedAt ?? stats.completedAt ?? now;
   const generationStart = stats.firstTokenAt;
-  const generationEnd = stats.lastTokenAt ?? totalEnd;
+  const generationEnd = Math.min(stats.lastTokenAt ?? totalEnd, totalEnd);
   const totalSeconds = Math.max(0, totalEnd - stats.startedAt) / 1000;
-  const generationSeconds = generationStart
-    ? Math.max(0, generationEnd - generationStart) / 1000
-    : 0;
+  const generationSeconds =
+    generationStart && generationStart < totalEnd
+      ? Math.max(0, generationEnd - generationStart) / 1000
+      : 0;
   return {
     totalSeconds,
     generationSeconds,

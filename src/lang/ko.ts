@@ -1743,6 +1743,7 @@ export const languageKorean = {
   editOrder: "캐릭터 순서 변경",
   autoMode: "오토 모드",
   submodel: "보조 모델",
+  mainModel: "메인 모델",
   moduleSubModel: "모듈 보조 모델",
   defaultSubModel: "기본값 (전역 보조 모델)",
   timeOutinSec: "타임아웃 (초)",

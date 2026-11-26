@@ -1,6 +1,8 @@
 import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.ts";
 import { executeBrowserProvider } from "./browserProviderRegistry";
 import { prepareBrowserProviderContext } from "./providerContextAdapter";
+import { notifyModelRequest, trackModelResponse } from "./modelRequestNotices";
+import { getRequestModelLabel } from "../models/modelString";
 import type { ModelModeExtended } from "./shared";
 
 export type {
@@ -49,5 +51,11 @@ export async function requestChatDataMain(
     messageFormatting,
   );
 
-  return executeBrowserProvider(format, targ);
+  if (targ.previewBody) return executeBrowserProvider(format, targ);
+  const label =
+    targ.aiModel === "reverse_proxy" && targ.modelInfo.internalID
+      ? targ.modelInfo.internalID
+      : getRequestModelLabel(targ.aiModel, targ.modelInfo.name);
+  const finish = notifyModelRequest(label, model);
+  return trackModelResponse(executeBrowserProvider(format, targ), finish);
 }
